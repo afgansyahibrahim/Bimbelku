@@ -17,20 +17,24 @@ import {
   FileCheck2,
   IdCard,
   ImagePlus,
+  ScanSearch,
 } from "lucide-react";
 import { toast } from "sonner";
 import TeacherLayout from "@/components/TeacherLayout";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import CameraCapture from "@/components/CameraCapture";
+import { openProtectedFile } from "@/components/ProtectedImage";
+import SubjectCombobox, { SubjectOption } from "@/components/SubjectCombobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import http, { getApiError, STORAGE_BASE_URL } from "@/lib/http";
+import http, { getApiError, getCached, STORAGE_BASE_URL } from "@/lib/http";
 import { isValidPhone, validateUpload } from "@/lib/validation";
+import { EDUCATION_LEVELS } from "@/lib/educationCatalog";
 
-const levels = ["SD", "SMP", "SMA", "Umum"];
+const levels = [...EDUCATION_LEVELS];
 
 interface ProfileState {
   name: string;
@@ -92,6 +96,7 @@ export default function TeacherProfile() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingSubject, setSavingSubject] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [subjectOptions, setSubjectOptions] = useState<SubjectOption[]>([]);
   const photoPreviewUrlRef = useRef<string | null>(null);
   const coverPreviewUrlRef = useRef<string | null>(null);
 
@@ -106,10 +111,15 @@ export default function TeacherProfile() {
   const loadProfile = async () => {
     setLoading(true);
     try {
-      const [response, coverResponse] = await Promise.all([
-        http.get("/teacher/profile"),
-        http.get("/settings/teacher-cover").catch(() => null),
+      const [response, coverResponse, catalogResponse] = await Promise.all([
+        getCached("/teacher/profile", { maxAgeMs: 60_000 }),
+        getCached("/settings/teacher-cover", { maxAgeMs: 5 * 60_000 }).catch(() => null),
+        getCached<{ subject_options?: SubjectOption[] }>("/learning-catalog", {
+          params: { compact: 1 },
+          maxAgeMs: 5 * 60_000,
+        }).catch(() => null),
       ]);
+      setSubjectOptions(catalogResponse?.data.subject_options || []);
       const { user, profile: teacherProfile } = response.data;
       const subject = teacherProfile.subjects?.[0];
       setProfile({
@@ -411,11 +421,23 @@ export default function TeacherProfile() {
               <div className="flex items-start gap-3"><FileCheck2 className="mt-0.5 shrink-0 text-indigo-600" /><div><p className="font-black text-slate-800">Dokumen verifikasi</p><p className="mt-1 text-xs leading-5 text-slate-500">Mengganti dokumen pada akun aktif memicu pemeriksaan ulang dan menutup sesi login setelah disimpan.</p></div></div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <DocumentInput label="Kartu identitas" icon={IdCard} current={profile.documentUrls.identity_document} accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(file) => setDocument("identity_document", file)} />
-                <CameraCapture
-                  file={profile.documentFiles.live_selfie}
-                  currentAvailable={Boolean(profile.documentUrls.live_selfie)}
-                  onCapture={(file) => setDocument("live_selfie", file)}
-                />
+                <div className="space-y-2">
+                  <CameraCapture
+                    file={profile.documentFiles.live_selfie}
+                    currentAvailable={Boolean(profile.documentUrls.live_selfie)}
+                    onCapture={(file) => setDocument("live_selfie", file)}
+                  />
+                  {profile.documentUrls.live_selfie && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 w-full rounded-xl text-xs font-bold"
+                      onClick={() => void openProtectedFile(profile.documentUrls.live_selfie, "Foto wajah langsung").catch(() => toast.error("Foto tidak dapat dibuka."))}
+                    >
+                      <ScanSearch size={14} className="mr-2" />Lihat foto tersimpan
+                    </Button>
+                  )}
+                </div>
                 <DocumentInput label="Ijazah / kualifikasi" icon={GraduationCap} current={profile.documentUrls.qualification_document} accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(file) => setDocument("qualification_document", file)} />
                 <DocumentInput label="Sertifikat pendukung" icon={FileCheck2} current={profile.documentUrls.certification_document} accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(file) => setDocument("certification_document", file)} />
               </div>
@@ -428,7 +450,14 @@ export default function TeacherProfile() {
             <div className="flex items-start justify-between gap-4"><div><h2 className="text-2xl font-black text-slate-900">Kompetensi mengajar</h2><p className="mt-1 text-sm text-slate-500">Satu tutor menggunakan satu mata pelajaran utama.</p></div><div className="h-11 w-11 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center"><BookOpen size={20} /></div></div>
 
             <div className="mt-6 space-y-5">
-              <Field label="Mata pelajaran utama"><Input value={profile.subject} onChange={(event) => setProfile((current) => ({ ...current, subject: event.target.value }))} className="h-12 rounded-xl" placeholder="Contoh: Matematika" /></Field>
+              <Field label="Mata pelajaran utama">
+                <SubjectCombobox
+                  options={subjectOptions}
+                  value={profile.subject}
+                  onChange={(value) => setProfile((current) => ({ ...current, subject: value }))}
+                  placeholder="Cari mata pelajaran"
+                />
+              </Field>
 
               <div>
                 <Label className="mb-3 flex items-center gap-2 font-bold text-slate-700"><GraduationCap size={16} /> Jenjang yang dikuasai</Label>
@@ -465,5 +494,30 @@ function ModeRow({ icon: Icon, title, description, checked, onChange }: { icon: 
 }
 
 function DocumentInput({ label, icon: Icon, current, accept, capture, onChange }: { label: string; icon: typeof IdCard; current?: string; accept: string; capture?: "user" | "environment"; onChange: (file: File | null) => void }) {
-  return <label className="cursor-pointer rounded-xl border border-dashed border-slate-200 bg-white p-3 hover:border-indigo-300"><div className="flex items-center gap-3"><Icon size={18} className="text-indigo-600" /><div className="min-w-0"><p className="text-xs font-bold text-slate-700">{label}</p><p className="truncate text-[11px] text-slate-400">{current ? "Tersedia · klik untuk mengganti" : "Belum ada · pilih berkas"}</p></div></div><Input type="file" accept={accept} capture={capture} className="hidden" onChange={(event) => onChange(event.target.files?.[0] || null)} /></label>;
+  return (
+    <div className="rounded-xl border border-dashed border-slate-200 bg-white p-3">
+      <div className="flex items-center gap-3">
+        <Icon size={18} className="text-indigo-600" />
+        <div className="min-w-0">
+          <p className="text-xs font-bold text-slate-700">{label}</p>
+          <p className="truncate text-[11px] text-slate-400">{current ? "Berkas tersimpan" : "Belum ada berkas"}</p>
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        {current ? (
+          <button
+            type="button"
+            className="inline-flex h-9 items-center justify-center rounded-lg border border-indigo-100 bg-indigo-50 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
+            onClick={() => void openProtectedFile(current, label).catch(() => toast.error("Dokumen tidak dapat dibuka."))}
+          >
+            <ScanSearch size={14} className="mr-1.5" />Lihat
+          </button>
+        ) : null}
+        <label className={`inline-flex h-9 cursor-pointer items-center justify-center rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:border-indigo-200 hover:text-indigo-700 ${current ? "" : "col-span-2"}`}>
+          {current ? "Ganti" : "Pilih"}
+          <Input type="file" accept={accept} capture={capture} className="hidden" onChange={(event) => onChange(event.target.files?.[0] || null)} />
+        </label>
+      </div>
+    </div>
+  );
 }

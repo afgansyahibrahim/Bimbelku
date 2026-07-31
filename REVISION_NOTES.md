@@ -6,7 +6,7 @@ Dokumen ini merangkum perubahan utama dari rancangan lama ke keputusan terbaru.
 
 - Katalog dan pencarian tutor manual.
 - Pemilihan tutor dari banyak profil.
-- Paket berjangka dan negosiasi jadwal setelah pemesanan.
+- Negosiasi jadwal setelah pemesanan dan input jam paket secara bebas.
 - Payment gateway, webhook, QRIS dinamis, dan pencairan otomatis.
 - Layanan premium/profesional.
 - Biaya perjalanan otomatis.
@@ -25,7 +25,7 @@ Dokumen ini merangkum perubahan utama dari rancangan lama ke keputusan terbaru.
 - Pembayaran masuk ke admin secara manual.
 - Radius offline berubah menjadi 3, 5, 8, dan 12 km.
 - Tutor terdekat diprioritaskan dengan pemerataan penugasan.
-- Harga dipusatkan pada admin dan dihitung per jam.
+- Harga dipusatkan pada admin dan dihitung per sesi 60 menit.
 - Komisi awal menjadi 20% dan disimpan per transaksi.
 - Istilah pengajar diseragamkan menjadi tutor.
 - Bukti sensitif dipindahkan ke penyimpanan privat.
@@ -48,6 +48,14 @@ Dokumen ini merangkum perubahan utama dari rancangan lama ke keputusan terbaru.
 - Dialog konfirmasi global dan notifikasi aplikasi.
 - Halaman admin materi dan tarif.
 - Proteksi dokumen/bukti per peran.
+- Paket 1, 4, 8, dan 12 sesi dengan pembagian maksimal tiga mapel.
+- Slot jam yang dikelola admin dan dipilih dari aplikasi.
+- Pencocokan tutor per mapel serta satu tagihan setelah seluruh tutor menerima.
+- Perpanjangan per mapel dengan prioritas tutor lama.
+- Voucher, kode promo, kuota, sasaran promo, dan harga coret.
+- Banner dashboard empat detik serta tutorial carousel yang dikelola admin.
+- Dashboard murid adaptif dan navigasi Beranda, Kelas Saya, Cari Les, Voucher, Akun.
+- Penyempurnaan landing page tanpa mengganti identitas oranye.
 
 ## Prinsip kompatibilitas
 

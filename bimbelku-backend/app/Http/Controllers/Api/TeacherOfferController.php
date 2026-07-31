@@ -9,10 +9,12 @@ use App\Models\BookingRequest;
 use App\Models\GroupPool;
 use App\Models\Notification;
 use App\Models\Order;
+use App\Models\PaymentSetting;
 use App\Models\Setting;
 use App\Models\TeacherOffer;
 use App\Models\TeacherProfile;
 use App\Services\HourlyRateService;
+use App\Services\PackageCheckoutService;
 use App\Services\TeacherMatchingService;
 use App\Services\TeacherOfferReleaseService;
 use Illuminate\Http\Request;
@@ -32,6 +34,8 @@ class TeacherOfferController extends Controller
                 'bookingRequest.student',
                 'bookingRequest.groupPool.members.bookingRequest',
                 'bookingRequest.booking.orders',
+                'bookingRequest.packageSubject.package.plan',
+                'bookingRequest.packageSubject.sessions',
             ])
             ->latest('offered_at')
             ->paginate(15);
@@ -125,6 +129,7 @@ class TeacherOfferController extends Controller
                 $request->setHidden(array_values(array_unique([
                     ...$request->getHidden(),
                     'attachment',
+                    'phone',
                     'latitude',
                     'longitude',
                 ])));
@@ -150,9 +155,22 @@ class TeacherOfferController extends Controller
         TeacherOffer $teacherOffer,
         TeacherMatchingService $matchingService,
         HourlyRateService $rateService,
-        TeacherOfferReleaseService $offerReleaseService
+        TeacherOfferReleaseService $offerReleaseService,
+        PackageCheckoutService $packageCheckoutService
     ) {
         abort_unless($teacherOffer->teacher_id === $request->user()->id, 403);
+
+        $teacherOffer->loadMissing('bookingRequest.packageSubject');
+        if ($teacherOffer->bookingRequest?->package_subject_id) {
+            $result = $packageCheckoutService->acceptPackageOffer($teacherOffer, $request->user());
+
+            return response()->json([
+                'message' => $result['invoice_opened']
+                    ? 'Seluruh tutor menerima paket. Tagihan murid sudah dibuka.'
+                    : 'Permintaan paket diterima. Sistem masih mencari tutor untuk mapel lain.',
+                'data' => $result,
+            ]);
+        }
 
         $result = DB::transaction(function () use (
             $teacherOffer,
@@ -213,6 +231,21 @@ class TeacherOfferController extends Controller
                 ];
             }
 
+            $paymentSettings = PaymentSetting::query()
+                ->lockForUpdate()
+                ->first();
+            if (
+                !$paymentSettings
+                || blank($paymentSettings->bank_name)
+                || blank($paymentSettings->account_number)
+                || blank($paymentSettings->account_name)
+            ) {
+                return [
+                    'error' => 'Rekening pembayaran belum dikonfigurasi admin. Penawaran dapat diterima setelah rekening tersedia.',
+                    'status' => 503,
+                ];
+            }
+
             $profile->setRelation('user', $lockedTeacher);
             $compatibilityError = $matchingService->compatibilityError($profile, $bookingRequest);
             if ($compatibilityError) {
@@ -235,7 +268,14 @@ class TeacherOfferController extends Controller
                 );
             $perStudentAmount = $hourlyRate * $bookingRequest->duration_hours;
             $commissionPercent = (float) (Setting::where('key', 'admin_fee')->value('value') ?? 20);
-            $decisionDeadline = now()->addMinutes(30)->min($startAt->copy()->subMinutes(45));
+            $paymentWindow = max(
+                10,
+                (int) (Setting::where('key', 'payment_window_minutes')->value('value') ?? 30)
+            );
+            $paymentDueAt = now()->addMinutes($paymentWindow)->min($startAt);
+            if ($paymentDueAt->lessThanOrEqualTo(now())) {
+                return ['error' => 'Jadwal kelas sudah dimulai. Penawaran tidak dapat diterima.', 'status' => 422];
+            }
 
             $memberRequests = $bookingRequest->class_type === 'group'
                 ? BookingRequest::query()
@@ -270,8 +310,10 @@ class TeacherOfferController extends Controller
                     'gross_amount' => 0,
                     'teacher_net_amount' => 0,
                     'commission_percent' => $commissionPercent,
-                    'status' => 'teacher_selected',
-                    'payment_due_at' => null,
+                    'status' => $bookingRequest->class_type === 'group'
+                        ? 'payment_collecting'
+                        : 'awaiting_payment',
+                    'payment_due_at' => $paymentDueAt,
                     'address' => $groupPool?->address ?? $bookingRequest->address,
                     'maps_link' => $groupPool?->maps_link ?? $bookingRequest->maps_link,
                     'completion_evidence' => null,
@@ -296,7 +338,7 @@ class TeacherOfferController extends Controller
                     [
                         'booking_request_id' => $memberRequest->id,
                         'amount' => $perStudentAmount,
-                        'status' => 'teacher_decision',
+                        'status' => 'awaiting_payment',
                         'approved_at' => null,
                     ]
                 );
@@ -328,7 +370,7 @@ class TeacherOfferController extends Controller
                     'classroom_id' => null,
                     'booking_id' => $booking->id,
                     'amount' => $perStudentAmount,
-                    'status' => 'teacher_decision',
+                    'status' => 'pending',
                     'class_details_snapshot' => $snapshot,
                     'order_id' => 'INV-'.now()->format('YmdHis').'-'.$memberRequest->id.'-'.random_int(10, 99),
                 ]);
@@ -337,17 +379,18 @@ class TeacherOfferController extends Controller
                 $firstOrder ??= $order;
                 $memberRequest->update([
                     'booking_id' => $booking->id,
-                    'status' => 'teacher_selected',
+                    'status' => 'awaiting_payment',
                     'matched_teacher_id' => $lockedTeacher->id,
-                    'teacher_decision_deadline' => $decisionDeadline,
+                    'teacher_decision_deadline' => null,
+                    'payment_due_at' => $paymentDueAt,
                     'hourly_rate' => $hourlyRate,
                     'total_amount' => $perStudentAmount,
                 ]);
 
                 Notification::create([
                     'user_id' => $memberRequest->student_id,
-                    'title' => 'Tutor ditemukan',
-                    'message' => "{$lockedTeacher->name} menerima permintaan. Periksa profil sebelum melanjutkan pembayaran.",
+                    'title' => 'Tutor menerima permintaan',
+                    'message' => "{$lockedTeacher->name} menerima permintaan. Tagihan sudah tersedia sampai {$paymentDueAt->translatedFormat('H:i')} WIB.",
                     'type' => 'success',
                 ]);
             }
@@ -366,11 +409,14 @@ class TeacherOfferController extends Controller
             if ($groupPool) {
                 $groupPool->update([
                     'teacher_id' => $lockedTeacher->id,
-                    'status' => 'teacher_selected',
+                    'status' => 'payment_collecting',
                 ]);
             }
 
-            return ['booking' => $booking->fresh(['participants.order']), 'decision_deadline' => $decisionDeadline];
+            return [
+                'booking' => $booking->fresh(['participants.order']),
+                'payment_due_at' => $paymentDueAt,
+            ];
         });
 
         if (isset($result['expired'])) {
@@ -393,7 +439,7 @@ class TeacherOfferController extends Controller
                 ->dispatchNextOffer($releasedRequest));
 
         return response()->json([
-            'message' => 'Permintaan diterima. Murid sedang meninjau profil Anda sebelum membayar.',
+            'message' => 'Permintaan diterima. Tagihan murid sudah dibuka.',
             'data' => $result,
         ]);
     }

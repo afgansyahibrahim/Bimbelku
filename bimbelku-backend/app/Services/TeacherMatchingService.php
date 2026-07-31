@@ -77,9 +77,9 @@ class TeacherMatchingService
         }
 
         $startAt = $this->startAt($bookingRequest);
-        // Sisakan sedikitnya 15 menit untuk keputusan profil dan 15 menit
-        // untuk pembayaran sebelum batas operasional H-30 menit.
-        $acceptanceCutoff = $startAt->copy()->subMinutes(60);
+        // Tahap 5 mengizinkan kelas mendadak. Penawaran dapat diterima sampai
+        // waktu mulai, sedangkan tenggat pembayaran mengikuti sisa waktu nyata.
+        $acceptanceCutoff = $startAt->copy();
         $maximumSearchDeadline = $bookingRequest->search_expires_at
             ?? $bookingRequest->search_started_at?->copy()->addHours($this->maximumSearchHours())
             ?? now()->addHours($this->maximumSearchHours());
@@ -242,6 +242,22 @@ class TeacherMatchingService
             ->where('start_at', '<', $endAt)
             ->where('end_at', '>', $startAt)
             ->exists();
+    }
+
+    public function hasAvailableCandidate(BookingRequest $bookingRequest): bool
+    {
+        $startAt = $this->startAt($bookingRequest);
+        $endAt = $this->endAt($bookingRequest);
+        $candidates = $this->candidateQuery(
+            $bookingRequest,
+            collect(),
+            $startAt,
+            $endAt
+        )
+            ->limit(100)
+            ->get();
+
+        return $this->rankCandidates($bookingRequest, $candidates)->isNotEmpty();
     }
 
     public function compatibilityError(
@@ -429,6 +445,18 @@ class TeacherMatchingService
 
     private function rankCandidates(BookingRequest $bookingRequest, Collection $candidates): Collection
     {
+        $continuityTeacherId = Booking::query()
+            ->where('student_id', $bookingRequest->student_id)
+            ->where('status', 'completed')
+            ->where('learning_mode', $bookingRequest->learning_mode)
+            ->where('class_type', $bookingRequest->class_type)
+            ->whereHas('bookingRequest', function ($query) use ($bookingRequest) {
+                $query->where('subject_name', $bookingRequest->subject_name)
+                    ->where('education_level', $bookingRequest->education_level);
+            })
+            ->latest('completed_at')
+            ->value('teacher_id');
+
         return $candidates
             ->filter(function (User $teacher) use ($bookingRequest) {
                 $distance = null;
@@ -463,7 +491,15 @@ class TeacherMatchingService
                 $teacher->match_distance_km = $distance;
                 return true;
             })
-            ->sort(function (User $a, User $b) use ($bookingRequest) {
+            ->sort(function (User $a, User $b) use ($bookingRequest, $continuityTeacherId) {
+                if ($continuityTeacherId) {
+                    $continuityA = $a->id === (int) $continuityTeacherId ? 0 : 1;
+                    $continuityB = $b->id === (int) $continuityTeacherId ? 0 : 1;
+                    if ($continuityA !== $continuityB) {
+                        return $continuityA <=> $continuityB;
+                    }
+                }
+
                 if ($bookingRequest->learning_mode === 'offline') {
                     $distanceBucketA = (int) floor(($a->match_distance_km ?? 9999) / 2);
                     $distanceBucketB = (int) floor(($b->match_distance_km ?? 9999) / 2);

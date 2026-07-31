@@ -1,4 +1,3 @@
-import { API_BASE_URL } from "@/lib/http";
 import React, { useState, useEffect } from "react";
 import TeacherLayout from "../../components/TeacherLayout"; 
 import { 
@@ -9,14 +8,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import axios from "axios";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
+import http, { getApiError, getCached } from "@/lib/http";
 
 export default function TeacherBankSettings() {
   const confirm = useConfirmDialog();
   const [bankName, setBankName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [accountHolder, setAccountHolder] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [payoutHoldUntil, setPayoutHoldUntil] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -26,16 +27,14 @@ export default function TeacherBankSettings() {
 
   const fetchBankData = async () => {
     try {
-        const token = localStorage.getItem("token");
-        const response = await axios.get(`${API_BASE_URL}/teacher/profile`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await getCached("/teacher/profile", { maxAgeMs: 60_000 });
         
         const profileData = response.data.profile;
         if (profileData) {
             setBankName(profileData.bank_name || "");
             setAccountNumber(profileData.account_number || "");
             setAccountHolder(profileData.account_name || "");
+            setPayoutHoldUntil(profileData.payout_hold_until || null);
         }
     } catch (error) {
         console.error("Gagal load data bank", error);
@@ -46,7 +45,7 @@ export default function TeacherBankSettings() {
   };
 
   const handleSave = async () => {
-    if(!bankName || !accountNumber || !accountHolder) {
+    if(!bankName || !accountNumber || !accountHolder || !currentPassword) {
         toast.error("Mohon lengkapi semua data rekening.");
         return;
     }
@@ -65,23 +64,25 @@ export default function TeacherBankSettings() {
 
     setIsSaving(true);
     try {
-        const token = localStorage.getItem("token");
-        await axios.post(`${API_BASE_URL}/teacher/bank`, {
+        const response = await http.post("/teacher/bank", {
             bank_name: bankName,
             account_number: accountNumber,
-            account_name: accountHolder
-        }, {
-            headers: { Authorization: `Bearer ${token}` }
+            account_name: accountHolder,
+            current_password: currentPassword,
         });
+        setCurrentPassword("");
+        const holdUntil = response.data?.payout_hold_until || null;
+        setPayoutHoldUntil(holdUntil);
 
         toast.success("Rekening Berhasil Disimpan!", {
-            description: "Data ini akan digunakan admin untuk pencairan manual.",
+            description: holdUntil
+              ? `Pencairan ditahan sampai ${new Date(holdUntil).toLocaleString("id-ID")}.`
+              : "Data rekening tidak berubah.",
             icon: <CheckCircle2 className="text-emerald-600" />,
             style: { background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857' }
         });
     } catch (error) {
-        console.error(error);
-        toast.error("Gagal menyimpan rekening.");
+        toast.error(getApiError(error, "Gagal menyimpan rekening."));
     } finally {
         setIsSaving(false);
     }
@@ -125,6 +126,29 @@ export default function TeacherBankSettings() {
                         className="h-12 rounded-xl border-slate-200 focus:bg-white bg-slate-50 transition"
                      />
                   </div>
+
+                  <div className="space-y-2">
+                     <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                        <ShieldCheck size={16} className="text-slate-400" /> Konfirmasi Kata Sandi
+                     </label>
+                     <Input
+                        type="password"
+                        autoComplete="current-password"
+                        placeholder="Kata sandi akun tutor"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        className="h-12 rounded-xl border-slate-200 focus:bg-white bg-slate-50 transition"
+                     />
+                     <p className="text-xs leading-5 text-slate-500">
+                        Perubahan rekening menahan pencairan sementara dan mengirim notifikasi kepada admin.
+                     </p>
+                  </div>
+
+                  {payoutHoldUntil && new Date(payoutHoldUntil) > new Date() && (
+                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+                        Pencairan ditahan sampai {new Date(payoutHoldUntil).toLocaleString("id-ID")}.
+                     </div>
+                  )}
 
                   <div className="space-y-2">
                      <label className="text-sm font-bold text-slate-700 flex items-center gap-2">

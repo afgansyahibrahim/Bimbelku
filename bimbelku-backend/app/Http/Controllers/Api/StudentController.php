@@ -52,16 +52,19 @@ class StudentController extends Controller
             ->latest('start_at')
             ->limit(200)
             ->get();
+        $ratedBookingIds = Rating::query()
+            ->where('student_id', $studentId)
+            ->whereIn('booking_id', $bookings->pluck('id'))
+            ->pluck('booking_id')
+            ->flip();
 
-        $data = $bookings->map(function (Booking $booking) use ($studentId) {
+        $data = $bookings->map(function (Booking $booking) use ($ratedBookingIds) {
             $participant = $booking->participants->first();
             $learningRequest = $participant?->bookingRequest ?? $booking->bookingRequest;
+            $classType = $learningRequest?->class_type ?? $booking->class_type;
             $profile = $booking->teacher?->teacherProfile;
             $hasSessionAccess = $participant?->order?->status === 'paid';
-            $isRated = Rating::query()
-                ->where('booking_id', $booking->id)
-                ->where('student_id', $studentId)
-                ->exists();
+            $isRated = $ratedBookingIds->has($booking->id);
 
             return [
                 'id' => $booking->id,
@@ -76,13 +79,13 @@ class StudentController extends Controller
                 'topic' => $learningRequest?->topic,
                 'mentor' => $booking->teacher?->name ?? 'Tutor',
                 'mentor_avatar' => $profile?->photo ? asset('storage/'.$profile->photo) : null,
-                'teacher_whatsapp' => $hasSessionAccess ? $profile?->whatsapp_number : null,
-                'type' => $booking->class_type === 'group' ? 'Kelompok' : 'Privat',
+                'type' => $classType === 'group' ? 'Kelompok' : 'Privat',
                 'method' => $booking->learning_mode,
                 'status' => $booking->status,
                 'participant_status' => $participant?->status,
                 'start_at' => $booking->start_at,
                 'end_at' => $booking->end_at,
+                'payment_due_at' => $booking->payment_due_at,
                 'address' => $hasSessionAccess && $booking->learning_mode === 'offline'
                     ? $booking->address
                     : null,

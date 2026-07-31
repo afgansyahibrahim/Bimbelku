@@ -38,6 +38,21 @@ class SessionWorkflowController extends Controller
                 'message' => 'Masa unggah bukti telah berakhir. Sesi harus diperiksa admin.',
             ], 422);
         }
+        if ($booking->class_type === 'private') {
+            $attendance = $booking->sessionAttendances()
+                ->where('user_id', $request->user()->id)
+                ->first();
+            if (!$attendance?->pin_verified_at || !$attendance?->check_out_at) {
+                return response()->json([
+                    'message' => 'Check-in dengan PIN dan check-out harus diselesaikan sebelum bukti dikirim.',
+                ], 422);
+            }
+            if (!$booking->learningProgressReports()->exists()) {
+                return response()->json([
+                    'message' => 'Laporan perkembangan harus diterbitkan sebelum bukti penyelesaian dikirim.',
+                ], 422);
+            }
+        }
 
         $path = $request->file('evidence')->store('session_evidence', 'local');
         $objectionHours = max(1, (int) (Setting::where('key', 'student_objection_hours')->value('value') ?? 48));
@@ -53,6 +68,19 @@ class SessionWorkflowController extends Controller
                 }
                 if (now()->gt($this->completionUploadDeadline($lockedBooking))) {
                     abort(422, 'Masa unggah bukti telah berakhir. Sesi harus diperiksa admin.');
+                }
+                if (
+                    $lockedBooking->class_type === 'private'
+                    && (
+                        !$lockedBooking->sessionAttendances()
+                            ->whereNotNull('pin_verified_at')
+                            ->whereNotNull('check_out_at')
+                            ->where('user_id', $lockedBooking->teacher_id)
+                            ->exists()
+                        || !$lockedBooking->learningProgressReports()->exists()
+                    )
+                ) {
+                    abort(422, 'Verifikasi kehadiran dan laporan perkembangan belum lengkap.');
                 }
 
                 $lockedBooking->update([

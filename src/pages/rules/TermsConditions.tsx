@@ -6,8 +6,8 @@ const sections = [
     title: "Akun dan kelayakan pengguna",
     content: (
       <>
-        <p>Murid wajib memberikan data yang benar dan menjaga keamanan akun. Pengguna di bawah usia 18 tahun harus menggunakan layanan dengan pengetahuan orang tua atau wali.</p>
-        <p>Tutor bertindak sebagai pengajar independen. Tutor wajib memberikan identitas, foto wajah langsung, ijazah atau bukti kualifikasi, satu mata pelajaran utama, jenjang yang dikuasai, serta jadwal kosong yang sebenarnya. Akun tutor baru dapat menerima murid setelah disetujui admin.</p>
+        <p>Murid wajib memberikan data yang benar dan menjaga keamanan akun. Pendaftaran murid di bawah 18 tahun wajib disetujui orang tua atau wali. Nama, hubungan, nomor kontak, dan waktu persetujuan wali akan dicatat.</p>
+        <p>Tutor bertindak sebagai pengajar independen. Tutor wajib memberikan identitas, foto wajah langsung, ijazah atau bukti kualifikasi, satu mata pelajaran utama, jenjang yang dikuasai, serta jadwal kosong yang sebenarnya. Verifikasi tidak memakai tes materi, wawancara, microteaching, atau masa percobaan. Akun tutor baru dapat menerima murid setelah dokumennya disetujui admin.</p>
       </>
     ),
   },
@@ -84,7 +84,7 @@ export default function TermsConditions() {
       <main className="mx-auto mt-10 max-w-4xl overflow-hidden rounded-[2.5rem] border border-white bg-white px-6 py-10 shadow-xl shadow-slate-200/60 md:px-14 md:py-14">
         <div className="mx-auto max-w-2xl text-center">
           <span className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-indigo-700">
-            <Scale size={14} /> Versi 27 Juli 2026
+            <Scale size={14} /> Versi 29 Juli 2026
           </span>
           <h1 className="mt-6 text-4xl font-black tracking-tight text-slate-950 md:text-5xl">Syarat & Ketentuan</h1>
           <p className="mt-4 leading-7 text-slate-500">Aturan operasional BimbelKu untuk murid, tutor, dan admin.</p>

@@ -12,6 +12,7 @@ import {
   Link2,
   Loader2,
   MapPin,
+  MessageCircle,
   Monitor,
   RefreshCw,
   ShieldAlert,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import TeacherLayout from "@/components/TeacherLayout";
+import LearningSessionHub from "@/components/LearningSessionHub";
 import ProtectedImage, { openProtectedFile } from "@/components/ProtectedImage";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
@@ -36,7 +38,6 @@ interface Participant {
   id: number;
   student_id: number;
   name: string;
-  contact_number?: string;
   status: string;
   amount: number;
   order_status: string;
@@ -116,6 +117,7 @@ export default function ManageClasses() {
   const [incidentAt, setIncidentAt] = useState("");
   const [incidentLocation, setIncidentLocation] = useState("");
   const [impact, setImpact] = useState("");
+  const [hubBookingId, setHubBookingId] = useState<number | null>(null);
 
   useEffect(() => { void loadClasses(); }, []);
 
@@ -264,7 +266,8 @@ export default function ManageClasses() {
             {selected.learning_goal && <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4"><p className="text-xs font-black uppercase tracking-widest text-indigo-500">Tujuan murid</p><p className="mt-2 text-sm leading-6 text-indigo-900">{selected.learning_goal}</p></div>}
             {selected.attachment_url && <Button type="button" variant="outline" className="rounded-xl" onClick={() => void openProtectedFile(selected.attachment_url!, "lampiran-materi").catch(() => toast.error("Lampiran tidak dapat dibuka."))}><ExternalLink size={16} className="mr-2" />Buka lampiran materi</Button>}
             {selected.method === "online" ? <div><Label className="font-bold">Tautan Google Meet/Zoom</Label><div className="mt-2 flex gap-2"><Input type="url" className="h-11 rounded-xl" value={meetingLink} onChange={(event) => setMeetingLink(event.target.value)} placeholder="https://..." /><Button aria-label="Simpan tautan kelas" onClick={() => saveMeetingLink(selected)} disabled={processing} className="rounded-xl bg-indigo-600"><Link2 size={16} /></Button></div></div> : selected.maps_link ? <Button asChild className="rounded-xl bg-emerald-600 hover:bg-emerald-700"><a href={selected.maps_link} target="_blank" rel="noreferrer"><MapPin size={16} className="mr-2" />Buka lokasi murid</a></Button> : <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-sm text-amber-800">Alamat lengkap dibuka setelah pembayaran dikonfirmasi.</div>}
-            <div><p className="text-sm font-black text-slate-800">Peserta</p><div className="mt-2 space-y-2">{selected.participants.map((participant) => <div key={participant.id} className="flex items-center justify-between rounded-xl border border-slate-100 p-3 text-sm"><div><p className="font-bold text-slate-800">{participant.name}</p><p className="text-xs text-slate-400">{participant.status}</p>{participant.contact_number && <a className="mt-1 inline-block text-xs font-bold text-indigo-600 hover:underline" href={`https://wa.me/${participant.contact_number.replace(/\D/g, "").replace(/^0/, "62")}`} target="_blank" rel="noreferrer">Hubungi murid</a>}</div><span className="font-bold text-slate-600">{rupiah(participant.amount)}</span></div>)}</div></div>
+            <div><p className="text-sm font-black text-slate-800">Peserta</p><div className="mt-2 space-y-2">{selected.participants.map((participant) => <div key={participant.id} className="flex items-center justify-between rounded-xl border border-slate-100 p-3 text-sm"><div><p className="font-bold text-slate-800">{participant.name}</p><p className="text-xs text-slate-400">{participant.status}</p></div><span className="font-bold text-slate-600">{rupiah(participant.amount)}</span></div>)}</div></div>
+            {["confirmed", "in_progress", "awaiting_student_approval", "disputed", "absence_review", "admin_review_required", "completed"].includes(selected.status) && <Button variant="outline" className="w-full rounded-xl border-indigo-200 text-indigo-700" onClick={() => { setHubBookingId(selected.id); setSelected(null); }}><MessageCircle size={16} className="mr-2" />Buka ruang belajar</Button>}
             {selected.latest_report && <div className="flex gap-3 rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900"><FileWarning className="shrink-0" /><div><p className="font-black">Laporan {selected.latest_report.status}</p><p className="mt-1 line-clamp-3 leading-6">{selected.latest_report.chronology}</p></div></div>}
             {selected.latest_dispute && <div className="flex gap-3 rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm text-rose-900"><ShieldAlert className="shrink-0" /><div><p className="font-black">Keberatan murid {selected.latest_dispute.status}</p><p className="mt-1 leading-6">{selected.latest_dispute.reason}</p></div></div>}
             {selected.completion_evidence_url && <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4"><div className="flex items-center gap-2 font-black text-emerald-900"><FileCheck2 size={18} />Bukti sudah dikirim</div><ProtectedImage source={selected.completion_evidence_url} alt="Bukti sesi" className="mt-3 max-h-64 w-full rounded-xl bg-white object-contain" /><p className="mt-3 text-sm text-emerald-800">{selected.completion_notes}</p></div>}
@@ -288,6 +291,7 @@ export default function ManageClasses() {
           </>}
         </DialogContent>
       </Dialog>
+      <LearningSessionHub bookingId={hubBookingId} open={hubBookingId !== null} onOpenChange={(open) => !open && setHubBookingId(null)} />
     </TeacherLayout>
   );
 }

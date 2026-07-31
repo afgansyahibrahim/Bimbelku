@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\LearningTopic;
+use App\Support\EducationCatalog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\Rule;
@@ -72,7 +73,7 @@ class LearningTopicController extends Controller
 
         $validated = $request->validate([
             'subject_name' => ['required', 'string', 'max:120'],
-            'education_level' => ['required', Rule::in(['SD', 'SMP', 'SMA', 'Umum'])],
+            'education_level' => ['required', Rule::in(EducationCatalog::LEVELS)],
             'grade' => ['required', 'string', 'max:50'],
             'chapter' => ['required', 'string', 'max:180'],
             'name' => ['required', 'string', 'max:220', $uniqueName],
@@ -80,13 +81,7 @@ class LearningTopicController extends Controller
             'is_active' => ['sometimes', 'boolean'],
         ]);
 
-        $gradesByLevel = [
-            'SD' => ['Kelas 1', 'Kelas 2', 'Kelas 3', 'Kelas 4', 'Kelas 5', 'Kelas 6'],
-            'SMP' => ['Kelas 7', 'Kelas 8', 'Kelas 9'],
-            'SMA' => ['Kelas 10', 'Kelas 11', 'Kelas 12'],
-            'Umum' => ['Umum'],
-        ];
-        if (!in_array($validated['grade'], $gradesByLevel[$validated['education_level']], true)) {
+        if (!EducationCatalog::supports($validated['education_level'], $validated['grade'])) {
             abort(422, 'Kelas materi tidak sesuai dengan jenjang yang dipilih.');
         }
 

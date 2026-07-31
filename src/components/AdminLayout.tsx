@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import LogoutButton from "@/components/LogoutButton";
 import {
@@ -19,6 +19,9 @@ import {
   Image,
   Gavel,
   Layers3,
+  LibraryBig,
+  ShieldCheck,
+  Tags,
   
 } from "lucide-react";
 
@@ -35,19 +38,23 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
     ? location.pathname === path
     : location.pathname === path || location.pathname.startsWith(`${path}/`);
 
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
+
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex font-sans text-slate-800">
+    <div className="h-dvh overflow-hidden bg-[#F8FAFC] flex font-sans text-slate-800">
       
       {/* Mobile Overlay */}
       {sidebarOpen && (
         <div 
-          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 lg:hidden transition-opacity"
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 xl:hidden transition-opacity"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* --- SIDEBAR --- */}
-      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-100 transform transition-transform duration-300 ease-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} flex flex-col shadow-2xl lg:shadow-none`}>
+      <aside className={`fixed xl:static inset-y-0 left-0 z-50 w-[min(18rem,88vw)] bg-white border-r border-slate-100 transform transition-transform duration-300 ease-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full xl:translate-x-0'} flex flex-col shadow-2xl xl:shadow-none`}>
         
         {/* Logo Area */}
         <div className="h-24 flex items-center px-8 border-b border-slate-50">
@@ -58,7 +65,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
                 <h1 className="text-xl font-black text-slate-900 tracking-tight leading-none">BimbelKu</h1>
                 <span className="text-[10px] font-bold text-orange-500 uppercase tracking-widest bg-orange-50 px-2 py-0.5 rounded mt-1 inline-block">Super Admin</span>
              </div>
-             <button aria-label="Tutup menu" className="lg:hidden ml-auto text-slate-400 hover:text-rose-500 transition" onClick={() => setSidebarOpen(false)}>
+             <button aria-label="Tutup menu" className="xl:hidden ml-auto text-slate-400 hover:text-rose-500 transition" onClick={() => setSidebarOpen(false)}>
                <X size={24} />
              </button>
         </div>
@@ -99,7 +106,9 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
                 <div className="space-y-1">
                     {/* Menu Monitoring Kelas */}
                     <NavItem to="/admin/classes" icon={BookOpen} label="Monitoring Kelas" active={isActive('/admin/classes')} />
+                    <NavItem to="/admin/subjects" icon={LibraryBig} label="Mata Pelajaran" active={isActive('/admin/subjects')} />
                     <NavItem to="/admin/learning-topics" icon={Layers3} label="Materi Kurikulum" active={isActive('/admin/learning-topics')} />
+                    <NavItem to="/admin/stage-five" icon={Tags} label="Paket, Promo & Konten" active={isActive('/admin/stage-five')} />
                 </div>
             </div>
             
@@ -110,10 +119,11 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
                 </div>
                 <div className="space-y-1">
                     <NavItem to="/admin/finance" icon={PieChart} label="Keuangan" active={isActive('/admin/finance')} />
+                    <NavItem to="/admin/finance-security" icon={ShieldCheck} label="Keamanan Keuangan" active={isActive('/admin/finance-security')} />
                     <NavItem to="/admin/ratings" icon={MessageSquare} label="Moderasi Ulasan" active={isActive('/admin/ratings')} />
                     <NavItem to="/admin/settings-display" icon={Image} label="Tampilan Tutor" active={isActive('/admin/settings-display')} />
                     <NavItem to="/admin/users" icon={Users} label="Data User" active={isActive('/admin/users')} />
-                    <NavItem to="/admin/hourly-rates" icon={Coins} label="Tarif Per Jam" active={isActive('/admin/hourly-rates')} />
+                    <NavItem to="/admin/hourly-rates" icon={Coins} label="Harga Per Sesi" active={isActive('/admin/hourly-rates')} />
                     <NavItem to="/admin/settings-payment" icon={QrCode} label="Rekening & QRIS" active={isActive('/admin/settings-payment')} />
                     <NavItem to="/admin/settings-footer" icon={Globe} label="Footer Website" active={isActive('/admin/settings-footer')} />
                 </div>
@@ -127,12 +137,12 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
       </aside>
 
       {/* --- MAIN CONTENT --- */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         
         {/* Header */}
-        <header className="h-20 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 flex items-center justify-between px-6 lg:px-10 sticky top-0 z-30 transition-all">
-          <div className="flex items-center gap-4">
-            <button aria-label="Buka menu" className="lg:hidden p-2.5 bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 rounded-xl shadow-sm transition" onClick={() => setSidebarOpen(true)}>
+        <header className="h-16 sm:h-20 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 flex items-center justify-between px-3 sm:px-6 xl:px-10 sticky top-0 z-30 transition-all">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <button aria-label="Buka menu" className="xl:hidden p-2.5 bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 rounded-xl shadow-sm transition" onClick={() => setSidebarOpen(true)}>
               <Menu size={20} />
             </button>
             
@@ -142,9 +152,9 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
             </div>
           </div>
           
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2 sm:gap-6">
              {/* Admin Profile */}
-             <div className="flex items-center gap-3 pl-6 border-l border-slate-200 h-8">
+             <div className="flex items-center gap-3 pl-2 sm:pl-6 border-l border-slate-200 h-8">
                  <div className="text-right hidden sm:block">
                     <p className="text-sm font-bold text-slate-800 leading-none">Administrator</p>
                     <p className="text-[10px] text-slate-400 font-medium mt-1">Super User</p>
@@ -156,11 +166,11 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-6 lg:p-10 scroll-smooth">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 xl:p-10 scroll-smooth">
           <div className="max-w-7xl mx-auto pb-12">
             {/* Breadcrumb Title */}
-            <div className="mb-8">
-                <h2 className="text-2xl font-black text-slate-900 tracking-tight">{title}</h2>
+            <div className="mb-5 sm:mb-8">
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">{title}</h2>
                 <p className="text-slate-500 text-sm font-medium">Dashboard Admin Area</p>
             </div>
             {children}

@@ -59,7 +59,7 @@ return [
         (string) env('FRONTEND_URL', 'http://127.0.0.1:8080')
     )[0]),
 
-    'policy_version' => env('POLICY_VERSION', '2026-07-27'),
+    'policy_version' => env('POLICY_VERSION', '2026-07-29'),
 
     /*
     |--------------------------------------------------------------------------

@@ -42,6 +42,9 @@ interface OrderData {
   subject: string;
   type: string;
   price: number;
+  subtotalAmount?: number;
+  discountAmount?: number;
+  packageName?: string;
   date?: string;
   paymentDueAt?: string;
   rejectionReason?: string;
@@ -113,6 +116,9 @@ export default function PaymentPage() {
             subject: response.data.subject,
             type: response.data.type,
             price: Number(response.data.amount),
+            subtotalAmount: Number(response.data.subtotal_amount || response.data.amount),
+            discountAmount: Number(response.data.discount_amount || 0),
+            packageName: response.data.package_name || undefined,
             date: response.data.scheduled_at,
             paymentDueAt: response.data.payment_due_at,
             rejectionReason: response.data.rejection_reason,
@@ -223,7 +229,7 @@ export default function PaymentPage() {
       const response = await http.post(`/orders/${order.orderId}/cancel`);
       toast.success(response.data.message);
       sessionStorage.removeItem("bimbelku_payment_order");
-      navigate("/search", { replace: true });
+      navigate(order.packageName ? "/student/packages" : "/search", { replace: true });
     } catch (error) {
       toast.error(getApiError(error));
     }
@@ -234,7 +240,7 @@ export default function PaymentPage() {
   }
 
   if (state === "paid") {
-    return <StudentLayout title="Pembayaran"><Result icon={CheckCircle2} color="emerald" title="Pembayaran diterima" text="Admin telah memverifikasi transfer. Sesi dan tutor kini terkunci pada jadwalmu." action="Buka kelas saya" onClick={() => navigate("/student/my-classes")} /></StudentLayout>;
+    return <StudentLayout title="Pembayaran"><Result icon={CheckCircle2} color="emerald" title="Pembayaran diterima" text="Admin telah memverifikasi transfer. Sesi dan tutor kini terkunci pada jadwalmu." action="Buka Kelas Saya" onClick={() => navigate("/student/packages")} /></StudentLayout>;
   }
 
   if (state === "refund_pending" || state === "refunded") {
@@ -242,17 +248,17 @@ export default function PaymentPage() {
   }
 
   if (state === "expired" || state === "cancelled" || !order || !settings) {
-    return <StudentLayout title="Pembayaran"><Result icon={XCircle} color="rose" title={state === "cancelled" ? "Tagihan dibatalkan" : "Tagihan tidak tersedia"} text={state === "cancelled" ? "Pesanan dan slot tutor sudah dilepas." : "Batas pembayaran telah berakhir atau tidak ada tagihan aktif."} action="Kembali ke pencarian" onClick={() => navigate("/search")} /></StudentLayout>;
+    return <StudentLayout title="Pembayaran"><Result icon={XCircle} color="rose" title={state === "cancelled" ? "Tagihan dibatalkan" : "Tagihan tidak tersedia"} text={state === "cancelled" ? "Pesanan dan slot tutor sudah dilepas." : "Batas pembayaran telah berakhir atau tidak ada tagihan aktif."} action="Pilih paket belajar" onClick={() => navigate("/student/packages/new")} /></StudentLayout>;
   }
 
   if (state === "submitted") {
     return (
       <StudentLayout title="Pembayaran">
         <div className="mx-auto grid min-h-[65vh] max-w-2xl place-items-center">
-          <div className="w-full rounded-[2.5rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-8 text-center text-white shadow-2xl">
+          <div className="w-full rounded-[2rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-5 text-center text-white shadow-2xl sm:rounded-[2.5rem] sm:p-8">
             <div className="relative mx-auto h-36 w-36"><div className="absolute inset-0 animate-ping rounded-full border border-indigo-300/30" /><div className="absolute inset-4 animate-spin rounded-full border-4 border-indigo-400/20 border-t-indigo-300" /><div className="absolute inset-0 grid place-items-center"><ShieldCheck size={42} className="text-indigo-200" /></div></div>
             <p className="mt-6 text-xs font-black uppercase tracking-[.2em] text-indigo-200">Pemeriksaan manual admin</p><h1 className="mt-3 text-3xl font-black">Bukti transfer sudah diterima</h1><p className="mx-auto mt-3 max-w-lg leading-7 text-indigo-100/70">Anda tidak perlu mengunggah ulang. Status diperiksa otomatis setiap 15 detik dan akan berubah setelah admin memberi keputusan.</p>
-            <div className="mt-7 flex justify-center gap-3"><Button variant="outline" onClick={() => checkStatus(order.orderId)} className="rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"><RefreshCw size={16} className="mr-2" />Periksa sekarang</Button><Button onClick={() => navigate("/student/dashboard")} className="rounded-xl bg-white text-indigo-950 hover:bg-indigo-50">Ke dashboard</Button></div>
+            <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row"><Button variant="outline" onClick={() => checkStatus(order.orderId)} className="rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"><RefreshCw size={16} className="mr-2" />Periksa sekarang</Button><Button onClick={() => navigate("/student/dashboard")} className="rounded-xl bg-white text-indigo-950 hover:bg-indigo-50">Ke dashboard</Button></div>
           </div>
         </div>
       </StudentLayout>
@@ -262,7 +268,7 @@ export default function PaymentPage() {
   return (
     <StudentLayout title="Pembayaran">
       <div className="mx-auto max-w-6xl space-y-6 pb-12">
-        <button onClick={() => navigate("/search")} className="inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-slate-900"><ArrowLeft size={17} />Kembali</button>
+        <button onClick={() => navigate(order.packageName ? "/student/packages" : "/search")} className="inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-slate-900"><ArrowLeft size={17} />Kembali</button>
         {reason && <div className="flex gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-5 text-rose-800"><AlertCircle className="shrink-0" /><div><p className="font-black">Bukti sebelumnya ditolak</p><p className="mt-1 text-sm leading-6">{reason}</p></div></div>}
         {!paymentAccountReady && <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900"><AlertCircle className="shrink-0" /><div><p className="font-black">Rekening pembayaran belum tersedia</p><p className="mt-1 text-sm leading-6">Admin perlu mengisi rekening tujuan terlebih dahulu. Jangan melakukan transfer sebelum informasi rekening tampil lengkap.</p></div></div>}
         {paymentExpired && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm font-bold text-rose-700">Batas waktu telah berakhir. Muat ulang status untuk menutup tagihan.</div>}
@@ -271,8 +277,22 @@ export default function PaymentPage() {
           <section className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm">
             <div className="bg-gradient-to-br from-slate-950 to-indigo-950 p-6 text-white"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-widest text-indigo-200">Tagihan</p><p className="mt-2 font-mono text-xl font-black">{order.invoiceId || `#${order.orderId}`}</p></div><span className="rounded-full bg-orange-500 px-3 py-1.5 text-xs font-bold">Belum dibayar</span></div></div>
             <div className="space-y-5 p-6">
-              <div><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Kelas</p><h1 className="mt-2 text-2xl font-black text-slate-900">{order.subject}</h1><p className="mt-1 text-sm text-slate-500">{order.type} · tutor {order.tutorName}</p></div>
-              <div className="flex items-center justify-between rounded-2xl bg-indigo-50 p-4"><span className="text-sm font-bold text-indigo-700">Total transfer</span><span className="text-2xl font-black text-indigo-950">{rupiah(order.price)}</span></div>
+              <div><p className="text-xs font-bold uppercase tracking-widest text-slate-400">{order.packageName ? "Paket" : "Kelas"}</p><h1 className="mt-2 text-2xl font-black text-slate-900">{order.packageName || order.subject}</h1>{order.packageName && <p className="mt-1 text-sm font-semibold text-slate-600">{order.subject}</p>}<p className="mt-1 text-sm text-slate-500">{order.type} · tutor {order.tutorName}</p></div>
+              <div className="flex flex-col gap-2 rounded-2xl bg-indigo-50 p-4 sm:flex-row sm:items-end sm:justify-between">
+                <span className="text-sm font-bold text-indigo-700">Total transfer</span>
+                <div className="text-left sm:text-right">
+                  {Boolean(order.discountAmount && order.discountAmount > 0) && (
+                    <div className="mb-1 flex items-center gap-2 sm:justify-end">
+                      <span className="text-xs font-semibold text-slate-500 line-through">{rupiah(order.subtotalAmount || order.price)}</span>
+                      <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-black text-orange-700">
+                        {Math.round(((order.discountAmount || 0) / Math.max(order.subtotalAmount || order.price, 1)) * 100)}%
+                      </span>
+                    </div>
+                  )}
+                  <span className="text-xl font-black text-indigo-950 sm:text-2xl">{rupiah(order.price)}</span>
+                  {Boolean(order.discountAmount && order.discountAmount > 0) && <p className="mt-1 text-[11px] font-bold text-emerald-700">Hemat {rupiah(order.discountAmount || 0)}</p>}
+                </div>
+              </div>
               {order.paymentDueAt && <div className="flex items-center justify-between rounded-2xl border border-amber-100 bg-amber-50 p-4 text-amber-800"><span className="flex items-center gap-2 text-sm font-bold"><Clock3 size={17} />Sisa waktu</span><span className="font-mono text-lg font-black">{timeText}</span></div>}
               <div className="rounded-2xl border border-slate-100 p-4"><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Rekening admin</p><div className="mt-4 space-y-3 text-sm"><Row icon={Building2} label="Bank" value={settings.bank_name} /><Row icon={UserRound} label="Atas nama" value={settings.account_name} /><div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3"><div><p className="text-xs text-slate-400">Nomor rekening</p><p className="mt-1 font-mono font-black text-slate-900">{settings.account_number}</p></div><Button type="button" variant="ghost" size="icon" onClick={() => copy(settings.account_number, "Nomor rekening")}><Copy size={17} /></Button></div></div></div>
               {settings.qris_url && <div className="rounded-2xl border border-slate-100 p-4 text-center"><p className="text-xs font-bold uppercase tracking-widest text-slate-400">QRIS admin</p><img src={settings.qris_url} alt="QRIS pembayaran" className="mx-auto mt-3 max-h-60 rounded-xl object-contain" /></div>}
@@ -307,5 +327,5 @@ function Result({ icon: Icon, color, title, text, action, onClick }: { icon: typ
     : color === "amber"
       ? "bg-amber-50 text-amber-600 border-amber-100"
       : "bg-rose-50 text-rose-600 border-rose-100";
-  return <div className="mx-auto grid min-h-[65vh] max-w-xl place-items-center"><div className="rounded-[2.5rem] border border-slate-100 bg-white p-9 text-center shadow-xl"><div className={`mx-auto grid h-24 w-24 place-items-center rounded-full border-4 ${tone}`}><Icon size={44} /></div><h1 className="mt-7 text-3xl font-black text-slate-900">{title}</h1><p className="mt-3 leading-7 text-slate-500">{text}</p><Button onClick={onClick} className="mt-7 h-12 w-full rounded-xl bg-slate-950 font-bold hover:bg-slate-800">{action}</Button></div></div>;
+  return <div className="mx-auto grid min-h-[65vh] max-w-xl place-items-center"><div className="rounded-[2rem] border border-slate-100 bg-white p-6 text-center shadow-xl sm:rounded-[2.5rem] sm:p-9"><div className={`mx-auto grid h-20 w-20 place-items-center rounded-full border-4 sm:h-24 sm:w-24 ${tone}`}><Icon size={40} /></div><h1 className="mt-7 text-2xl font-black text-slate-900 sm:text-3xl">{title}</h1><p className="mt-3 leading-7 text-slate-500">{text}</p><Button onClick={onClick} className="mt-7 h-12 w-full rounded-xl bg-slate-950 font-bold hover:bg-slate-800">{action}</Button></div></div>;
 }

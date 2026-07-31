@@ -20,6 +20,8 @@ class ClassroomController extends Controller
                 'participants.order.refund',
                 'reports' => fn ($query) => $query->latest(),
                 'disputes' => fn ($query) => $query->latest(),
+                'sessionAttendances',
+                'learningProgressReports',
             ])
             ->latest('start_at')
             ->limit(200)
@@ -75,9 +77,6 @@ class ClassroomController extends Controller
                         'name' => $hasSessionAccess
                             ? $participant->student?->name
                             : 'Murid BimbelKu',
-                        'contact_number' => $hasSessionAccess
-                            ? $participant->student?->phone
-                            : null,
                         'status' => $participant->status,
                         'amount' => $participant->amount,
                         'order_status' => $participant->order?->status,
@@ -87,7 +86,15 @@ class ClassroomController extends Controller
                 'latest_report' => $booking->reports->first(),
                 'latest_dispute' => $booking->disputes->first(),
                 'can_complete' => in_array($booking->status, ['confirmed', 'in_progress'], true)
-                    && now()->gte($booking->end_at->copy()->subMinutes(15)),
+                    && now()->gte($booking->end_at->copy()->subMinutes(15))
+                    && (
+                        $booking->class_type !== 'private'
+                        || (
+                            $booking->sessionAttendances
+                                ->contains(fn ($attendance) => $attendance->pin_verified_at && $attendance->check_out_at)
+                            && $booking->learningProgressReports->isNotEmpty()
+                        )
+                    ),
                 'can_report_absence' => in_array($booking->status, ['confirmed', 'in_progress'], true)
                     && now()->gte($booking->start_at->copy()->addMinutes(15)),
                 'can_report_emergency' => !in_array($booking->status, [

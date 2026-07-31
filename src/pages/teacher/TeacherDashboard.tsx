@@ -14,7 +14,7 @@ import {
 import { toast } from "sonner";
 
 import TeacherLayout from "@/components/TeacherLayout";
-import http from "@/lib/http";
+import { getCached } from "@/lib/http";
 
 type Participant = {
   student_id: number;
@@ -71,9 +71,9 @@ export default function TeacherDashboard() {
     const load = async () => {
       try {
         const [profileResponse, salaryResponse, classesResponse] = await Promise.all([
-          http.get("/teacher/profile"),
-          http.get("/teacher/salary"),
-          http.get<TeacherClass[]>("/teacher/classes"),
+          getCached("/teacher/profile", { maxAgeMs: 60_000 }),
+          getCached("/teacher/salary", { maxAgeMs: 15_000 }),
+          getCached<TeacherClass[]>("/teacher/classes", { maxAgeMs: 15_000 }),
         ]);
 
         setName(profileResponse.data.user?.name || "Tutor");

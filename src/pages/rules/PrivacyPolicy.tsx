@@ -4,7 +4,7 @@ import { ArrowLeft, Eye, LockKeyhole, MapPinned, ShieldCheck } from "lucide-reac
 const sections = [
   {
     title: "Data yang dikumpulkan",
-    text: "Kami memproses data akun, kontak, persetujuan kebijakan, profil akademik, permintaan materi, jadwal, lampiran soal, pesan bantuan, notifikasi, rating, serta catatan transaksi. Untuk tutor, data juga mencakup kartu identitas, foto wajah langsung, ijazah atau sertifikasi, rekening pencairan, lokasi dasar, dan jadwal tersedia.",
+    text: "Kami memproses data akun, kontak, tanggal lahir murid, persetujuan kebijakan, profil akademik, permintaan materi, jadwal, lampiran soal, pesan bantuan, notifikasi, rating, serta catatan transaksi. Untuk murid di bawah 18 tahun, nama, nomor, hubungan, dan waktu persetujuan orang tua atau wali juga dicatat. Untuk tutor, data mencakup kartu identitas, foto wajah langsung, ijazah atau bukti kualifikasi, rekening pencairan, lokasi dasar, dan jadwal tersedia.",
   },
   {
     title: "Lokasi dan sesi offline",
@@ -20,7 +20,7 @@ const sections = [
   },
   {
     title: "Pihak yang dapat menerima data",
-    text: "Data hanya dibuka sesuai kebutuhan kepada admin yang berwenang, tutor atau murid yang telah dipasangkan, penyedia infrastruktur teknis, serta otoritas jika diwajibkan hukum. BimbelKu tidak memakai payment gateway pada alur ini dan tidak menjual data pribadi.",
+    text: "Data hanya dibuka sesuai kebutuhan kepada admin yang berwenang, pengguna yang telah dipasangkan, penyedia infrastruktur teknis, serta otoritas jika diwajibkan hukum. Email, nomor pribadi, data wali, dan rekening tidak diberikan kepada pasangan belajar. Komunikasi pengguna disiapkan melalui fitur internal. BimbelKu tidak memakai payment gateway pada alur ini dan tidak menjual data pribadi.",
   },
   {
     title: "Penyimpanan dan keamanan",
@@ -47,7 +47,7 @@ export default function PrivacyPolicy() {
       <main className="mx-auto mt-10 max-w-4xl overflow-hidden rounded-[2.5rem] border border-white bg-white px-6 py-10 shadow-xl shadow-slate-200/60 md:px-14 md:py-14">
         <div className="mx-auto max-w-2xl text-center">
           <span className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-blue-700">
-            <ShieldCheck size={14} /> Versi 27 Juli 2026
+            <ShieldCheck size={14} /> Versi 29 Juli 2026
           </span>
           <h1 className="mt-6 text-4xl font-black tracking-tight text-slate-950 md:text-5xl">Kebijakan Privasi</h1>
           <p className="mt-4 leading-7 text-slate-500">Penjelasan ringkas tentang data yang diperlukan dan cara BimbelKu menggunakannya.</p>

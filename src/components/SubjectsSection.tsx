@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowUpRight } from "lucide-react";
 import Reveal from "@/components/Reveal";
-import http from "@/lib/http";
+import { getCached } from "@/lib/http";
 
 const fallbackSubjects = [
   "Matematika",
@@ -34,7 +34,10 @@ const SubjectsSection = () => {
 
   useEffect(() => {
     let active = true;
-    void http.get<{ subjects?: string[] }>("/learning-catalog")
+    void getCached<{ subjects?: string[] }>("/learning-catalog", {
+      params: { compact: 1 },
+      maxAgeMs: 5 * 60_000,
+    })
       .then((response) => {
         const available = response.data.subjects?.filter(Boolean).slice(0, 8);
         if (active && available?.length) setSubjects(available);

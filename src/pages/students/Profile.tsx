@@ -1,14 +1,15 @@
-import { API_BASE_URL } from "@/lib/http";
+import { useState, useEffect, useRef } from "react";
 import { useState, useEffect, useRef } from "react";
 import StudentLayout from "../../components/StudentLayout";
-import axios from "axios";
 import { toast } from "sonner";
 import { 
-  User, Mail, Lock, Save, Loader2, Camera, ShieldCheck, ImagePlus,
+  AlertCircle, User, Mail, Lock, Save, Loader2, Camera, ShieldCheck, ImagePlus, CalendarDays, UserRoundCheck, RefreshCw, WifiOff,
 } from "lucide-react";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
 import { formatAccountDate } from "@/lib/date";
+import http, { getCached } from "@/lib/http";
 import { isValidPhone, validateUpload } from "@/lib/validation";
+import axios from "axios";
 
 export default function Profile() {
   // State User Data
@@ -19,6 +20,13 @@ export default function Profile() {
     avatar_url: "" as string | null,
     profile_cover_url: "" as string | null,
     password_updated_at: "" as string | null,
+    student_birth_date: "" as string | null,
+    guardian: null as null | {
+      name: string;
+      phone: string;
+      relationship: string;
+      consent_at: string;
+    },
   });
   
   // State File Foto (Untuk Upload)
@@ -31,15 +39,14 @@ export default function Profile() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // 1. FETCH DATA USER
   useEffect(() => {
     const fetchUser = async () => {
+      setError(null);
       try {
-        const token = localStorage.getItem("token");
-        const response = await axios.get(`${API_BASE_URL}/user`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await getCached("/user", { maxAgeMs: 60_000 });
         
         // Asumsi response backend mengembalikan { name, email, avatar_url }
         // Jika backend mengirim 'photo' atau 'avatar', sesuaikan di sini
@@ -51,10 +58,27 @@ export default function Profile() {
             avatar_url: userData.avatar_url || userData.photo_url || null,
             profile_cover_url: userData.profile_cover_url || null,
             password_updated_at: userData.password_updated_at || null,
+            student_birth_date: userData.student_birth_date || null,
+            guardian: userData.guardian || null,
         });
 
-      } catch (error) {
-        console.error("Gagal load profile:", error);
+      } catch (err) {
+        console.error("Gagal load profile:", err);
+        if (axios.isAxiosError(err)) {
+          if (!err.response) {
+            setError("network");
+          } else if (err.response.status === 401) {
+            setError("unauthorized");
+          } else if (err.response.status === 403) {
+            setError("forbidden");
+          } else if (err.response.status === 404) {
+            setError("not_found");
+          } else {
+            setError("generic");
+          }
+        } else {
+          setError("generic");
+        }
         toast.error("Gagal memuat data profil.");
       } finally {
         setIsLoading(false);
@@ -67,6 +91,49 @@ export default function Profile() {
       if (coverPreviewUrlRef.current) URL.revokeObjectURL(coverPreviewUrlRef.current);
     };
   }, []);
+
+  const retryLoad = () => {
+    setError(null);
+    setIsLoading(true);
+    // Trigger re-fetch by remounting via key trick isn't needed;
+    // call fetchUser directly via a helper
+    const fetchUser = async () => {
+      try {
+        const response = await getCached("/user", { maxAgeMs: 60_000, force: true });
+        const userData = response.data;
+        setUser({
+            name: userData.name,
+            email: userData.email,
+            phone: userData.phone || "",
+            avatar_url: userData.avatar_url || userData.photo_url || null,
+            profile_cover_url: userData.profile_cover_url || null,
+            password_updated_at: userData.password_updated_at || null,
+            student_birth_date: userData.student_birth_date || null,
+            guardian: userData.guardian || null,
+        });
+      } catch (err) {
+        if (axios.isAxiosError(err)) {
+          if (!err.response) {
+            setError("network");
+          } else if (err.response.status === 401) {
+            setError("unauthorized");
+          } else if (err.response.status === 403) {
+            setError("forbidden");
+          } else if (err.response.status === 404) {
+            setError("not_found");
+          } else {
+            setError("generic");
+          }
+        } else {
+          setError("generic");
+        }
+        toast.error("Gagal memuat data profil.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    void fetchUser();
+  };
 
   // 2. HANDLER GANTI FOTO (PREVIEW)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -125,8 +192,6 @@ export default function Profile() {
     setIsSaving(true);
 
     try {
-      const token = localStorage.getItem("token");
-      
       // Gunakan FormData untuk kirim File + Text
       const formData = new FormData();
       formData.append("name", user.name);
@@ -142,9 +207,8 @@ export default function Profile() {
         formData.append("profile_cover", selectedCover);
       }
 
-      const response = await axios.post(`${API_BASE_URL}/user`, formData, {
+      const response = await http.post("/user", formData, {
         headers: { 
-            Authorization: `Bearer ${token}`,
             "Content-Type": "multipart/form-data" 
         }
       });
@@ -184,6 +248,12 @@ export default function Profile() {
             <Loader2 className="animate-spin text-blue-600" size={40}/>
             <p className="text-slate-400 font-medium animate-pulse">Memuat profil...</p>
         </div>
+    </StudentLayout>
+  );
+
+  if (error) return (
+    <StudentLayout title="Profil Saya">
+      <ProfileErrorState error={error} onRetry={retryLoad} />
     </StudentLayout>
   );
 
@@ -337,6 +407,27 @@ export default function Profile() {
                                 </div>
                             </div>
                         </div>
+
+                        {user.student_birth_date && (
+                          <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                            <p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-blue-600">
+                              <CalendarDays size={16} /> Tanggal lahir murid
+                            </p>
+                            <p className="mt-2 font-bold text-slate-800">{user.student_birth_date}</p>
+                          </div>
+                        )}
+
+                        {user.guardian && (
+                          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
+                            <p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-amber-700">
+                              <UserRoundCheck size={16} /> Orang tua / wali
+                            </p>
+                            <p className="mt-2 font-bold text-slate-800">{user.guardian.name}</p>
+                            <p className="mt-1 text-sm text-slate-600">{guardianRelationship(user.guardian.relationship)} · {user.guardian.phone}</p>
+                            <p className="mt-2 text-xs font-semibold text-emerald-700">Persetujuan wali telah tercatat.</p>
+                            <p className="mt-1 text-xs text-slate-500">Perubahan data wali diajukan melalui Pusat Bantuan.</p>
+                          </div>
+                        )}
                     </div>
                 </div>
 
@@ -388,5 +479,86 @@ export default function Profile() {
         </form>
       </div>
     </StudentLayout>
+  );
+}
+
+function guardianRelationship(value: string) {
+  return {
+    orang_tua: "Orang tua",
+    wali_keluarga: "Wali keluarga",
+    wali_resmi: "Wali resmi lainnya",
+  }[value] || "Wali";
+}
+
+function ProfileErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
+  if (error === "network") {
+    return (
+      <div className="grid min-h-[400px] place-items-center px-4 text-center">
+        <div>
+          <WifiOff className="mx-auto text-slate-300" size={48} />
+          <h2 className="mt-4 text-xl font-black text-slate-800">Koneksi Terputus</h2>
+          <p className="mt-2 text-sm text-slate-500">Periksa koneksi internet Anda dan coba lagi.</p>
+          <button onClick={onRetry} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white hover:bg-blue-700 transition-colors">
+            <RefreshCw size={16} /> Coba Lagi
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (error === "forbidden") {
+    return (
+      <div className="grid min-h-[400px] place-items-center px-4 text-center">
+        <div>
+          <AlertCircle className="mx-auto text-amber-500" size={48} />
+          <h2 className="mt-4 text-xl font-black text-slate-800">Akses Ditolak</h2>
+          <p className="mt-2 text-sm text-slate-500">Anda tidak memiliki izin untuk mengakses halaman ini.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error === "not_found") {
+    return (
+      <div className="grid min-h-[400px] place-items-center px-4 text-center">
+        <div>
+          <AlertCircle className="mx-auto text-slate-300" size={48} />
+          <h2 className="mt-4 text-xl font-black text-slate-800">Data Tidak Ditemukan</h2>
+          <p className="mt-2 text-sm text-slate-500">Profil tidak dapat dimuat saat ini.</p>
+          <button onClick={onRetry} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white hover:bg-blue-700 transition-colors">
+            <RefreshCw size={16} /> Coba Lagi
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (error === "unauthorized") {
+    return (
+      <div className="grid min-h-[400px] place-items-center px-4 text-center">
+        <div>
+          <AlertCircle className="mx-auto text-orange-500" size={48} />
+          <h2 className="mt-4 text-xl font-black text-slate-800">Sesi Berakhir</h2>
+          <p className="mt-2 text-sm text-slate-500">Sesi Anda telah berakhir. Silakan login kembali.</p>
+          <a href="/login" className="mt-5 inline-flex rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white hover:bg-blue-700 transition-colors">
+            Login Kembali
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // Generic error
+  return (
+    <div className="grid min-h-[400px] place-items-center px-4 text-center">
+      <div>
+        <AlertCircle className="mx-auto text-rose-500" size={48} />
+        <h2 className="mt-4 text-xl font-black text-slate-800">Terjadi Kesalahan</h2>
+        <p className="mt-2 text-sm text-slate-500">Profil tidak dapat dimuat. Silakan coba lagi.</p>
+        <button onClick={onRetry} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white hover:bg-blue-700 transition-colors">
+          <RefreshCw size={16} /> Coba Lagi
+        </button>
+      </div>
+    </div>
   );
 }

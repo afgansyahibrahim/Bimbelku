@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Models\Booking;
 use App\Models\BookingParticipant;
 use App\Models\BookingRequest;
+use App\Models\FinanceAuthorization;
 use App\Models\Order;
+use App\Models\PaymentSetting;
 use App\Models\TeacherProfile;
 use App\Models\TeacherOffer;
 use App\Models\TeacherSubject;
@@ -111,6 +113,32 @@ class StageTwoBackendSecurityTest extends TestCase
         $this->assertDatabaseCount('notifications', 1);
     }
 
+    public function test_authorized_teacher_document_is_served_as_an_inline_preview(): void
+    {
+        Storage::fake('local');
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $teacher = User::factory()->create([
+            'role' => 'teacher',
+            'status' => 'pending',
+        ]);
+        $path = 'teacher_selfies/selfie.jpg';
+        Storage::disk('local')->put($path, 'fake-image-content');
+        TeacherProfile::create([
+            'user_id' => $teacher->id,
+            'live_selfie' => $path,
+            'points' => 150,
+            'is_accepting_requests' => false,
+        ]);
+        Sanctum::actingAs($admin);
+
+        $this->get("/api/teachers/{$teacher->id}/documents/live_selfie")
+            ->assertOk()
+            ->assertHeader('Content-Disposition', 'inline; filename="selfie.jpg"');
+    }
+
     public function test_payment_account_configuration_remains_a_single_record(): void
     {
         $admin = User::factory()->create([
@@ -124,6 +152,96 @@ class StageTwoBackendSecurityTest extends TestCase
 
         $this->assertDatabaseCount('payment_settings', 1);
         $this->assertDatabaseHas('payment_settings', ['singleton_key' => 1]);
+    }
+
+    public function test_admin_can_complete_the_first_payment_account_while_an_old_invoice_is_open(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $student = User::factory()->create([
+            'role' => 'student',
+            'status' => 'active',
+        ]);
+        $teacher = User::factory()->create([
+            'role' => 'teacher',
+            'status' => 'active',
+        ]);
+        PaymentSetting::create([
+            'singleton_key' => 1,
+            'merchant_name' => 'BimbelKu Official',
+            'bank_name' => '',
+            'account_number' => '',
+            'account_name' => '',
+        ]);
+        $startAt = now()->addDay()->setTime(18, 0);
+        $bookingRequest = BookingRequest::create([
+            'student_id' => $student->id,
+            'matched_teacher_id' => $teacher->id,
+            'subject_name' => 'Matematika',
+            'education_level' => 'SMP',
+            'grade' => 'Kelas 8',
+            'chapter' => 'Aljabar',
+            'learning_mode' => 'online',
+            'class_type' => 'private',
+            'scheduled_date' => $startAt->toDateString(),
+            'start_time' => '18:00:00',
+            'end_time' => '19:00:00',
+            'duration_hours' => 1,
+            'status' => 'awaiting_payment',
+            'hourly_rate' => 40000,
+            'total_amount' => 40000,
+            'payment_due_at' => now()->addMinutes(30),
+        ]);
+        $booking = Booking::create([
+            'booking_request_id' => $bookingRequest->id,
+            'student_id' => $student->id,
+            'teacher_id' => $teacher->id,
+            'start_at' => $startAt,
+            'end_at' => $startAt->copy()->addHour(),
+            'duration_hours' => 1,
+            'learning_mode' => 'online',
+            'class_type' => 'private',
+            'hourly_rate' => 40000,
+            'total_amount' => 40000,
+            'status' => 'awaiting_payment',
+            'payment_due_at' => now()->addMinutes(30),
+            'commission_percent' => 20,
+            'payout_status' => 'locked',
+        ]);
+        Order::create([
+            'user_id' => $student->id,
+            'booking_id' => $booking->id,
+            'order_id' => 'INV-OLD-OPEN',
+            'amount' => 40000,
+            'status' => 'pending',
+        ]);
+        Sanctum::actingAs($admin);
+        $admin->forceFill([
+            'finance_totp_secret' => 'JBSWY3DPEHPK3PXP',
+            'finance_totp_confirmed_at' => now(),
+        ])->save();
+        FinanceAuthorization::create([
+            'user_id' => $admin->id,
+            'token_fingerprint' => hash('sha256', 'no-bearer-token'),
+            'verified_at' => now(),
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        $this->postJson('/api/admin/payment-settings', [
+            'merchant_name' => 'BimbelKu Official',
+            'bank_name' => 'BCA',
+            'account_number' => '1234567890',
+            'account_name' => 'BimbelKu',
+        ], ['Idempotency-Key' => 'test-payment-setting-001'])->assertOk();
+
+        $this->assertDatabaseHas('payment_settings', [
+            'singleton_key' => 1,
+            'bank_name' => 'BCA',
+            'account_number' => '1234567890',
+            'account_name' => 'BimbelKu',
+        ]);
     }
 
     public function test_unpaid_group_participant_cannot_report_teacher_absence(): void

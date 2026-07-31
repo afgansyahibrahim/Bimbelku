@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\BookingRequest;
+use App\Models\CurriculumSubject;
 use App\Models\PaymentSetting;
 use App\Models\Notification;
 use App\Models\Setting;
@@ -11,6 +12,7 @@ use App\Models\User;
 use App\Services\GroupClassService;
 use App\Services\HourlyRateService;
 use App\Services\TeacherMatchingService;
+use App\Support\EducationCatalog;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -32,15 +34,26 @@ class BookingRequestController extends Controller
             ->latest()
             ->paginate(10);
 
+        $requestIds = $requests->getCollection()->pluck('id');
         foreach ($requests->items() as $bookingRequest) {
             $this->refreshState($bookingRequest, $matchingService);
         }
 
+        $refreshedRequests = BookingRequest::query()
+            ->whereIn('id', $requestIds)
+            ->with($this->studentRelations())
+            ->get()
+            ->keyBy('id');
+
         $requests->setCollection(
-            $requests->getCollection()->map(function (BookingRequest $item) use ($request) {
-                $fresh = $item->fresh($this->studentRelations());
-                return $this->prepareForStudent($fresh, $request->user()->id);
-            })
+            $requestIds
+                ->map(fn ($id) => $refreshedRequests->get($id))
+                ->filter()
+                ->map(fn (BookingRequest $item) => $this->prepareForStudent(
+                    $item,
+                    $request->user()->id
+                ))
+                ->values()
         );
 
         return response()->json([
@@ -82,7 +95,7 @@ class BookingRequestController extends Controller
         ]);
         $validated = $request->validate([
             'subject_name' => ['required', 'string', 'max:120'],
-            'education_level' => ['required', Rule::in(['SD', 'SMP', 'SMA', 'Umum'])],
+            'education_level' => ['required', Rule::in(EducationCatalog::LEVELS)],
             'grade' => ['required', 'string', 'max:50'],
             'chapter' => ['required', 'string', 'max:180'],
             'subtopic' => ['nullable', 'string', 'max:220'],
@@ -100,29 +113,34 @@ class BookingRequestController extends Controller
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'contact_number' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+() .-]+$/'],
         ]);
-        $gradesByLevel = [
-            'SD' => ['Kelas 1', 'Kelas 2', 'Kelas 3', 'Kelas 4', 'Kelas 5', 'Kelas 6'],
-            'SMP' => ['Kelas 7', 'Kelas 8', 'Kelas 9'],
-            'SMA' => ['Kelas 10', 'Kelas 11', 'Kelas 12'],
-            'Umum' => ['Umum'],
-        ];
-        if (!in_array($validated['grade'], $gradesByLevel[$validated['education_level']], true)) {
+        if (!EducationCatalog::supports($validated['education_level'], $validated['grade'])) {
             return response()->json([
                 'message' => 'Kelas tidak sesuai dengan jenjang yang dipilih.',
             ], 422);
         }
 
+        $subject = CurriculumSubject::query()
+            ->where('is_active', true)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($validated['subject_name'])])
+            ->first();
+        if (!$subject || !in_array($validated['grade'], $subject->grades ?? [], true)) {
+            return response()->json([
+                'message' => 'Mata pelajaran belum tersedia untuk kelas yang dipilih.',
+            ], 422);
+        }
+        $validated['subject_name'] = $subject->name;
+
         $timezone = config('app.timezone', 'Asia/Jakarta');
         $startAt = Carbon::parse($validated['scheduled_date'].' '.$validated['start_time'], $timezone);
         $endAt = $startAt->copy()->addHours((int) $validated['duration_hours']);
-        $minimumLeadMinutes = $validated['class_type'] === 'group' ? 240 : 90;
 
-        if ($startAt->lessThanOrEqualTo(now()->addMinutes($minimumLeadMinutes))) {
+        if (((int) $startAt->format('i')) % 10 !== 0) {
             return response()->json([
-                'message' => $validated['class_type'] === 'group'
-                    ? 'Kelas kelompok harus dipesan minimal empat jam sebelum sesi.'
-                    : 'Kelas privat harus dipesan minimal 90 menit sebelum sesi.',
+                'message' => 'Menit mulai harus memakai kelipatan 10: 00, 10, 20, 30, 40, atau 50.',
             ], 422);
+        }
+        if ($startAt->lessThanOrEqualTo(now())) {
+            return response()->json(['message' => 'Pilih waktu mulai yang belum berlalu.'], 422);
         }
 
         if (!$startAt->isSameDay($endAt)) {
@@ -149,6 +167,7 @@ class BookingRequestController extends Controller
 
         $bookingData = $validated;
         unset($bookingData['attachment']);
+        $bookingData['curriculum_subject_id'] = $subject->id;
 
         if ($validated['learning_mode'] === 'offline') {
             $contactNumber = trim((string) ($validated['contact_number'] ?? $student->phone));
@@ -252,6 +271,9 @@ class BookingRequestController extends Controller
                     'search_started_at' => now(),
                     'search_expires_at' => now()->addHours($initialSearchHours),
                 ]);
+                if ($bookingRequest->class_type !== $bookingData['class_type']) {
+                    abort(500, 'Jenis kelas gagal disimpan sesuai pilihan murid.');
+                }
                 $pool = $bookingRequest->class_type === 'group'
                     ? $groupService->joinOrCreate($bookingRequest)
                     : null;
@@ -291,9 +313,15 @@ class BookingRequestController extends Controller
         return response()->json([
             'message' => match ($fresh->status) {
                 'group_forming' => 'Ruang kelompok dibuat. Sistem sedang mencari murid dengan kebutuhan dan jadwal yang sama.',
-                'teacher_pending' => 'Radar menemukan kandidat. Jawaban tutor sedang ditunggu.',
-                'no_teacher' => 'Permintaan tersimpan, tetapi tutor belum ditemukan pada jangkauan saat ini.',
-                default => 'Permintaan berhasil dibuat.',
+                'teacher_pending' => $fresh->class_type === 'private'
+                    ? 'Permintaan privat dibuat. Radar menemukan kandidat dan sedang menunggu jawaban tutor.'
+                    : 'Permintaan kelompok dibuat. Radar menemukan kandidat dan sedang menunggu jawaban tutor.',
+                'no_teacher' => $fresh->class_type === 'private'
+                    ? 'Permintaan privat tersimpan, tetapi tutor belum ditemukan pada jangkauan saat ini.'
+                    : 'Permintaan kelompok tersimpan, tetapi tutor belum ditemukan pada jangkauan saat ini.',
+                default => $fresh->class_type === 'private'
+                    ? 'Permintaan privat berhasil dibuat.'
+                    : 'Permintaan kelompok berhasil dibuat.',
             },
             'data' => $this->prepareForStudent($fresh, $student->id),
         ], 201);
@@ -383,7 +411,7 @@ class BookingRequestController extends Controller
                 (int) (Setting::where('key', 'maximum_search_hours')->value('value') ?? 48)
             );
             $maximumDeadline = $lockedRequest->search_started_at->copy()->addHours($maximumHours);
-            $classCutoff = $matchingService->startAt($lockedRequest)->subMinutes(60);
+            $classCutoff = $matchingService->startAt($lockedRequest);
             $resolvedDeadline = $maximumDeadline->min($classCutoff);
 
             if ($resolvedDeadline->isPast()) {
@@ -891,20 +919,22 @@ class BookingRequestController extends Controller
 
         $bookingRequest->unsetRelation('student');
         $bookingRequest->unsetRelation('groupPool');
+        $bookingRequest->unsetRelation('offers');
 
         return $bookingRequest;
     }
 
     private function refreshState(BookingRequest $bookingRequest, TeacherMatchingService $matchingService): void
     {
-        $pendingOffer = $bookingRequest->offers()->where('status', 'pending')->latest()->first();
+        $pendingOffer = $bookingRequest->offers->first();
         if ($pendingOffer && $pendingOffer->expires_at->isPast()) {
             $matchingService->expireOfferAndContinue($pendingOffer);
+            return;
         }
 
         if (
             $bookingRequest->status === 'student_cooldown'
-            && !$bookingRequest->student()->first()?->search_cooldown_until?->isFuture()
+            && !$bookingRequest->student?->search_cooldown_until?->isFuture()
         ) {
             $resumed = BookingRequest::query()
                 ->whereKey($bookingRequest->id)
@@ -916,10 +946,7 @@ class BookingRequestController extends Controller
         }
         if (
             $bookingRequest->status === 'matching'
-            && !$bookingRequest->offers()
-                ->where('status', 'pending')
-                ->where('expires_at', '>', now())
-                ->exists()
+            && !$pendingOffer?->expires_at?->isFuture()
         ) {
             $matchingService->dispatchNextOffer($bookingRequest);
         }
@@ -985,6 +1012,9 @@ class BookingRequestController extends Controller
             'booking.participants.order',
             'booking.groupPool',
             'groupPool.members',
+            'offers' => fn ($query) => $query
+                ->where('status', 'pending')
+                ->latest('offered_at'),
         ];
     }
 

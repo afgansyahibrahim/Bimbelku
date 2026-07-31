@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { openProtectedFile } from "@/components/ProtectedImage";
 import http, { getApiError } from "@/lib/http";
 
 interface Teacher {
@@ -104,16 +105,7 @@ export default function TeacherVerification() {
 
   const openDocument = async (url: string, label: string) => {
     try {
-      const response = await http.get(url, { responseType: "blob" });
-      const objectUrl = URL.createObjectURL(response.data);
-      const preview = window.open(objectUrl, "_blank", "noopener,noreferrer");
-      if (!preview) {
-        const anchor = document.createElement("a");
-        anchor.href = objectUrl;
-        anchor.download = label;
-        anchor.click();
-      }
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      await openProtectedFile(url, label);
     } catch (error) {
       toast.error(getApiError(error, "Dokumen gagal dibuka."));
     }
@@ -123,7 +115,7 @@ export default function TeacherVerification() {
     <AdminLayout title="Verifikasi Tutor">
       <div className="space-y-6 pb-12">
         <section className="rounded-[2rem] bg-gradient-to-br from-slate-950 to-indigo-950 p-7 text-white">
-          <p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Standar pengajar</p><h1 className="mt-3 text-3xl font-black">Verifikasi identitas & kemampuan</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/70">Tidak ada status premium. Semua tutor melewati standar yang sama dan hanya dapat memilih satu mata pelajaran utama.</p>
+          <p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Pemeriksaan dokumen</p><h1 className="mt-3 text-3xl font-black">Verifikasi identitas & kualifikasi</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/70">Admin memeriksa identitas, foto wajah langsung, dan bukti kualifikasi. Tes materi, wawancara, microteaching, dan masa percobaan tidak digunakan.</p>
         </section>
         <div className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-100 bg-white p-4 sm:flex-row sm:items-center">
           <div className="flex gap-2"><Tab active={tab === "pending"} onClick={() => setTab("pending")} icon={FileCheck2} label={`Menunggu (${pending.length})`} /><Tab active={tab === "history"} onClick={() => setTab("history")} icon={History} label="Riwayat" /></div>

@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Booking extends Model
 {
-    protected $hidden = ['completion_evidence'];
+    protected $hidden = ['completion_evidence', 'session_pin_hash'];
     protected $appends = ['completion_evidence_url'];
 
     protected $fillable = [
@@ -16,7 +16,8 @@ class Booking extends Model
         'group_pool_id', 'commission_percent', 'gross_amount', 'teacher_net_amount',
         'completion_evidence', 'meeting_link', 'completion_notes', 'completion_submitted_at',
         'objection_deadline', 'student_approved_at', 'admin_review_required_at',
-        'completed_at', 'payout_status',
+        'completed_at', 'payout_status', 'session_pin_hash', 'session_pin_expires_at',
+        'session_started_at', 'session_ended_at',
     ];
 
     protected $casts = [
@@ -34,6 +35,9 @@ class Booking extends Model
         'student_approved_at' => 'datetime',
         'admin_review_required_at' => 'datetime',
         'completed_at' => 'datetime',
+        'session_pin_expires_at' => 'datetime',
+        'session_started_at' => 'datetime',
+        'session_ended_at' => 'datetime',
     ];
 
     public function bookingRequest()
@@ -84,6 +88,26 @@ class Booking extends Model
     public function refunds()
     {
         return $this->hasMany(Refund::class);
+    }
+
+    public function classroomMessages()
+    {
+        return $this->hasMany(ClassroomMessage::class);
+    }
+
+    public function learningPlan()
+    {
+        return $this->hasOne(LearningPlan::class);
+    }
+
+    public function learningProgressReports()
+    {
+        return $this->hasMany(LearningProgressReport::class);
+    }
+
+    public function sessionAttendances()
+    {
+        return $this->hasMany(SessionAttendance::class);
     }
 
     public function getCompletionEvidenceUrlAttribute(): ?string

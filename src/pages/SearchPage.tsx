@@ -2,6 +2,8 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
+  ArrowLeft,
+  ArrowRight,
   BookOpen,
   CalendarDays,
   CheckCircle2,
@@ -24,6 +26,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import StudentLayout from "@/components/StudentLayout";
+import SubjectCombobox, { SubjectOption } from "@/components/SubjectCombobox";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -31,8 +34,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import http, { getApiError, STORAGE_BASE_URL } from "@/lib/http";
+import http, { getApiError, getCached, STORAGE_BASE_URL } from "@/lib/http";
 import { isValidHttpUrl, isValidPhone, validateUpload } from "@/lib/validation";
+import { educationDetailLabel } from "@/lib/educationCatalog";
 
 interface Topic {
   id: number;
@@ -45,11 +49,51 @@ interface Topic {
 
 interface Catalog {
   subjects: string[];
-  topics: Topic[];
+  subject_options?: SubjectOption[];
+  chapters?: {
+    id: number;
+    subject_id: number;
+    subject_name: string;
+    education_level: string;
+    grade: string;
+    title: string;
+    sort_order: number;
+  }[];
+  topics?: Topic[];
   education_levels: string[];
   grades_by_level: Record<string, string[]>;
-  class_types: { value: string; label: string }[];
-  learning_modes: { value: string; label: string }[];
+  class_types: { value: ClassType; label: string }[];
+  learning_modes: { value: LearningMode; label: string }[];
+}
+
+type ClassType = "private" | "group";
+type LearningMode = "online" | "offline";
+
+interface BookingForm {
+  subject_name: string;
+  education_level: string;
+  grade: string;
+  chapter: string;
+  subtopic: string;
+  topic: string;
+  learning_goal: string;
+  learning_mode: LearningMode;
+  class_type: ClassType;
+  scheduled_date: string;
+  start_time: string;
+  duration_hours: string;
+  address: string;
+  maps_link: string;
+  latitude: string;
+  longitude: string;
+  contact_number: string;
+}
+
+interface AvailabilityResult {
+  status: "available" | "not_found";
+  has_candidate: boolean;
+  search_radius_km: number;
+  message: string;
 }
 
 interface OrderSummary {
@@ -102,7 +146,7 @@ interface BookingRequestItem {
   my_order?: OrderSummary;
 }
 
-const initialForm = {
+const initialForm: BookingForm = {
   subject_name: "",
   education_level: "SD",
   grade: "Kelas 1",
@@ -191,6 +235,13 @@ const today = () => {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 };
 
+const nextTenMinuteTime = () => {
+  const date = new Date();
+  date.setSeconds(0, 0);
+  date.setMinutes(Math.ceil((date.getMinutes() + 0.01) / 10) * 10);
+  return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+};
+
 const radarLabel = (item: BookingRequestItem) => {
   if (item.status === "group_forming") {
     return `Mencari anggota ${item.group_member_count || 1}/${item.group_minimum || 2}`;
@@ -207,6 +258,8 @@ export default function SearchPage() {
   const confirm = useConfirmDialog();
   const [searchParams] = useSearchParams();
   const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [catalogDetailsKey, setCatalogDetailsKey] = useState<string | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [attachment, setAttachment] = useState<File | null>(null);
   const [requests, setRequests] = useState<BookingRequestItem[]>([]);
@@ -218,18 +271,37 @@ export default function SearchPage() {
   const [rejecting, setRejecting] = useState<BookingRequestItem | null>(null);
   const [rejectReason, setRejectReason] = useState("not_suitable");
   const [rejectNote, setRejectNote] = useState("");
+  const [currentStep, setCurrentStep] = useState(1);
+  const [availability, setAvailability] = useState<AvailabilityResult | null>(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
 
   const grades = catalog?.grades_by_level[form.education_level] || [];
+  const subjectOptions = useMemo<SubjectOption[]>(
+    () => catalog?.subject_options?.length
+      ? catalog.subject_options
+      : (catalog?.subjects || []).map((name, index) => ({ id: -(index + 1), name })),
+    [catalog],
+  );
+  const selectedDetailsKey = `${form.education_level}|${form.grade}|${form.subject_name}`;
+  const hasCurrentCatalogDetails = catalogDetailsKey === selectedDetailsKey;
   const filteredTopics = useMemo(
-    () => (catalog?.topics || []).filter(
+    () => (hasCurrentCatalogDetails ? catalog?.topics || [] : []).filter(
       (topic) =>
         topic.subject_name === form.subject_name &&
         topic.education_level === form.education_level &&
         topic.grade === form.grade,
     ),
-    [catalog, form.subject_name, form.education_level, form.grade],
+    [catalog?.topics, form.subject_name, form.education_level, form.grade, hasCurrentCatalogDetails],
   );
-  const chapters = useMemo(() => [...new Set(filteredTopics.map((topic) => topic.chapter))], [filteredTopics]);
+  const chapters = useMemo(() => {
+    const seeded = (hasCurrentCatalogDetails ? catalog?.chapters || [] : [])
+      .filter((chapter) =>
+        chapter.subject_name === form.subject_name
+        && chapter.education_level === form.education_level
+        && chapter.grade === form.grade)
+      .map((chapter) => chapter.title);
+    return ["Seluruh materi mapel", ...new Set([...seeded, ...filteredTopics.map((topic) => topic.chapter)])];
+  }, [catalog?.chapters, filteredTopics, form.education_level, form.grade, form.subject_name, hasCurrentCatalogDetails]);
   const subtopics = filteredTopics.filter((topic) => topic.chapter === form.chapter);
   const estimatedEnd = useMemo(() => {
     if (!form.start_time) return "--:--";
@@ -248,15 +320,124 @@ export default function SearchPage() {
     }
 
     const startAt = new Date(`${form.scheduled_date}T${form.start_time}:00`);
-    const minimumLeadMinutes = form.class_type === "group" ? 240 : 90;
-    if (startAt.getTime() <= Date.now() + (minimumLeadMinutes * 60 * 1000)) {
-      return form.class_type === "group"
-        ? "Kelas kelompok harus dipesan minimal empat jam sebelum sesi."
-        : "Kelas privat harus dipesan minimal 90 menit sebelum sesi.";
+    if (minutes % 10 !== 0) {
+      return "Gunakan menit kelipatan 10: 00, 10, 20, 30, 40, atau 50.";
+    }
+    if (startAt.getTime() <= Date.now()) {
+      return "Pilih waktu mulai terdekat yang belum berlalu.";
     }
 
     return null;
-  }, [form.class_type, form.duration_hours, form.scheduled_date, form.start_time]);
+  }, [form.duration_hours, form.scheduled_date, form.start_time]);
+
+  useEffect(() => {
+    const ready = currentStep >= 3
+      && Boolean(form.subject_name)
+      && Boolean(form.grade)
+      && Boolean(form.scheduled_date)
+      && Boolean(form.start_time)
+      && !scheduleIssue
+      && (
+        form.learning_mode === "online"
+        || (Boolean(form.latitude) && Boolean(form.longitude))
+      );
+
+    if (!ready) {
+      setAvailability(null);
+      setAvailabilityLoading(false);
+      return;
+    }
+
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setAvailabilityLoading(true);
+      void http.post<AvailabilityResult>("/student/tutor-availability", {
+        subject_name: form.subject_name,
+        education_level: form.education_level,
+        grade: form.grade,
+        learning_mode: form.learning_mode,
+        class_type: form.class_type,
+        scheduled_date: form.scheduled_date,
+        start_time: form.start_time,
+        duration_hours: Number(form.duration_hours),
+        latitude: form.learning_mode === "offline" ? Number(form.latitude) : null,
+        longitude: form.learning_mode === "offline" ? Number(form.longitude) : null,
+      })
+        .then((response) => {
+          if (active) setAvailability(response.data);
+        })
+        .catch((error) => {
+          if (active) {
+            setAvailability({
+              status: "not_found",
+              has_candidate: false,
+              search_radius_km: form.learning_mode === "offline" ? 3 : 12,
+              message: getApiError(error, "Pemeriksaan ketersediaan belum dapat dilakukan."),
+            });
+          }
+        })
+        .finally(() => {
+          if (active) setAvailabilityLoading(false);
+        });
+    }, 500);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [
+    currentStep,
+    form.class_type,
+    form.duration_hours,
+    form.education_level,
+    form.grade,
+    form.latitude,
+    form.learning_mode,
+    form.longitude,
+    form.scheduled_date,
+    form.start_time,
+    form.subject_name,
+    scheduleIssue,
+  ]);
+
+  const nextStep = () => {
+    if (currentStep === 1) {
+      if (!form.subject_name || !form.grade || !form.chapter.trim()) {
+        toast.error("Lengkapi jenjang, mata pelajaran, dan materi utama.");
+        return;
+      }
+    }
+    if (currentStep === 2 && form.learning_mode === "offline") {
+      if (!form.address.trim()) {
+        toast.error("Alamat pertemuan wajib diisi untuk kelas offline.");
+        return;
+      }
+      if (!isValidPhone(form.contact_number)) {
+        toast.error("Nomor WhatsApp atau telepon belum valid.");
+        return;
+      }
+      if (!form.latitude || !form.longitude) {
+        toast.error("Gunakan lokasi perangkat untuk pencarian tutor offline.");
+        return;
+      }
+      if (!isValidHttpUrl(form.maps_link)) {
+        toast.error("Tautan Google Maps harus diawali http:// atau https://.");
+        return;
+      }
+    }
+    if (currentStep === 3) {
+      if (!form.scheduled_date || !form.start_time) {
+        toast.error("Pilih tanggal dan jam mulai.");
+        return;
+      }
+      if (scheduleIssue) {
+        toast.error(scheduleIssue);
+        return;
+      }
+    }
+
+    setCurrentStep((step) => Math.min(4, step + 1));
+  };
 
   const applyRequestResponse = useCallback((payload: { data?: BookingRequestItem[]; search_cooldown_until?: string | null }) => {
     setRequests(payload.data || []);
@@ -267,15 +448,22 @@ export default function SearchPage() {
     setLoading(true);
     try {
       const [catalogResponse, requestResponse, profileResponse] = await Promise.all([
-        http.get<Catalog>("/learning-catalog"),
+        getCached<Catalog>("/learning-catalog", {
+          params: { compact: 1 },
+          maxAgeMs: 5 * 60_000,
+        }),
         http.get("/student/booking-requests"),
-        http.get("/user"),
+        getCached("/user", { maxAgeMs: 60_000 }),
       ]);
       setCatalog(catalogResponse.data);
       applyRequestResponse(requestResponse.data);
       const subject = searchParams.get("subject") || searchParams.get("q");
       if (subject && catalogResponse.data.subjects.includes(subject)) {
-        setForm((current) => ({ ...current, subject_name: subject }));
+        setForm((current) => ({
+          ...current,
+          subject_name: subject,
+          chapter: "Seluruh materi mapel",
+        }));
       }
       setForm((current) => ({
         ...current,
@@ -307,6 +495,48 @@ export default function SearchPage() {
   }, [loadData]);
 
   useEffect(() => {
+    const subjectName = form.subject_name.trim();
+    if (!subjectName) {
+      setCatalogDetailsKey(null);
+      setDetailsLoading(false);
+      return;
+    }
+
+    let active = true;
+    const requestKey = `${form.education_level}|${form.grade}|${subjectName}`;
+    setCatalogDetailsKey(null);
+    setDetailsLoading(true);
+
+    void getCached<Catalog>("/learning-catalog", {
+      params: {
+        subject_name: subjectName,
+        education_level: form.education_level,
+        grade: form.grade,
+      },
+      maxAgeMs: 5 * 60_000,
+    })
+      .then((response) => {
+        if (!active) return;
+        setCatalog((current) => current ? {
+          ...current,
+          chapters: response.data.chapters || [],
+          topics: response.data.topics || [],
+        } : current);
+        setCatalogDetailsKey(requestKey);
+      })
+      .catch((error) => {
+        if (active) toast.error(getApiError(error, "Daftar bab gagal dimuat."));
+      })
+      .finally(() => {
+        if (active) setDetailsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [form.education_level, form.grade, form.subject_name]);
+
+  useEffect(() => {
     if (!requests.some((item) => [...activeRadarStatuses, "teacher_selected", "payment_submitted"].includes(item.status))) return;
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") void refreshRequests(false);
@@ -316,8 +546,15 @@ export default function SearchPage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    const requestSnapshot = { ...form };
+    if (!form.subject_name || !form.grade || !form.chapter.trim()) {
+      toast.error("Lengkapi jenjang, mata pelajaran, dan materi utama.");
+      setCurrentStep(1);
+      return;
+    }
     if (scheduleIssue) {
       toast.error(scheduleIssue);
+      setCurrentStep(3);
       return;
     }
     if (form.learning_mode === "offline" && (!form.latitude || !form.longitude)) {
@@ -338,12 +575,23 @@ export default function SearchPage() {
     }
 
     const payload = new FormData();
-    Object.entries(form).forEach(([key, value]) => payload.append(key, value));
+    Object.entries(requestSnapshot).forEach(([key, value]) => payload.append(key, value));
     if (attachment) payload.append("attachment", attachment);
     setSubmitting(true);
     try {
       const response = await http.post("/student/booking-requests", payload);
-      toast.success(response.data.message);
+      const createdRequest = response.data?.data as BookingRequestItem | undefined;
+      if (!createdRequest || createdRequest.class_type !== requestSnapshot.class_type) {
+        if (createdRequest?.id) {
+          await http.post(`/student/booking-requests/${createdRequest.id}/cancel`);
+        }
+        toast.error("Jenis kelas tidak tersimpan sesuai pilihan. Permintaan dibatalkan otomatis.");
+        await refreshRequests(false);
+        return;
+      }
+      toast.success(
+        `${response.data.message} Jenis kelas: ${requestSnapshot.class_type === "private" ? "Privat" : "Kelompok"}.`,
+      );
       setForm((current) => ({
         ...initialForm,
         contact_number: current.contact_number,
@@ -353,6 +601,8 @@ export default function SearchPage() {
         longitude: current.longitude,
       }));
       setAttachment(null);
+      setAvailability(null);
+      setCurrentStep(1);
       await refreshRequests(false);
     } catch (error) {
       toast.error(getApiError(error, "Permintaan bimbel gagal dibuat."));
@@ -515,119 +765,303 @@ export default function SearchPage() {
         )}
 
         <div className="grid items-start gap-7 xl:grid-cols-[1.08fr_.92fr]">
-          <form onSubmit={submit} className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm md:p-8">
-            <h2 className="text-2xl font-black text-slate-900">Kebutuhan belajar</h2>
-            <p className="mt-1 text-sm text-slate-500">Materi dan jam langsung diterima tutor sebagai permintaan yang jelas.</p>
-
-            <div className="mt-7 grid gap-5 md:grid-cols-2">
-              <Field label="Mata pelajaran" icon={BookOpen}>
-                <Select value={form.subject_name} onValueChange={(value) => setForm((current) => ({ ...current, subject_name: value, chapter: "", subtopic: "" }))}>
-                  <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="Pilih mapel" /></SelectTrigger>
-                  <SelectContent>{catalog?.subjects.map((subject) => <SelectItem key={subject} value={subject}>{subject}</SelectItem>)}</SelectContent>
-                </Select>
-              </Field>
-              <Field label="Jenjang" icon={GraduationCap}>
-                <Select value={form.education_level} onValueChange={(value) => setForm((current) => ({ ...current, education_level: value, grade: catalog?.grades_by_level[value]?.[0] || "", chapter: "", subtopic: "" }))}>
-                  <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
-                  <SelectContent>{catalog?.education_levels.map((level) => <SelectItem key={level} value={level}>{level}</SelectItem>)}</SelectContent>
-                </Select>
-              </Field>
-              <Field label="Kelas" icon={GraduationCap}>
-                <Select value={form.grade} onValueChange={(value) => setForm((current) => ({ ...current, grade: value, chapter: "", subtopic: "" }))}>
-                  <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
-                  <SelectContent>{grades.map((grade) => <SelectItem key={grade} value={grade}>{grade}</SelectItem>)}</SelectContent>
-                </Select>
-              </Field>
-              <Field label="Bab atau materi utama" icon={BookOpen}>
-                {chapters.length ? (
-                  <Select value={form.chapter} onValueChange={(value) => setForm((current) => ({ ...current, chapter: value, subtopic: "" }))}>
-                    <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="Pilih bab" /></SelectTrigger>
-                    <SelectContent>{chapters.map((chapter) => <SelectItem key={chapter} value={chapter}>{chapter}</SelectItem>)}</SelectContent>
-                  </Select>
-                ) : <Input required className="h-12 rounded-xl" placeholder="Tulis bab atau materi utama" value={form.chapter} onChange={(event) => setForm((current) => ({ ...current, chapter: event.target.value }))} />}
-              </Field>
-              <Field label="Submateri" icon={BookOpen}>
-                {subtopics.length ? (
-                  <Select value={form.subtopic} onValueChange={(value) => setForm((current) => ({ ...current, subtopic: value }))}>
-                    <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="Pilih submateri" /></SelectTrigger>
-                    <SelectContent>{subtopics.map((topic) => <SelectItem key={topic.id} value={topic.name}>{topic.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                ) : <Input className="h-12 rounded-xl" placeholder="Tulis submateri" value={form.subtopic} onChange={(event) => setForm((current) => ({ ...current, subtopic: event.target.value }))} />}
-              </Field>
-              <Field label="Jenis kelas" icon={Users}>
-                <Select value={form.class_type} onValueChange={(value) => setForm((current) => ({ ...current, class_type: value }))}>
-                  <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
-                  <SelectContent>{catalog?.class_types.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
-                </Select>
-              </Field>
-              <Field label="Mode belajar" icon={Monitor}>
-                <Select value={form.learning_mode} onValueChange={(value) => setForm((current) => ({ ...current, learning_mode: value }))}>
-                  <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
-                  <SelectContent>{catalog?.learning_modes.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
-                </Select>
-              </Field>
-              <Field label="Tanggal" icon={CalendarDays}>
-                <Input type="date" min={today()} required className="h-12 rounded-xl" value={form.scheduled_date} onChange={(event) => setForm((current) => ({ ...current, scheduled_date: event.target.value }))} />
-              </Field>
-              <Field label="Jam mulai" icon={Clock3}>
-                <Input type="time" required className="h-12 rounded-xl" value={form.start_time} onChange={(event) => setForm((current) => ({ ...current, start_time: event.target.value }))} />
-              </Field>
-              <Field label="Durasi" icon={Clock3}>
-                <Select value={form.duration_hours} onValueChange={(value) => setForm((current) => ({ ...current, duration_hours: value }))}>
-                  <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
-                  <SelectContent>{[1, 2, 3, 4].map((hour) => <SelectItem key={hour} value={String(hour)}>{hour} jam</SelectItem>)}</SelectContent>
-                </Select>
-              </Field>
-            </div>
-
-            <div className="mt-5 rounded-2xl border border-indigo-100 bg-indigo-50 px-5 py-4">
-              <p className="text-xs font-bold uppercase tracking-widest text-indigo-500">Jadwal yang dipesan</p>
-              <p className="mt-1 font-black text-indigo-950">{form.start_time || "--:--"}–{estimatedEnd} WIB</p>
-              <p className="mt-1 text-xs leading-5 text-indigo-700">
-                {form.class_type === "group" ? "Pesan minimal empat jam sebelum sesi." : "Pesan minimal 90 menit sebelum sesi."}
-              </p>
-            </div>
-            {scheduleIssue && form.scheduled_date && form.start_time && (
-              <div className="mt-3 flex gap-2 rounded-xl border border-rose-100 bg-rose-50 p-3 text-xs font-bold leading-5 text-rose-700">
-                <AlertCircle size={16} className="mt-0.5 shrink-0" />{scheduleIssue}
-              </div>
-            )}
-
-            <div className="mt-5 grid gap-5 md:grid-cols-2">
-              <Field label="Tujuan belajar" icon={BookOpen}>
-                <Textarea className="min-h-24 rounded-xl" placeholder="Hasil yang ingin dicapai" value={form.learning_goal} onChange={(event) => setForm((current) => ({ ...current, learning_goal: event.target.value }))} />
-              </Field>
-              <Field label="Catatan tambahan" icon={BookOpen}>
-                <Textarea className="min-h-24 rounded-xl" placeholder="Kesulitan atau kebutuhan khusus" value={form.topic} onChange={(event) => setForm((current) => ({ ...current, topic: event.target.value }))} />
-              </Field>
-            </div>
-
-            <label className="mt-5 flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-slate-300 p-4 transition hover:border-indigo-300 hover:bg-indigo-50/40">
-              <FileUp className="text-indigo-600" />
-              <span className="min-w-0 flex-1"><span className="block text-sm font-bold text-slate-800">Lampirkan soal atau bahan</span><span className="block truncate text-xs text-slate-500">{attachment?.name || "JPG, PNG, atau PDF · maksimum 5 MB"}</span></span>
-              <Input className="hidden" type="file" accept=".jpg,.jpeg,.png,.pdf" onChange={(event) => selectAttachment(event.target.files?.[0])} />
-            </label>
-
-            {form.learning_mode === "offline" && (
-              <div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-5">
-                <Label className="font-bold text-emerald-950">Alamat pertemuan</Label>
-                <Textarea required className="mt-2 min-h-24 rounded-xl bg-white" value={form.address} onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))} placeholder="Alamat lengkap rumah murid" />
-                <Input required inputMode="tel" className="mt-3 h-11 rounded-xl bg-white" value={form.contact_number} onChange={(event) => setForm((current) => ({ ...current, contact_number: event.target.value }))} placeholder="Nomor WhatsApp/telepon yang dapat dihubungi" />
-                <Input className="mt-3 h-11 rounded-xl bg-white" value={form.maps_link} onChange={(event) => setForm((current) => ({ ...current, maps_link: event.target.value }))} placeholder="Tautan Google Maps, opsional" />
-                <Button type="button" variant="outline" onClick={detectLocation} disabled={locating} className="mt-3 rounded-xl border-emerald-200 bg-white text-emerald-700">
-                  <LocateFixed size={16} className={locating ? "mr-2 animate-pulse" : "mr-2"} /> {locating ? "Membaca lokasi…" : "Gunakan lokasi perangkat"}
-                </Button>
-                <p className="mt-3 text-xs leading-5 text-emerald-800">
-                  {form.class_type === "group"
-                    ? "Jika kamu menjadi pembentuk kelompok, alamat ini menjadi lokasi pertemuan. Alamat hanya dibuka kepada tutor dan anggota yang pembayarannya sudah diverifikasi."
-                    : "Tutor mendatangi murid. Radar dimulai dari 3 km dan dapat diperluas sampai 12 km."}
+          <form
+            onSubmit={(event) => {
+              if (currentStep < 4) {
+                event.preventDefault();
+                nextStep();
+                return;
+              }
+              void submit(event);
+            }}
+            className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-6 md:p-8"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[.2em] text-indigo-500">
+                  Langkah {currentStep} dari 4
+                </p>
+                <h2 className="mt-2 text-2xl font-black text-slate-900">
+                  {["Kebutuhan belajar", "Jenis layanan", "Jadwal belajar", "Periksa permintaan"][currentStep - 1]}
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                  {[
+                    "Jelaskan materi agar tutor menerima kebutuhan yang tepat.",
+                    "Pilih bentuk kelas dan lokasi pembelajaran.",
+                    "Sistem memeriksa slot tutor sebelum permintaan dikirim.",
+                    "Pastikan seluruh pilihan telah sesuai sebelum radar dijalankan.",
+                  ][currentStep - 1]}
                 </p>
               </div>
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-lg font-black text-indigo-600">
+                {currentStep}
+              </span>
+            </div>
+
+            <div className="mt-6 grid grid-cols-4 gap-2" aria-label={`Langkah ${currentStep} dari 4`}>
+              {[1, 2, 3, 4].map((step) => (
+                <div key={step} className={`h-2 rounded-full transition ${step <= currentStep ? "bg-indigo-600" : "bg-slate-100"}`} />
+              ))}
+            </div>
+
+            {currentStep === 1 && (
+              <div className="mt-7 animate-in fade-in slide-in-from-right-3 duration-300">
+                <div className="grid gap-5 md:grid-cols-2">
+                  <Field label="Jenjang" icon={GraduationCap}>
+                    <Select value={form.education_level} onValueChange={(value) => setForm((current) => ({ ...current, education_level: value, grade: catalog?.grades_by_level[value]?.[0] || "", subject_name: "", chapter: "Seluruh materi mapel", subtopic: "" }))}>
+                      <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
+                      <SelectContent>{catalog?.education_levels.map((level) => <SelectItem key={level} value={level}>{level}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label={educationDetailLabel(form.education_level)} icon={GraduationCap}>
+                    <Select value={form.grade} onValueChange={(value) => setForm((current) => ({ ...current, grade: value, subject_name: "", chapter: "Seluruh materi mapel", subtopic: "" }))}>
+                      <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
+                      <SelectContent>{grades.map((grade) => <SelectItem key={grade} value={grade}>{grade}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </Field>
+                  {form.education_level === "Umum" && (
+                    <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-xs font-medium leading-5 text-indigo-700 md:col-span-2">
+                      Pilih kemampuan saat ini. Gunakan Semua tingkat bila materi bersifat terbuka.
+                    </div>
+                  )}
+                  <Field label="Mata pelajaran" icon={BookOpen}>
+                    <SubjectCombobox
+                      options={subjectOptions}
+                      value={form.subject_name}
+                      educationLevel={form.education_level}
+                      grade={form.grade}
+                      onChange={(value) => setForm((current) => ({ ...current, subject_name: value, chapter: "Seluruh materi mapel", subtopic: "" }))}
+                    />
+                  </Field>
+                  <Field label="Bab atau materi utama" icon={BookOpen}>
+                    {form.subject_name && detailsLoading ? (
+                      <Input disabled className="h-12 rounded-xl" value="Memuat daftar bab…" />
+                    ) : form.subject_name && chapters.length ? (
+                      <Select value={form.chapter} onValueChange={(value) => setForm((current) => ({ ...current, chapter: value, subtopic: "" }))}>
+                        <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="Pilih bab" /></SelectTrigger>
+                        <SelectContent>{chapters.map((chapter) => <SelectItem key={chapter} value={chapter}>{chapter}</SelectItem>)}</SelectContent>
+                      </Select>
+                    ) : <Input className="h-12 rounded-xl" placeholder="Tulis bab atau materi utama" value={form.chapter} onChange={(event) => setForm((current) => ({ ...current, chapter: event.target.value }))} />}
+                  </Field>
+                  <Field label="Submateri" icon={BookOpen}>
+                    {subtopics.length ? (
+                      <Select value={form.subtopic || "__all__"} onValueChange={(value) => setForm((current) => ({ ...current, subtopic: value === "__all__" ? "" : value }))}>
+                        <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="Opsional" /></SelectTrigger>
+                        <SelectContent><SelectItem value="__all__">Seluruh materi dalam bab</SelectItem>{subtopics.map((topic) => <SelectItem key={topic.id} value={topic.name}>{topic.name}</SelectItem>)}</SelectContent>
+                      </Select>
+                    ) : <Input className="h-12 rounded-xl" placeholder="Opsional" value={form.subtopic} onChange={(event) => setForm((current) => ({ ...current, subtopic: event.target.value }))} />}
+                  </Field>
+                  <Field label="Tujuan belajar" icon={BookOpen}>
+                    <Textarea className="min-h-24 rounded-xl" placeholder="Hasil yang ingin dicapai" value={form.learning_goal} onChange={(event) => setForm((current) => ({ ...current, learning_goal: event.target.value }))} />
+                  </Field>
+                  <Field label="Catatan tambahan" icon={BookOpen}>
+                    <Textarea className="min-h-24 rounded-xl" placeholder="Kesulitan atau kebutuhan khusus" value={form.topic} onChange={(event) => setForm((current) => ({ ...current, topic: event.target.value }))} />
+                  </Field>
+                </div>
+                <label className="mt-5 flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-slate-300 p-4 transition hover:border-indigo-300 hover:bg-indigo-50/40">
+                  <FileUp className="shrink-0 text-indigo-600" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-bold text-slate-800">Lampirkan soal atau bahan</span>
+                    <span className="block truncate text-xs text-slate-500">{attachment?.name || "JPG, PNG, atau PDF · maksimum 5 MB"}</span>
+                  </span>
+                  <Input className="hidden" type="file" accept=".jpg,.jpeg,.png,.pdf" onChange={(event) => selectAttachment(event.target.files?.[0])} />
+                </label>
+              </div>
             )}
 
-            <Button disabled={submitting || Boolean(scheduleIssue) || Boolean(cooldownUntil && new Date(cooldownUntil) > new Date()) || !form.subject_name || !form.grade || !form.chapter.trim() || !form.scheduled_date || !form.start_time} className="mt-7 h-12 w-full rounded-2xl bg-indigo-600 font-bold hover:bg-indigo-700">
-              {submitting ? <Radar size={19} className="mr-2 animate-spin" /> : <Search size={19} className="mr-2" />} Jalankan radar tutor
-            </Button>
+            {currentStep === 2 && (
+              <div className="mt-7 animate-in fade-in slide-in-from-right-3 duration-300">
+                <div className="grid gap-5 md:grid-cols-2">
+                  <Field label="Jenis kelas" icon={Users}>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(catalog?.class_types || []).map((item) => {
+                        const selected = form.class_type === item.value;
+                        const Icon = item.value === "private" ? UserRoundCheck : Users;
+                        return (
+                          <button
+                            key={item.value}
+                            type="button"
+                            aria-pressed={selected}
+                            onClick={() => setForm((current) => ({ ...current, class_type: item.value }))}
+                            className={`flex min-h-14 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-bold transition ${
+                              selected
+                                ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-100"
+                                : "border-slate-200 bg-white text-slate-600 hover:border-indigo-300"
+                            }`}
+                          >
+                            <Icon size={17} />{item.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      {form.class_type === "private"
+                        ? "Satu tutor mendampingi satu murid."
+                        : "Sistem mencari murid lain dengan kebutuhan dan jadwal yang sama."}
+                    </p>
+                  </Field>
+                  <Field label="Mode belajar" icon={Monitor}>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(catalog?.learning_modes || []).map((item) => {
+                        const selected = form.learning_mode === item.value;
+                        const Icon = item.value === "online" ? Monitor : MapPin;
+                        return (
+                          <button
+                            key={item.value}
+                            type="button"
+                            aria-pressed={selected}
+                            onClick={() => setForm((current) => ({ ...current, learning_mode: item.value }))}
+                            className={`flex min-h-14 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-bold transition ${
+                              selected
+                                ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-100"
+                                : "border-slate-200 bg-white text-slate-600 hover:border-indigo-300"
+                            }`}
+                          >
+                            <Icon size={17} />{item.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </Field>
+                </div>
+
+                {form.learning_mode === "online" ? (
+                  <div className="mt-5 rounded-2xl border border-sky-100 bg-sky-50 p-5 text-sm leading-6 text-sky-800">
+                    Tautan kelas akan dibuka setelah pembayaran dikonfirmasi. Komunikasi tetap dilakukan melalui BimbelKu.
+                  </div>
+                ) : (
+                  <div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-5">
+                    <Label className="font-bold text-emerald-950">Alamat pertemuan</Label>
+                    <Textarea className="mt-2 min-h-24 rounded-xl bg-white" value={form.address} onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))} placeholder="Alamat lengkap rumah murid" />
+                    <Input inputMode="tel" className="mt-3 h-11 rounded-xl bg-white" value={form.contact_number} onChange={(event) => setForm((current) => ({ ...current, contact_number: event.target.value }))} placeholder="Nomor WhatsApp atau telepon" />
+                    <Input className="mt-3 h-11 rounded-xl bg-white" value={form.maps_link} onChange={(event) => setForm((current) => ({ ...current, maps_link: event.target.value }))} placeholder="Tautan Google Maps, opsional" />
+                    <Button type="button" variant="outline" onClick={detectLocation} disabled={locating} className="mt-3 w-full rounded-xl border-emerald-200 bg-white text-emerald-700 sm:w-auto">
+                      <LocateFixed size={16} className={locating ? "mr-2 animate-pulse" : "mr-2"} />
+                      {locating ? "Membaca lokasi…" : form.latitude && form.longitude ? "Perbarui lokasi perangkat" : "Gunakan lokasi perangkat"}
+                    </Button>
+                    {form.latitude && form.longitude && (
+                      <p className="mt-3 flex items-center gap-2 text-xs font-bold text-emerald-700">
+                        <CheckCircle2 size={15} /> Titik lokasi telah tersimpan untuk pencocokan.
+                      </p>
+                    )}
+                    <p className="mt-3 text-xs leading-5 text-emerald-800">
+                      Radar dimulai dari 3 km. Alamat lengkap hanya dibuka sesuai status layanan.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {currentStep === 3 && (
+              <div className="mt-7 animate-in fade-in slide-in-from-right-3 duration-300">
+                <div className="grid gap-5 md:grid-cols-2">
+                  <Field label="Tanggal" icon={CalendarDays}>
+                    <Input type="date" min={today()} className="h-12 rounded-xl" value={form.scheduled_date} onChange={(event) => setForm((current) => ({ ...current, scheduled_date: event.target.value, start_time: event.target.value === today() && !current.start_time ? nextTenMinuteTime() : current.start_time }))} />
+                  </Field>
+                  <Field label="Jam mulai" icon={Clock3}>
+                    <Input type="time" step={600} className="h-12 rounded-xl" value={form.start_time} onChange={(event) => setForm((current) => ({ ...current, start_time: event.target.value }))} />
+                  </Field>
+                  <Field label="Durasi sesi" icon={Clock3}>
+                    <Select value={form.duration_hours} onValueChange={(value) => setForm((current) => ({ ...current, duration_hours: value }))}>
+                      <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
+                      <SelectContent>{[1, 2, 3, 4].map((hour) => <SelectItem key={hour} value={String(hour)}>{hour} jam</SelectItem>)}</SelectContent>
+                    </Select>
+                  </Field>
+                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50 px-5 py-4">
+                    <p className="text-xs font-bold uppercase tracking-widest text-indigo-500">Rentang sesi</p>
+                    <p className="mt-1 font-black text-indigo-950">{form.start_time || "--:--"}–{estimatedEnd} WIB</p>
+                    <p className="mt-1 text-xs leading-5 text-indigo-700">Pilihan menit tersedia setiap 10 menit.</p>
+                  </div>
+                </div>
+                {scheduleIssue && form.scheduled_date && form.start_time && (
+                  <div className="mt-4 flex gap-2 rounded-xl border border-rose-100 bg-rose-50 p-3 text-xs font-bold leading-5 text-rose-700">
+                    <AlertCircle size={16} className="mt-0.5 shrink-0" />{scheduleIssue}
+                  </div>
+                )}
+
+                <div className={`mt-5 rounded-2xl border p-5 ${
+                  availabilityLoading
+                    ? "border-indigo-100 bg-indigo-50"
+                    : availability?.has_candidate
+                      ? "border-emerald-100 bg-emerald-50"
+                      : "border-amber-100 bg-amber-50"
+                }`}>
+                  <div className="flex items-start gap-3">
+                    {availabilityLoading ? (
+                      <Radar className="mt-0.5 shrink-0 animate-spin text-indigo-600" size={20} />
+                    ) : availability?.has_candidate ? (
+                      <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-600" size={20} />
+                    ) : (
+                      <AlertCircle className="mt-0.5 shrink-0 text-amber-600" size={20} />
+                    )}
+                    <div>
+                      <p className="font-black text-slate-900">
+                        {availabilityLoading
+                          ? "Memeriksa slot tutor"
+                          : availability?.has_candidate
+                            ? "Tutor berpotensi tersedia"
+                            : "Ketersediaan belum ditemukan"}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        {availabilityLoading
+                          ? "Materi, jadwal, mode, dan benturan kelas sedang diperiksa."
+                          : availability?.message || "Lengkapi tanggal dan jam untuk memeriksa slot tutor."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {currentStep === 4 && (
+              <div className="mt-7 animate-in fade-in slide-in-from-right-3 duration-300">
+                <div className="space-y-3">
+                  <ReviewRow icon={BookOpen} label="Kebutuhan" value={`${form.subject_name} · ${form.education_level} · ${form.grade}`} />
+                  <ReviewRow icon={BookOpen} label="Materi" value={[form.chapter, form.subtopic].filter(Boolean).join(" · ")} />
+                  <ReviewRow icon={form.class_type === "private" ? UserRoundCheck : Users} label="Layanan" value={`${form.class_type === "private" ? "Privat" : "Kelompok"} · ${form.learning_mode === "online" ? "Online" : "Offline"}`} />
+                  <ReviewRow icon={CalendarDays} label="Jadwal" value={`${formatDate(form.scheduled_date)}, ${form.start_time}–${estimatedEnd} WIB`} />
+                  <ReviewRow icon={Clock3} label="Durasi" value={`${form.duration_hours} jam`} />
+                  {form.learning_mode === "offline" && <ReviewRow icon={MapPin} label="Pertemuan" value={form.address} />}
+                  {form.learning_goal && <ReviewRow icon={GraduationCap} label="Tujuan" value={form.learning_goal} />}
+                </div>
+                <div className={`mt-5 flex gap-3 rounded-2xl border p-4 text-sm leading-6 ${
+                  availability?.has_candidate
+                    ? "border-emerald-100 bg-emerald-50 text-emerald-800"
+                    : "border-amber-100 bg-amber-50 text-amber-800"
+                }`}>
+                  {availability?.has_candidate ? <CheckCircle2 className="mt-0.5 shrink-0" /> : <AlertCircle className="mt-0.5 shrink-0" />}
+                  <p>{availability?.message || "Pencarian tutor akan dimulai setelah permintaan dikirim."}</p>
+                </div>
+                <div className="mt-5 rounded-2xl bg-slate-950 p-5 text-white">
+                  <p className="text-xs font-bold uppercase tracking-widest text-indigo-200">Setelah dikirim</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-200">
+                    Sistem akan mencari tutor otomatis. Profil tutor ditampilkan setelah tutor menerima permintaan. Pembayaran belum dilakukan pada langkah ini.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-8 flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-between">
+              {currentStep > 1 ? (
+                <Button type="button" variant="outline" onClick={() => setCurrentStep((step) => Math.max(1, step - 1))} className="h-12 rounded-2xl">
+                  <ArrowLeft size={17} className="mr-2" /> Kembali
+                </Button>
+              ) : <span />}
+              {currentStep < 4 ? (
+                <Button type="button" onClick={nextStep} className="h-12 rounded-2xl bg-indigo-600 font-bold hover:bg-indigo-700">
+                  Lanjutkan <ArrowRight size={17} className="ml-2" />
+                </Button>
+              ) : (
+                <Button
+                  type="submit"
+                  disabled={submitting || Boolean(scheduleIssue) || Boolean(cooldownUntil && new Date(cooldownUntil) > new Date())}
+                  className="h-12 rounded-2xl bg-indigo-600 font-bold hover:bg-indigo-700"
+                >
+                  {submitting ? <Radar size={19} className="mr-2 animate-spin" /> : <Search size={19} className="mr-2" />}
+                  Jalankan radar tutor
+                </Button>
+              )}
+            </div>
           </form>
 
           <section className="space-y-4 xl:sticky xl:top-24">
@@ -788,6 +1222,28 @@ function RadarLoader({ label, compact = false }: { label: string; compact?: bool
 
 function Field({ label, icon: Icon, children }: { label: string; icon: typeof BookOpen; children: React.ReactNode }) {
   return <div><Label className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700"><Icon size={16} />{label}</Label>{children}</div>;
+}
+
+function ReviewRow({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof BookOpen;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-indigo-600 shadow-sm">
+        <Icon size={18} />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+        <p className="mt-1 break-words text-sm font-bold leading-6 text-slate-800">{value || "-"}</p>
+      </div>
+    </div>
+  );
 }
 
 function Info({ icon: Icon, text }: { icon: typeof Star; text: string }) {

@@ -1,0 +1,130 @@
+import { readFileSync } from "node:fs";
+
+const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const checks = [];
+
+const expect = (condition, message) => {
+  checks.push({ condition, message });
+  if (!condition) {
+    throw new Error(`Kontrak pengalaman Tahap 5 gagal: ${message}`);
+  }
+};
+
+const routes = read("bimbelku-backend/routes/api.php");
+const migration = read("bimbelku-backend/database/migrations/2026_07_30_000500_build_stage_five_packages_promotions_content.php");
+const studentController = read("bimbelku-backend/app/Http/Controllers/Api/StudentPackageController.php");
+const checkout = read("bimbelku-backend/app/Services/PackageCheckoutService.php");
+const adminController = read("bimbelku-backend/app/Http/Controllers/Api/AdminStageFiveController.php");
+const teacherController = read("bimbelku-backend/app/Http/Controllers/Api/TeacherOfferController.php");
+const orderController = read("bimbelku-backend/app/Http/Controllers/Api/OrderController.php");
+const adminPayment = read("bimbelku-backend/app/Http/Controllers/Api/AdminController.php");
+const expiryCommand = read("bimbelku-backend/app/Console/Commands/ExpireBookingWorkflow.php");
+const seeder = read("bimbelku-backend/database/seeders/StageFiveExperienceSeeder.php");
+const app = read("src/App.tsx");
+const dashboard = read("src/pages/students/Dashboard.tsx");
+const builder = read("src/pages/students/PackageBuilder.tsx");
+const packages = read("src/pages/students/MyPackages.tsx");
+const vouchers = read("src/pages/students/Vouchers.tsx");
+const payment = read("src/pages/pembayaran/PaymentPage.tsx");
+const banner = read("src/components/DynamicBannerCarousel.tsx");
+const guide = read("src/components/RoleQuickGuide.tsx");
+const navigation = read("src/components/MobileBottomNav.tsx");
+const landing = read("src/pages/Index.tsx");
+const adminPage = read("src/pages/admin/StageFiveManagement.tsx");
+
+for (const table of [
+  "package_plans",
+  "promotions",
+  "learning_time_slots",
+  "learning_packages",
+  "package_subjects",
+  "package_sessions",
+  "promotion_claims",
+  "dynamic_banners",
+  "tutorials",
+  "tutorial_steps",
+  "package_renewals",
+]) {
+  expect(migration.includes(`Schema::create('${table}'`), `tabel ${table} harus tersedia`);
+}
+
+for (const route of [
+  "/package-plans",
+  "/learning-time-slots",
+  "/content/banners",
+  "/content/tutorials",
+  "/content/promotions",
+  "/student/dashboard-v2",
+  "/student/packages",
+  "/student/vouchers",
+  "/student/packages/quote",
+  "/student/packages/{learningPackage}/retry",
+  "/student/packages/{learningPackage}/cancel",
+  "/student/promotions/{promotion}/claim",
+  "/stage-five/plans",
+  "/stage-five/time-slots",
+  "/stage-five/promotions",
+  "/stage-five/banners",
+  "/stage-five/tutorials",
+]) {
+  expect(routes.includes(route), `rute ${route} harus tersedia`);
+}
+
+expect(
+  routes.indexOf("/student/promotions/preview") < routes.indexOf("/student/promotions/{promotion}/claim"),
+  "rute pratinjau promo harus ditempatkan sebelum route model promo",
+);
+expect(routes.includes("['throttle:5,1', 'idempotency']"), "pembuatan paket wajib memakai idempotency");
+expect(studentController.includes("Jumlah jadwal harus tepat"), "jumlah sesi paket wajib sama dengan paket");
+expect(studentController.includes("tidak termasuk slot aktif dari aplikasi"), "slot paket wajib berasal dari daftar aktif admin");
+expect(studentController.includes("Gunakan satu voucher atau satu kode promo"), "satu transaksi hanya boleh memakai satu promo");
+expect(studentController.includes("addHour()"), "setiap sesi paket wajib berlangsung 60 menit");
+expect(studentController.includes("subDays(7)"), "perpanjangan wajib dibuka tujuh hari sebelum paket berakhir");
+expect(checkout.includes("every(fn (PackageSubject $item) => $item->status === 'accepted')"), "tagihan paket wajib menunggu semua tutor");
+expect(checkout.includes("now()->addHours(48)"), "slot pembayaran paket wajib ditahan selama 48 jam");
+expect(checkout.includes("lockForUpdate"), "klaim, penerimaan tutor, dan pembayaran paket wajib dikunci saat ditulis");
+expect(checkout.includes("calculateDiscount"), "diskon wajib dihitung backend");
+expect(teacherController.includes("acceptPackageOffer"), "penerimaan tutor wajib terhubung ke alur paket");
+expect(orderController.includes("payPackage"), "unggah bukti paket wajib memiliki alur pembayaran sendiri");
+expect(adminPayment.includes("activatePaidPackage"), "verifikasi admin wajib mengaktifkan seluruh sesi paket");
+expect(checkout.includes("refund_pending"), "verifikasi paket yang terlambat wajib masuk antrean refund");
+expect(expiryCommand.includes("expirePackagePayments"), "scheduler wajib menutup tagihan paket kedaluwarsa");
+expect(expiryCommand.includes("whereNull('learning_package_id')"), "scheduler lama tidak boleh memproses order paket sebagai order tunggal");
+expect(adminController.includes("INTERNAL_DESTINATIONS"), "tujuan banner internal wajib memakai daftar aman");
+expect(adminController.includes("Tautan luar wajib memakai HTTPS"), "tautan banner luar wajib memakai HTTPS");
+
+for (const plan of ["Coba Belajar", "Bulanan Dasar", "Bulanan Reguler", "Bulanan Intensif"]) {
+  expect(seeder.includes(plan), `seeder wajib menyediakan ${plan}`);
+}
+
+for (const route of [
+  "/admin/stage-five",
+  "/student/packages",
+  "/student/packages/new",
+  "/student/vouchers",
+  "/student/offers/:id",
+]) {
+  expect(app.includes(route), `frontend wajib menyediakan ${route}`);
+}
+
+expect(banner.includes("4000"), "banner dashboard wajib berganti setiap empat detik");
+expect(banner.includes("onTouchStart"), "banner wajib mendukung geser pada layar sentuh");
+expect(guide.includes("/content/tutorials"), "tutorial wajib dimuat dari CRUD backend");
+expect(dashboard.includes("DynamicBannerCarousel"), "dashboard murid wajib memakai banner dinamis");
+expect(builder.includes("/student/packages/quote"), "builder paket wajib meminta hitungan harga dari server");
+expect(builder.includes("promotion_claim_id"), "builder wajib mendukung Voucher Saya");
+expect(builder.includes("promotion_code"), "builder wajib mendukung kode promo");
+expect(packages.includes("Perpanjang dengan Tutor Ini"), "Kelas Saya wajib menyediakan perpanjangan tutor lama");
+expect(packages.includes("Cari Lagi"), "Kelas Saya wajib menyediakan pencarian ulang tutor");
+expect(packages.includes("Batalkan pencarian"), "Kelas Saya wajib menyediakan pembatalan pencarian");
+expect(vouchers.includes("Klaim Penawaran"), "halaman voucher wajib menyediakan klaim penawaran");
+expect(payment.includes("line-through"), "harga normal promo wajib tampil dicoret");
+expect(payment.includes("discountAmount"), "pembayaran wajib menampilkan potongan");
+expect(navigation.includes("Kelas Saya"), "navigasi bawah wajib memuat Kelas Saya");
+expect(navigation.includes("Voucher"), "navigasi bawah wajib memuat Voucher");
+expect(adminPage.includes("Paket") && adminPage.includes("Promo") && adminPage.includes("Banner") && adminPage.includes("Tutorial"), "halaman admin wajib mengelola empat modul Tahap 5");
+expect(landing.includes("PackagePreviewSection"), "landing page wajib menampilkan pratinjau paket");
+expect(landing.includes("DashboardPreviewSection"), "landing page wajib menampilkan pratinjau dashboard");
+expect(!landing.includes("Kelas Grup"), "landing page tidak boleh mempromosikan kelas grup yang ditunda");
+
+console.log(`Kontrak pengalaman Tahap 5 lulus (${checks.length} pemeriksaan).`);

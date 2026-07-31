@@ -3,11 +3,13 @@ import { BookOpen, Coins, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import AdminLayout from "@/components/AdminLayout";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
+import SubjectCombobox, { SubjectOption } from "@/components/SubjectCombobox";
+import { EDUCATION_LEVELS } from "@/lib/educationCatalog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import http, { getApiError } from "@/lib/http";
+import http, { getApiError, getCached } from "@/lib/http";
 
 interface Rate {
   id: number;
@@ -31,6 +33,7 @@ export default function HourlyRates() {
   const [defaults, setDefaults] = useState({ private_online: 40000, private_offline: 40000, group_online: 40000, group_offline: 40000 });
   const [groupSettings, setGroupSettings] = useState({ minimum: 2, maximum: 5, wait_hours: 24 });
   const [form, setForm] = useState({ subject_name: "", education_level: "all", class_type: "private", learning_mode: "online", amount: "" });
+  const [subjectOptions, setSubjectOptions] = useState<SubjectOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -49,6 +52,34 @@ export default function HourlyRates() {
   }, []);
 
   useEffect(() => { void loadRates(); }, [loadRates]);
+  useEffect(() => {
+    void getCached<{ subject_options?: SubjectOption[] }>("/learning-catalog", {
+      params: { compact: 1 },
+      maxAgeMs: 5 * 60_000,
+    })
+      .then((response) => setSubjectOptions(response.data.subject_options || []))
+      .catch(() => toast.error("Katalog mata pelajaran belum dapat dimuat."));
+  }, []);
+
+  const createSubject = async (name: string): Promise<SubjectOption | null> => {
+    try {
+      const educationLevels = form.education_level === "all"
+        ? [...EDUCATION_LEVELS]
+        : [form.education_level];
+      const response = await http.post("/admin/subjects", {
+        name,
+        group_name: "Tambahan admin",
+        education_levels: educationLevels,
+      });
+      const created = response.data.data as SubjectOption;
+      setSubjectOptions((current) => [...current.filter((item) => item.id !== created.id), created]);
+      toast.success(response.data.message);
+      return created;
+    } catch (error) {
+      toast.error(getApiError(error, "Mata pelajaran gagal ditambahkan."));
+      return null;
+    }
+  };
 
   const saveRate = async (event: FormEvent) => {
     event.preventDefault();
@@ -146,8 +177,20 @@ export default function HourlyRates() {
             <form onSubmit={saveRate} className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm">
               <h2 className="text-xl font-black text-slate-900">Tambah tarif khusus</h2>
               <div className="mt-5 space-y-4">
-                <div><Label className="mb-2 block font-bold">Mata pelajaran</Label><Input value={form.subject_name} onChange={(event) => setForm((current) => ({ ...current, subject_name: event.target.value }))} className="h-12 rounded-xl" placeholder="Contoh: Matematika" required /></div>
-                <div><Label className="mb-2 block font-bold">Jenjang</Label><Select value={form.education_level} onValueChange={(value) => setForm((current) => ({ ...current, education_level: value }))}><SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Semua jenjang</SelectItem>{["SD", "SMP", "SMA", "Umum"].map((level) => <SelectItem key={level} value={level}>{level}</SelectItem>)}</SelectContent></Select></div>
+                <div>
+                  <Label className="mb-2 block font-bold">Mata pelajaran</Label>
+                  <SubjectCombobox
+                    options={subjectOptions}
+                    value={form.subject_name}
+                    educationLevel={form.education_level === "all" ? undefined : form.education_level}
+                    allowCreate
+                    onCreate={createSubject}
+                    onChange={(value) => setForm((current) => ({ ...current, subject_name: value }))}
+                    placeholder="Cari atau tambahkan mapel"
+                  />
+                  <p className="mt-2 text-xs leading-5 text-slate-500">Ketik untuk memfilter. Jika belum ada, pilih tombol tambah yang muncul di daftar.</p>
+                </div>
+                <div><Label className="mb-2 block font-bold">Jenjang</Label><Select value={form.education_level} onValueChange={(value) => setForm((current) => ({ ...current, education_level: value }))}><SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Semua jenjang</SelectItem>{EDUCATION_LEVELS.map((level) => <SelectItem key={level} value={level}>{level}</SelectItem>)}</SelectContent></Select></div>
                 <div><Label className="mb-2 block font-bold">Jenis kelas</Label><Select value={form.class_type} onValueChange={(value) => setForm((current) => ({ ...current, class_type: value }))}><SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="private">Privat</SelectItem><SelectItem value="group">Kelompok</SelectItem></SelectContent></Select></div>
                 <div><Label className="mb-2 block font-bold">Mode</Label><Select value={form.learning_mode} onValueChange={(value) => setForm((current) => ({ ...current, learning_mode: value }))}><SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="online">Online</SelectItem><SelectItem value="offline">Offline</SelectItem></SelectContent></Select></div>
                 <div><Label className="mb-2 block font-bold">Nominal per jam</Label><Input type="number" min="1000" step="1000" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))} className="h-12 rounded-xl" required /></div>

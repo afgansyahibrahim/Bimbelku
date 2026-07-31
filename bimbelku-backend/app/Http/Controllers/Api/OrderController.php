@@ -6,8 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\Notification;
 use App\Models\Order;
+use App\Models\PackageRenewal;
 use App\Models\PaymentSetting;
+use App\Models\User;
 use App\Services\GroupClassService;
+use App\Services\PackageCheckoutService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -37,11 +40,15 @@ class OrderController extends Controller
 
         $order = Order::query()
             ->where('user_id', $request->user()->id)
-            ->with(['booking', 'participant.bookingRequest'])
+            ->with(['booking', 'participant.bookingRequest', 'learningPackage.subjects.sessions.booking'])
             ->findOrFail($id);
 
         if (!in_array($order->status, ['pending', 'rejected'], true)) {
             return response()->json(['message' => 'Tagihan ini sudah tidak dapat dibayar.'], 422);
+        }
+
+        if ($order->learning_package_id) {
+            return $this->payPackage($request, $order, $validated);
         }
 
         $booking = $order->booking;
@@ -110,6 +117,23 @@ class OrderController extends Controller
             Storage::disk('public')->delete($previousProof);
         }
 
+        User::query()->where('role', 'admin')->pluck('id')->each(function ($adminId) use ($order) {
+            Notification::create([
+                'user_id' => $adminId,
+                'title' => 'Bukti pembayaran baru',
+                'message' => "Tagihan {$order->order_id} sudah diunggah murid dan menunggu pemeriksaan.",
+                'type' => 'info',
+            ]);
+        });
+        if ($order->booking?->teacher_id) {
+            Notification::create([
+                'user_id' => $order->booking->teacher_id,
+                'title' => 'Pembayaran murid sedang diperiksa',
+                'message' => "Bukti untuk tagihan {$order->order_id} sudah masuk ke admin. Jadwal tetap ditahan selama pemeriksaan.",
+                'type' => 'info',
+            ]);
+        }
+
         return response()->json([
             'message' => 'Bukti transfer berhasil dikirim. Admin akan memeriksanya.',
         ]);
@@ -120,22 +144,27 @@ class OrderController extends Controller
         $order = Order::query()
             ->where('user_id', $request->user()->id)
             ->whereIn('status', ['pending', 'rejected'])
-            ->with(['booking.teacher.teacherProfile', 'participant.bookingRequest'])
+            ->with(['booking.teacher.teacherProfile', 'participant.bookingRequest', 'learningPackage.plan'])
             ->latest()
             ->first();
 
         if (!$order) {
             return response()->json(null);
         }
-        if (!$order->booking) {
+        if ($order->learning_package_id) {
+            if ($order->learningPackage?->payment_due_at?->isPast()) {
+                $this->expirePackageOrder($order);
+                return response()->json(null);
+            }
+            if (!in_array($order->learningPackage?->status, ['awaiting_payment', 'payment_rejected'], true)) {
+                return response()->json(null);
+            }
+        } elseif (!$order->booking) {
             return response()->json(null);
-        }
-
-        if ($order->booking->payment_due_at?->isPast()) {
+        } elseif ($order->booking->payment_due_at?->isPast()) {
             $this->expireUnpaidOrder($order, $groupService);
             return response()->json(null);
-        }
-        if (!$this->bookingAcceptsPayment($order->booking)) {
+        } elseif (!$this->bookingAcceptsPayment($order->booking)) {
             return response()->json(null);
         }
 
@@ -150,11 +179,14 @@ class OrderController extends Controller
             'status' => $order->status,
             'rejection_reason' => $order->payment_rejection_reason,
             'created_at' => $order->created_at,
-            'payment_due_at' => $order->booking?->payment_due_at,
+            'payment_due_at' => $order->learningPackage?->payment_due_at ?? $order->booking?->payment_due_at,
             'subject' => $details['subject'] ?? 'Kelas',
             'type' => ($details['method'] ?? 'online').' - '.($details['type'] ?? 'Privat'),
             'tutor_name' => $details['teacher_name'] ?? 'Tutor',
             'scheduled_at' => $details['start_at'] ?? null,
+            'subtotal_amount' => $order->subtotal_amount,
+            'discount_amount' => $order->discount_amount,
+            'package_name' => $details['package_name'] ?? null,
         ]);
     }
 
@@ -162,13 +194,18 @@ class OrderController extends Controller
     {
         $order = Order::query()
             ->where('user_id', $request->user()->id)
-            ->with(['booking.participants', 'participant.bookingRequest'])
+            ->with(['booking.participants', 'participant.bookingRequest', 'learningPackage'])
             ->findOrFail($id);
 
         if (!in_array($order->status, ['pending', 'rejected'], true)) {
             return response()->json([
                 'message' => 'Tagihan tidak dapat dibatalkan saat pembayaran sedang diperiksa.',
             ], 422);
+        }
+
+        if ($order->learning_package_id) {
+            $this->cancelPackageOrder($order);
+            return response()->json(['message' => 'Tagihan paket berhasil dibatalkan.']);
         }
 
         $attachmentToDelete = null;
@@ -221,11 +258,32 @@ class OrderController extends Controller
         return response()->json(['message' => 'Tagihan berhasil dibatalkan.']);
     }
 
-    public function index(Request $request)
+    public function index(Request $request, GroupClassService $groupService)
     {
+        Order::query()
+            ->where('user_id', $request->user()->id)
+            ->whereIn('status', ['pending', 'rejected'])
+            ->whereNotNull('learning_package_id')
+            ->whereHas('learningPackage', fn ($packages) => $packages
+                ->whereNotNull('payment_due_at')
+                ->where('payment_due_at', '<=', now()))
+            ->with('learningPackage')
+            ->get()
+            ->each(fn (Order $order) => $this->expirePackageOrder($order));
+
+        Order::query()
+            ->where('user_id', $request->user()->id)
+            ->whereIn('status', ['pending', 'rejected'])
+            ->whereHas('booking', fn ($bookings) => $bookings
+                ->whereNotNull('payment_due_at')
+                ->where('payment_due_at', '<=', now()))
+            ->with(['booking', 'participant.bookingRequest'])
+            ->get()
+            ->each(fn (Order $order) => $this->expireUnpaidOrder($order, $groupService));
+
         $orders = Order::query()
             ->where('user_id', $request->user()->id)
-            ->with(['booking.teacher', 'refund'])
+            ->with(['booking.teacher', 'refund', 'learningPackage.plan'])
             ->latest()
             ->paginate(20);
 
@@ -246,6 +304,12 @@ class OrderController extends Controller
                 'tutor_name' => $details['teacher_name'] ?? '-',
                 'type' => ($details['method'] ?? '').' - '.($details['type'] ?? '-'),
                 'schedule' => $details['start_at'] ?? null,
+                'payment_due_at' => $order->learningPackage?->payment_due_at ?? $order->booking?->payment_due_at,
+                'booking_id' => $order->booking_id,
+                'learning_package_id' => $order->learning_package_id,
+                'package_name' => $order->learningPackage?->plan?->name,
+                'subtotal_amount' => $order->subtotal_amount,
+                'discount_amount' => $order->discount_amount,
                 'refund' => $order->refund,
                 'payment_rejection_reason' => $order->payment_rejection_reason,
             ];
@@ -307,5 +371,157 @@ class OrderController extends Controller
         return $booking->class_type === 'group'
             && $booking->status === 'confirmed'
             && $booking->payment_due_at?->isFuture();
+    }
+
+    private function payPackage(Request $request, Order $order, array $validated)
+    {
+        $package = $order->learningPackage;
+        if (
+            !$package
+            || !in_array($package->status, ['awaiting_payment', 'payment_rejected'], true)
+        ) {
+            return response()->json(['message' => 'Paket tidak lagi menunggu pembayaran.'], 422);
+        }
+        if ($package->payment_due_at?->isPast()) {
+            $this->expirePackageOrder($order);
+            return response()->json(['message' => 'Batas pembayaran paket sudah berakhir.'], 422);
+        }
+
+        $path = $request->file('file')->store('payment_proofs', 'local');
+        $previousProof = null;
+        try {
+            DB::transaction(function () use ($order, $path, $validated, &$previousProof) {
+                $lockedOrder = Order::query()->lockForUpdate()->findOrFail($order->id);
+                $package = $lockedOrder->learningPackage()->lockForUpdate()->firstOrFail();
+                abort_unless(
+                    in_array($lockedOrder->status, ['pending', 'rejected'], true)
+                        && in_array($package->status, ['awaiting_payment', 'payment_rejected'], true),
+                    422,
+                    'Tagihan paket sudah tidak dapat dibayar.'
+                );
+                abort_if($package->payment_due_at?->isPast(), 422, 'Batas pembayaran paket sudah berakhir.');
+
+                $previousProof = $lockedOrder->payment_proof;
+                $lockedOrder->update([
+                    'status' => 'submitted',
+                    'payment_proof' => $path,
+                    'sender_name' => $validated['sender_name'],
+                    'bank_name' => $validated['bank_name'],
+                    'sender_account_number' => $validated['sender_account_number'],
+                    'payment_rejection_reason' => null,
+                    'payment_submitted_at' => now(),
+                ]);
+                $package->update(['status' => 'payment_submitted']);
+                $package->subjects()
+                    ->with('sessions.booking')
+                    ->get()
+                    ->flatMap->sessions
+                    ->each(function ($session) {
+                        $session->update(['status' => 'payment_submitted']);
+                        $session->booking?->update(['status' => 'payment_submitted']);
+                        $session->booking?->participants()->update(['status' => 'payment_submitted']);
+                        $session->booking?->bookingRequest?->update(['status' => 'payment_submitted']);
+                    });
+            }, 3);
+        } catch (\Throwable $exception) {
+            Storage::disk('local')->delete($path);
+            throw $exception;
+        }
+
+        if ($previousProof && $previousProof !== $path) {
+            Storage::disk('local')->delete($previousProof);
+            Storage::disk('public')->delete($previousProof);
+        }
+
+        User::query()->where('role', 'admin')->pluck('id')->each(
+            fn (int $adminId) => Notification::create([
+                'user_id' => $adminId,
+                'title' => 'Bukti pembayaran paket',
+                'message' => "Tagihan {$order->order_id} menunggu pemeriksaan.",
+                'type' => 'info',
+            ])
+        );
+
+        return response()->json(['message' => 'Bukti transfer paket berhasil dikirim.']);
+    }
+
+    private function expirePackageOrder(Order $order): void
+    {
+        DB::transaction(function () use ($order) {
+            $lockedOrder = Order::query()->lockForUpdate()->find($order->id);
+            if (!$lockedOrder || !in_array($lockedOrder->status, ['pending', 'rejected'], true)) {
+                return;
+            }
+            $package = $lockedOrder->learningPackage()->lockForUpdate()->first();
+            $lockedOrder->update(['status' => 'expired']);
+            if (!$package) return;
+
+            $package->update(['status' => 'payment_expired', 'payment_due_at' => null]);
+            $package->subjects()->with('sessions.booking.bookingRequest')->get()->each(
+                function ($subject) {
+                    $subject->update(['status' => 'payment_expired']);
+                    $subject->sessions->each(function ($session) {
+                        $session->update(['status' => 'payment_expired']);
+                        $session->booking?->update(['status' => 'payment_expired', 'payout_status' => 'cancelled']);
+                        $session->booking?->participants()->update(['status' => 'payment_expired']);
+                        $bookingRequest = $session->booking?->bookingRequest;
+                        $bookingRequest?->update(['status' => 'payment_expired']);
+                        if ($bookingRequest) {
+                            $bookingRequest->offers()
+                                ->whereIn('status', ['pending', 'accepted'])
+                                ->update(['status' => 'cancelled', 'responded_at' => now()]);
+                        }
+                    });
+                }
+            );
+            $package->promotionClaims()
+                ->where('status', 'reserved')
+                ->update(['status' => 'available', 'released_at' => now(), 'learning_package_id' => null]);
+            PackageRenewal::query()
+                ->where('new_package_id', $package->id)
+                ->whereIn('status', ['requested', 'tutor_accepted'])
+                ->update(['status' => 'cancelled']);
+            Notification::create([
+                'user_id' => $lockedOrder->user_id,
+                'title' => 'Batas pembayaran paket berakhir',
+                'message' => 'Slot tutor dilepas karena pembayaran tidak diselesaikan dalam 48 jam.',
+                'type' => 'warning',
+            ]);
+        }, 3);
+    }
+
+    private function cancelPackageOrder(Order $order): void
+    {
+        DB::transaction(function () use ($order) {
+            $lockedOrder = Order::query()->lockForUpdate()->findOrFail($order->id);
+            abort_unless(in_array($lockedOrder->status, ['pending', 'rejected'], true), 422);
+            $package = $lockedOrder->learningPackage()->lockForUpdate()->firstOrFail();
+            $lockedOrder->update(['status' => 'cancelled']);
+            $package->update(['status' => 'cancelled', 'payment_due_at' => null]);
+            $package->subjects()->with('sessions.booking.bookingRequest')->get()->each(
+                function ($subject) {
+                    $subject->update(['status' => 'cancelled']);
+                    $subject->sessions->each(function ($session) {
+                        $session->update(['status' => 'cancelled']);
+                        $session->booking?->update(['status' => 'cancelled', 'payout_status' => 'cancelled']);
+                        $session->booking?->participants()->update(['status' => 'cancelled']);
+                        $bookingRequest = $session->booking?->bookingRequest;
+                        $bookingRequest?->update(['status' => 'cancelled']);
+                        if ($bookingRequest) {
+                            $bookingRequest->offers()
+                                ->whereIn('status', ['pending', 'accepted'])
+                                ->update(['status' => 'cancelled', 'responded_at' => now()]);
+                        }
+                    });
+                }
+            );
+            $package->promotionClaims()
+                ->where('status', 'reserved')
+                ->update(['status' => 'available', 'released_at' => now(), 'learning_package_id' => null]);
+            PackageRenewal::query()
+                ->where('new_package_id', $package->id)
+                ->whereIn('status', ['requested', 'tutor_accepted'])
+                ->update(['status' => 'cancelled']);
+        }, 3);
     }
 }

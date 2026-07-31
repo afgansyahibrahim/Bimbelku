@@ -184,6 +184,10 @@
   .shadow-card-hover {
     box-shadow: var(--shadow-card-hover);
   }
+
+  .form-field {
+    @apply h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100;
+  }
 }
 
 @layer utilities {

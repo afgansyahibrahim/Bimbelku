@@ -32,6 +32,20 @@ class UserController extends Controller
             'latitude' => $user->latitude,
             'longitude' => $user->longitude,
             'role' => $user->role,
+            'student_birth_date' => $user->role === 'student'
+                ? $user->date_of_birth?->toDateString()
+                : null,
+            'is_minor' => $user->role === 'student'
+                && $user->date_of_birth
+                && $user->date_of_birth->age < 18,
+            'guardian' => $user->role === 'student' && $user->guardian_consent_at
+                ? [
+                    'name' => $user->guardian_name,
+                    'phone' => $user->guardian_phone,
+                    'relationship' => $user->guardian_relationship,
+                    'consent_at' => $user->guardian_consent_at?->toIso8601String(),
+                ]
+                : null,
             'avatar_url' => $avatarUrl,
             'profile_cover_url' => $user->profile_cover
                 ? asset('storage/' . $user->profile_cover)

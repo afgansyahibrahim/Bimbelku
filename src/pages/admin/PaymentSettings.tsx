@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "@/lib/http";
+import http, { getApiError } from "@/lib/http";
 import { useState, useEffect } from "react";
 import AdminLayout from "../../components/AdminLayout";
 import { 
@@ -8,7 +8,6 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import axios from "axios";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { validateUpload } from "@/lib/validation";
 
@@ -34,21 +33,18 @@ export default function PaymentSettings() {
 
   const fetchSettings = async () => {
     try {
-      const token = localStorage.getItem("token");
-      const response = await axios.get(`${API_BASE_URL}/admin/payment-settings`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await http.get("/admin/payment-settings");
       const data = response.data;
       
-      setMerchantName(data.merchant_name);
-      setBankName(data.bank_name);
-      setAccountNumber(data.account_number);
-      setAccountName(data.account_name);
-      if (data.qris_url) setQrisImage(data.qris_url);
+      setMerchantName(data.merchant_name || "");
+      setBankName(data.bank_name || "");
+      setAccountNumber(data.account_number || "");
+      setAccountName(data.account_name || "");
+      setQrisImage(data.qris_url || null);
       
     } catch (error) {
       console.error("Gagal load settings:", error);
-      toast.error("Gagal memuat pengaturan.");
+      toast.error(getApiError(error, "Gagal memuat pengaturan."));
     } finally {
       setIsLoading(false);
     }
@@ -96,7 +92,6 @@ export default function PaymentSettings() {
 
     setIsSaving(true);
     try {
-      const token = localStorage.getItem("token");
       const formData = new FormData();
       
       formData.append('merchant_name', merchantName);
@@ -108,12 +103,16 @@ export default function PaymentSettings() {
         formData.append('qris_image', qrisFile);
       }
 
-      await axios.post(`${API_BASE_URL}/admin/payment-settings`, formData, {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'multipart/form-data'
-        }
-      });
+      const response = await http.post("/admin/payment-settings", formData);
+      const saved = response.data?.data;
+      if (saved) {
+        setMerchantName(saved.merchant_name || "");
+        setBankName(saved.bank_name || "");
+        setAccountNumber(saved.account_number || "");
+        setAccountName(saved.account_name || "");
+        setQrisImage(saved.qris_url || qrisImage);
+      }
+      setQrisFile(null);
 
       toast.success("Pengaturan Disimpan!", {
         description: "Metode pembayaran telah diperbarui.",
@@ -122,7 +121,7 @@ export default function PaymentSettings() {
 
     } catch (error) {
       console.error(error);
-      toast.error("Gagal menyimpan pengaturan.");
+      toast.error(getApiError(error, "Gagal menyimpan pengaturan."));
     } finally {
       setIsSaving(false);
     }

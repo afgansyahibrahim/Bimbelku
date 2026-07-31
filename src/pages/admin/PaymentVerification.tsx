@@ -1,4 +1,4 @@
-import http from "@/lib/http";
+import http, { getApiError } from "@/lib/http";
 import ProtectedImage from "@/components/ProtectedImage";
 import { useState, useEffect } from "react";
 import AdminLayout from "../../components/AdminLayout";
@@ -64,8 +64,7 @@ export default function PaymentVerification() {
       setPaymentHistory(history);
 
     } catch (error) {
-      console.error("Gagal ambil data order:", error);
-      toast.error("Gagal memuat data pembayaran.");
+      toast.error(getApiError(error, "Gagal memuat data pembayaran."));
     } finally {
       setIsLoading(false);
     }
@@ -149,8 +148,7 @@ export default function PaymentVerification() {
         }
 
     } catch (error) {
-        console.error(error);
-        toast.error("Gagal memproses data.", { description: "Silakan cek koneksi internet." });
+        toast.error(getApiError(error, "Gagal memproses data."));
         // Kembalikan data jika gagal (Rollback)
         setPayments([...newPending, payment]); 
     }

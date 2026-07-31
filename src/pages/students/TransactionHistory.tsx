@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   CalendarDays,
   CheckCircle2,
@@ -29,6 +30,7 @@ interface OrderItem {
   schedule?: string;
   payment_proof_url?: string;
   payment_rejection_reason?: string;
+  payment_due_at?: string;
   refund?: { status: string; amount: number; reason: string; proof_url?: string; processed_at?: string };
 }
 
@@ -46,6 +48,7 @@ const statusInfo: Record<string, { label: string; className: string; icon: typeo
 const rupiah = (value: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
 
 export default function TransactionHistory() {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
@@ -91,6 +94,25 @@ export default function TransactionHistory() {
               {order.payment_rejection_reason && <div className="mt-4 rounded-xl border border-rose-100 bg-rose-50 p-3 text-xs leading-5 text-rose-700">Alasan admin: {order.payment_rejection_reason}</div>}
               {order.refund && <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50 p-3 text-sm text-violet-800"><p className="font-black">Refund {order.refund.status} · {rupiah(order.refund.amount)}</p><p className="mt-1 text-xs">{order.refund.reason}</p></div>}
               <div className="mt-4 flex flex-wrap gap-2">
+                {["pending", "rejected"].includes(order.status) && (
+                  <Button
+                    size="sm"
+                    className="rounded-xl bg-orange-500 hover:bg-orange-600"
+                    onClick={() => navigate("/payment", { state: {
+                      orderId: order.id,
+                      invoiceId: order.order_id,
+                      tutorName: order.tutor_name,
+                      subject: order.subject,
+                      type: order.type,
+                      price: Number(order.amount),
+                      date: order.schedule,
+                      paymentDueAt: order.payment_due_at,
+                      rejectionReason: order.payment_rejection_reason,
+                    } })}
+                  >
+                    <CreditCard size={15} className="mr-2" />{order.status === "rejected" ? "Unggah ulang bukti" : "Bayar sekarang"}
+                  </Button>
+                )}
                 {order.payment_proof_url && (
                   <Button
                     variant="outline"

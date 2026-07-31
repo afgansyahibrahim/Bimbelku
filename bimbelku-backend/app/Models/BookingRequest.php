@@ -9,12 +9,13 @@ class BookingRequest extends Model
     protected $hidden = ['attachment', 'latitude', 'longitude'];
 
     protected $fillable = [
-        'student_id', 'matched_teacher_id', 'subject_name', 'education_level', 'grade', 'topic',
+        'student_id', 'matched_teacher_id', 'subject_name', 'curriculum_subject_id', 'education_level', 'grade', 'topic',
         'learning_mode', 'class_type', 'scheduled_date', 'start_time', 'end_time', 'duration_hours',
         'address', 'maps_link', 'latitude', 'longitude', 'status', 'matching_attempts', 'hourly_rate',
         'total_amount', 'teacher_response_deadline', 'payment_due_at', 'group_pool_id', 'chapter',
         'subtopic', 'learning_goal', 'attachment', 'search_radius_km', 'search_started_at',
         'search_expires_at', 'teacher_decision_deadline', 'teacher_rejection_reason', 'booking_id',
+        'package_subject_id',
     ];
 
     protected $casts = [
@@ -71,5 +72,15 @@ class BookingRequest extends Model
     public function participant()
     {
         return $this->hasOne(BookingParticipant::class);
+    }
+
+    public function curriculumSubject()
+    {
+        return $this->belongsTo(CurriculumSubject::class);
+    }
+
+    public function packageSubject()
+    {
+        return $this->belongsTo(PackageSubject::class);
     }
 }

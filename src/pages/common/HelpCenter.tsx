@@ -7,7 +7,7 @@ import {
 import axios from "axios";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
-import ProtectedImage, { openProtectedFile } from "@/components/ProtectedImage";
+import ProtectedImage from "@/components/ProtectedImage";
 import { validateUpload } from "@/lib/validation";
 
 export default function HelpCenter() {
@@ -159,18 +159,18 @@ export default function HelpCenter() {
   const filteredTickets = tickets.filter(t => t.subject.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
-    <div className="max-w-6xl mx-auto h-[82vh] flex flex-col font-sans animate-in fade-in duration-500">
+    <div className="mx-auto flex h-[calc(100dvh-10rem)] min-h-[34rem] max-w-6xl flex-col font-sans animate-in fade-in duration-500 sm:h-[calc(100dvh-11rem)] xl:h-[82vh]">
       
       {/* HEADER UTAMA */}
-      <div className="flex justify-between items-end mb-6 shrink-0">
+      <div className="mb-4 flex shrink-0 flex-col items-stretch justify-between gap-4 sm:mb-6 sm:flex-row sm:items-end">
           <div>
-              <h1 className="text-3xl font-black text-slate-900 tracking-tight">Pusat Bantuan</h1>
+              <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">Pusat Bantuan</h1>
               <p className="text-slate-500 font-medium">Layanan support dan pengaduan</p>
           </div>
           {view === "list" && (
             <button 
                 onClick={() => setView("create")} 
-                className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 flex items-center gap-2 hover:scale-105 active:scale-95"
+                className="flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 font-bold text-white shadow-lg shadow-indigo-200 transition hover:bg-indigo-700 active:scale-95"
             >
                 <Send size={18} strokeWidth={2.5}/> Buat Tiket Baru
             </button>
@@ -178,13 +178,13 @@ export default function HelpCenter() {
       </div>
 
       {/* --- CONTENT AREA (CARD UTAMA) --- */}
-      <div className="flex-1 bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden relative flex flex-col">
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white shadow-xl sm:rounded-[2rem]">
         
         {/* VIEW 1: LIST TIKET */}
         {view === "list" && (
            <div className="flex flex-col h-full">
               {/* Search Bar */}
-              <div className="p-6 border-b border-slate-100 flex items-center gap-3 bg-slate-50/50">
+              <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50/50 p-4 sm:p-6">
                   <div className="relative flex-1">
                       <Search className="absolute left-4 top-3.5 text-slate-400" size={18}/>
                       <input 
@@ -239,7 +239,7 @@ export default function HelpCenter() {
 
         {/* VIEW 2: FORM BUAT TIKET */}
         {view === "create" && (
-            <div className="flex flex-col h-full overflow-y-auto custom-scrollbar p-8 sm:p-12">
+            <div className="flex h-full flex-col overflow-y-auto p-5 custom-scrollbar sm:p-8 lg:p-12">
                  <button onClick={() => setView("list")} className="mb-6 text-slate-400 hover:text-indigo-600 font-bold flex items-center gap-2 transition w-fit">
                     <ChevronLeft size={20}/> Kembali ke List
                  </button>
@@ -303,7 +303,7 @@ export default function HelpCenter() {
         {view === "chat" && activeTicket && (
             <div className="flex flex-col h-full">
                 {/* Header Chat */}
-                <div className="p-4 sm:p-6 border-b border-slate-100 bg-white flex justify-between items-center shrink-0 z-10">
+                <div className="z-10 flex shrink-0 items-center justify-between border-b border-slate-100 bg-white p-4 sm:p-6">
                     <div className="flex items-center gap-4">
                         <button onClick={() => setView("list")} className="p-2 hover:bg-slate-100 rounded-full transition text-slate-500"><ChevronLeft size={24}/></button>
                         <div>
@@ -319,7 +319,7 @@ export default function HelpCenter() {
                 </div>
 
                 {/* Bubble Chat Area */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50 custom-scrollbar">
+                <div className="flex-1 space-y-5 overflow-y-auto bg-slate-50/50 p-4 custom-scrollbar sm:p-6">
                     {activeTicket.replies.map((reply: any) => {
                         const isMyChat = reply.user_id === activeTicket.user_id; 
 
@@ -335,9 +335,9 @@ export default function HelpCenter() {
                                     <p className="whitespace-pre-wrap text-sm leading-relaxed">{reply.message}</p>
                                     
                                     {reply.attachment_url && (
-                                        <button type="button" onClick={() => void openProtectedFile(reply.attachment_url, "lampiran-bantuan").catch(() => toast.error("Lampiran tidak dapat dibuka."))} className="block mt-3 w-full rounded-xl overflow-hidden border border-black/10 hover:opacity-90 transition bg-black/5">
-                                            <ProtectedImage source={reply.attachment_url} alt="Lampiran percakapan" className="w-full h-auto object-cover"/>
-                                        </button>
+                                        <div className="mt-3 w-full overflow-hidden rounded-xl border border-black/10 bg-black/5">
+                                            <ProtectedImage source={reply.attachment_url} alt="Lampiran percakapan" className="h-auto w-full object-cover"/>
+                                        </div>
                                     )}
                                     <p className={`text-[10px] mt-2 text-right ${isMyChat ? 'text-indigo-200' : 'text-slate-400'}`}>
                                         {new Date(reply.created_at).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}
@@ -351,13 +351,13 @@ export default function HelpCenter() {
 
                 {/* Input Area */}
                 {activeTicket.status === 'open' ? (
-                    <div className="p-4 bg-white border-t border-slate-100 shrink-0">
+                    <div className="shrink-0 border-t border-slate-100 bg-white p-3 sm:p-4">
                         {imagePreview && (
                             <div className="mb-3 inline-flex items-center gap-2 bg-indigo-50 px-3 py-1.5 rounded-lg text-xs font-bold text-indigo-700 border border-indigo-100 animate-in fade-in slide-in-from-bottom-2">
                                 <ImagePlus size={14}/> Gambar terpilih <button type="button" onClick={clearImage} aria-label="Hapus lampiran" className="hover:text-red-500"><X size={14}/></button>
                             </div>
                         )}
-                        <form onSubmit={handleReply} className="flex gap-3 items-end">
+                        <form onSubmit={handleReply} className="flex items-end gap-2 sm:gap-3">
                             <label className="p-3 mb-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl cursor-pointer transition border border-transparent hover:border-indigo-100">
                                 <Paperclip size={20}/>
                                 <input type="file" ref={fileInputRef} onChange={handleImageChange} className="hidden" accept=".jpg,.jpeg,.png,.webp"/>

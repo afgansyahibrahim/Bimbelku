@@ -14,7 +14,7 @@ const studentBenefits = [
   },
   { 
     title: "Harga Transparan", 
-    desc: "Tarif per jam ditetapkan admin dan terlihat sebelum transfer dilakukan."
+    desc: "Harga per sesi ditetapkan admin dan terlihat sebelum transfer dilakukan."
   },
   { 
     title: "Jadwal Sejak Awal",
@@ -28,8 +28,8 @@ const CTASection = () => {
       
       {/* Background Effects */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-1/4 -right-1/4 w-[600px] h-[600px] rounded-full bg-indigo-700/30 blur-[120px] mix-blend-screen" />
-        <div className="absolute -bottom-1/4 -left-1/4 w-[600px] h-[600px] rounded-full bg-blue-600/20 blur-[120px] mix-blend-screen" />
+        <div className="absolute -top-1/4 -right-1/4 w-[600px] h-[600px] rounded-full bg-violet-700/30 blur-[120px] mix-blend-screen" />
+        <div className="absolute -bottom-1/4 -left-1/4 w-[600px] h-[600px] rounded-full bg-orange-600/20 blur-[120px] mix-blend-screen" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full bg-emerald-900/10 blur-[150px] mix-blend-overlay" />
         <div className="absolute inset-0 bg-grid-white/[0.02] bg-[length:32px_32px]" />
       </div>
@@ -50,13 +50,13 @@ const CTASection = () => {
                 
                 <Reveal direction="right" delay={0.2}>
                     <h2 className="text-4xl md:text-5xl lg:text-6xl font-black text-white tracking-tight leading-tight mb-6">
-                    Siap <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">Melejitkan</span> Potensimu?
+                    Belajar lebih terarah bersama <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-300 to-violet-400">tutor yang sesuai</span>
                     </h2>
                 </Reveal>
 
                 <Reveal direction="right" delay={0.3}>
                     <p className="text-slate-300 text-lg md:text-xl max-w-xl mx-auto lg:mx-0 leading-relaxed">
-                    Jelaskan materi dan waktu yang kamu butuhkan. Radar BimbelKu akan mencari tutor yang sesuai dan tersedia.
+                    Susun paket, pilih mapel, dan tentukan jadwal. Radar BimbelKu akan mencarikan tutor yang sesuai.
                     </p>
                 </Reveal>
               </div>
@@ -65,7 +65,7 @@ const CTASection = () => {
                   <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
                       <Link to="/search">
                         <Button size="xl" className="w-full sm:w-auto rounded-2xl bg-white text-slate-900 hover:bg-slate-100 font-bold text-base shadow-xl shadow-white/10 transition-all hover:scale-105 active:scale-95 flex items-center gap-2">
-                          Cari Bimbingan Sekarang <ArrowRight className="h-5 w-5" />
+                          Mulai Cari Tutor <ArrowRight className="h-5 w-5" />
                         </Button>
                       </Link>
                   </div>

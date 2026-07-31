@@ -7,7 +7,7 @@ import {
 import axios from "axios";
 import { toast } from "sonner";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
-import ProtectedImage, { openProtectedFile } from "@/components/ProtectedImage";
+import ProtectedImage from "@/components/ProtectedImage";
 import { validateUpload } from "@/lib/validation";
 
 export default function AdminMessages() {
@@ -251,9 +251,9 @@ export default function AdminMessages() {
                                         <p className="text-sm leading-relaxed whitespace-pre-wrap font-medium">{reply.message}</p>
                                         
                                         {reply.attachment_url && (
-                                            <button type="button" onClick={() => void openProtectedFile(reply.attachment_url, "lampiran-bantuan").catch(() => toast.error("Lampiran tidak dapat dibuka."))} className="block mt-3 w-full rounded-xl overflow-hidden border border-black/10 hover:opacity-90 transition bg-black/5">
-                                                <ProtectedImage source={reply.attachment_url} alt="Lampiran percakapan" className="w-full h-auto object-cover"/>
-                                            </button>
+                                            <div className="mt-3 w-full overflow-hidden rounded-xl border border-black/10 bg-black/5">
+                                                <ProtectedImage source={reply.attachment_url} alt="Lampiran percakapan" className="h-auto w-full object-cover"/>
+                                            </div>
                                         )}
                                         
                                         <p className={`text-[10px] mt-2 text-right ${isMe ? 'text-slate-500' : 'text-slate-400'}`}>

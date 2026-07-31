@@ -1,6 +1,6 @@
 # PRD BimbelKu — Revisi Final
 
-Versi keputusan: 27 Juli 2026  
+Versi keputusan: 30 Juli 2026  
 Status: sumber acuan produk dan implementasi
 
 ## 1. Tujuan produk
@@ -14,13 +14,14 @@ Istilah resmi dalam produk adalah **tutor**. Tidak ada status premium atau profe
 ### Murid
 
 - Mendaftar dan menyetujui kebijakan layanan.
-- Menentukan materi, tanggal, jam, durasi, mode, dan jenis kelas.
+- Memilih paket, membagi sesi per mapel, serta memilih tanggal dan slot aplikasi.
 - Mengaktifkan lokasi untuk kelas offline.
 - Meninjau satu profil tutor hasil pencocokan.
 - Menerima atau menolak hasil dengan alasan.
 - Mentransfer biaya ke admin dan mengunggah bukti.
 - Mengikuti sesi, menyetujui penyelesaian, atau mengajukan keberatan.
 - Melihat transaksi, refund, kelas, notifikasi, dan bantuan.
+- Mengklaim voucher, memasukkan kode promo, serta memperpanjang dengan tutor lama.
 
 ### Tutor
 
@@ -43,6 +44,7 @@ Istilah resmi dalam produk adalah **tutor**. Tidak ada status premium atau profe
 - Memeriksa kelas, laporan, keberatan, keadaan darurat, dan bukti penyelesaian.
 - Mentransfer refund dan pendapatan tutor secara manual.
 - Mengelola materi, pengguna, ulasan, notifikasi, bantuan, dan tampilan publik.
+- Mengelola paket, slot jadwal, promo, banner, dan tutorial.
 
 ## 3. Pendaftaran dan persetujuan
 
@@ -65,15 +67,20 @@ Murid juga dapat menulis tujuan, catatan, dan mengunggah satu lampiran. Admin me
 
 Materi kurikulum harus bersumber dari rujukan yang sah. Produk lain hanya boleh menjadi referensi pola tampilan, bukan sumber untuk menyalin data berhak cipta.
 
-## 5. Jadwal
+## 5. Paket dan jadwal
 
-- Tidak ada paket dengan masa berlaku atau negosiasi jadwal setelah pencocokan.
-- Murid memilih tanggal, jam mulai, dan durasi sejak awal.
+- Paket awal terdiri dari 1 sesi/7 hari, 4 sesi/30 hari, 8 sesi/30 hari,
+  dan 12 sesi/30 hari.
+- Paket 4, 8, dan 12 sesi memuat maksimal 1, 2, dan 3 mapel.
+- Satu sesi berlangsung tepat 60 menit.
+- Murid membagi jumlah sesi per mapel dan memilih seluruh jadwal sejak awal.
+- Jam tidak diketik bebas; murid memilih slot aktif yang dikelola admin.
+- Jadwal paling cepat dimulai 72 jam dari waktu pemesanan.
 - Tutor mengisi rentang jam kosong untuk setiap hari.
-- Tutor hanya menjadi kandidat jika seluruh sesi berada dalam rentang tersebut.
+- Tutor hanya dapat menerima jika seluruh sesi mapelnya berada dalam rentang tersebut.
 - Benturan menggunakan aturan interval: sesi baru tidak boleh memotong sesi atau penawaran aktif.
 - Sisa rentang tetap dapat digunakan. Contoh: tersedia 18.00–22.00, terisi 18.00–20.00, maka 20.00–22.00 tetap dapat dipesan.
-- Implementasi menerima durasi 1–4 jam dan menolak sesi yang melewati pergantian hari.
+- Satu paket dapat mempunyai tutor berbeda untuk setiap mapel.
 
 ## 6. Pencocokan tutor
 
@@ -106,6 +113,8 @@ Tampilan pencarian memakai radar animasi, status proses yang jelas, radius aktif
 - Pengulangan dalam jendela 30 hari meningkatkan pembatasan menjadi 6, 12, dan 24 jam.
 - Mulai pengulangan kedua, poin berkurang 5.
 - Penolakan aktif oleh tutor tidak otomatis mengurangi poin.
+- Untuk perpanjangan, tutor lama mendapat penawaran prioritas dan slot pembayaran
+  ditahan paling lama 48 jam setelah seluruh tutor menerima.
 
 ## 8. Profil tutor dan penolakan murid
 
@@ -123,30 +132,34 @@ Penolakan berurutan yang bukan akibat kesalahan materi, jarak, atau sistem:
 
 Hitungan kembali nol setelah tutor diterima atau setelah tujuh hari tanpa penolakan.
 
-## 9. Harga dan komisi
+## 9. Harga, promo, dan komisi
 
-- Harga ditentukan admin dan dihitung per jam.
+- Harga ditentukan admin dan dihitung per sesi 60 menit.
 - Online dan offline dapat memiliki harga berbeda.
 - Privat dan kelompok dapat memiliki harga berbeda.
 - Tarif khusus mata pelajaran/jenjang dapat menggantikan tarif bawaan.
-- Nilai awal instalasi baru adalah Rp40.000 per jam untuk empat kombinasi mode/jenis.
+- Nilai awal instalasi baru adalah Rp40.000 per sesi untuk empat kombinasi mode/jenis.
+- Promo mendukung potongan persentase atau nominal, kuota, periode, minimal
+  transaksi, batas akun, paket, jenjang, mapel, mode, dan murid baru.
+- Satu transaksi hanya memakai satu voucher atau satu kode promo.
+- Harga akhir dan kelayakan promo selalu dihitung backend.
 - Komisi awal admin adalah 20%.
 - Persentase komisi disimpan pada booking sehingga perubahan admin tidak mengubah transaksi lama.
 - Tidak ada biaya perjalanan otomatis.
 
 ## 10. Pembayaran manual
 
-Alur:
+Alur paket:
 
-1. Tutor menerima permintaan.
-2. Murid menerima profil.
-3. Tagihan dibuka.
+1. Semua tutor mapel menerima seluruh jadwalnya.
+2. Tagihan agregat paket dibuka.
+3. Murid memilih satu voucher atau memasukkan satu kode promo.
 4. Murid mentransfer ke rekening admin.
 5. Murid mengunggah bukti, nama pengirim, bank, serta nomor rekening/e-wallet asal sebagai tujuan refund bila diperlukan.
 6. Admin membandingkan bukti dengan mutasi rekening.
 7. Admin menerima atau menolak dengan alasan.
 8. Bukti ditolak dapat diunggah ulang sebelum tenggat.
-9. Setelah diterima, kelas dikonfirmasi.
+9. Setelah diterima, seluruh sesi paket dikonfirmasi dan masuk ke Kelas Saya.
 
 Rekening tujuan tidak dapat diubah admin selama masih ada tagihan aktif atau bukti transfer yang menunggu pemeriksaan. Ketentuan ini mencegah instruksi transfer berubah di tengah proses.
 
@@ -154,16 +167,9 @@ Tidak ada payment gateway, QRIS dinamis, webhook pembayaran, escrow otomatis, at
 
 ## 11. Kelas kelompok
 
-- Kelompok dibentuk otomatis dari materi, jenjang, jadwal, mode, dan lokasi yang kompatibel.
-- Minimal, maksimal, dan waktu tunggu dapat diubah admin.
-- Nilai awal: minimal 2, maksimal 5, waktu tunggu 24 jam.
-- Pencarian tutor dimulai setelah jumlah minimum terpenuhi.
-- Pembayaran baru dibuka setelah semua anggota aktif menerima profil tutor.
-- Kelas dapat dimulai setelah jumlah pembayaran minimum terpenuhi.
-- Anggota yang tidak membayar sampai tenggat dikeluarkan.
-- Jika pembayaran minimum tidak terpenuhi, pembayaran yang sudah diterima masuk antrean refund penuh.
-- Jika kelompok belum terbentuk, murid memilih mengubah ke privat atau membatalkan.
-- Identitas anggota tidak dibuka kepada anggota lain.
+- Kelas kelompok ditunda dan tidak dipromosikan pada landing page atau alur paket.
+- Fondasi lama tetap dipertahankan untuk kompatibilitas data dan pengembangan berikutnya.
+- Tahap 5 menggunakan paket kelas privat.
 
 ## 12. Pelaksanaan dan penyelesaian
 
@@ -244,6 +250,9 @@ Semua perubahan disimpan pada buku besar poin dengan alasan, booking, aktor, dan
 - Keluar akun, menerima tutor, membatalkan, menyetujui penyelesaian, menerima pembayaran, menghapus data, memutus kasus, refund, dan pencairan memakai dialog aplikasi.
 - Tidak ada notifikasi bawaan browser.
 - Polling hanya berjalan ketika tab terlihat dan memakai interval ringan.
+- Dashboard murid memakai banner CRUD yang berganti setiap empat detik.
+- Banner dapat membuka halaman internal aman atau tautan HTTPS.
+- Tutorial carousel per peran dapat dibuka kembali dan dikelola admin.
 
 ## 18. Privasi dan keamanan
 
@@ -261,6 +270,10 @@ Semua perubahan disimpan pada buku besar poin dengan alasan, booking, aktor, dan
 
 - Murid tidak dapat memilih tutor dari daftar.
 - Tutor di luar slot atau berbenturan tidak pernah ditawarkan.
+- Murid tidak dapat mengirim jam yang tidak termasuk slot aktif admin.
+- Tagihan paket tidak terbuka sebelum seluruh tutor mapel menerima.
+- Harga promo tidak dapat dimanipulasi dari frontend.
+- Voucher atau kode promo tidak dapat dipakai dua kali pada transaksi yang sama.
 - Radius offline tidak melebihi 12 km.
 - Jumlah dan komisi tidak berubah setelah transaksi dibuat.
 - Pembayaran tidak mengonfirmasi kelas tanpa keputusan admin.

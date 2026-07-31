@@ -13,6 +13,8 @@ class Order extends Model
         'class_details_snapshot' => 'array',
         'payment_submitted_at' => 'datetime',
         'verified_at' => 'datetime',
+        'subtotal_amount' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
     ];
 
     public function user() {
@@ -37,6 +39,14 @@ class Order extends Model
 
     public function refund() {
         return $this->hasOne(Refund::class);
+    }
+
+    public function learningPackage() {
+        return $this->belongsTo(LearningPackage::class);
+    }
+
+    public function promotion() {
+        return $this->belongsTo(Promotion::class);
     }
 
     public function getPaymentProofUrlAttribute(): ?string

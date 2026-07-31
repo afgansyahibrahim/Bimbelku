@@ -2,97 +2,116 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { BookOpen, GraduationCap, Layers3, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import AdminLayout from "@/components/AdminLayout";
+import SubjectCombobox, { SubjectOption } from "@/components/SubjectCombobox";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import http, { getApiError } from "@/lib/http";
+import {
+  educationDetailLabel,
+  GRADES_BY_EDUCATION_LEVEL,
+} from "@/lib/educationCatalog";
 
-interface Topic {
+interface Chapter {
   id: number;
-  subject_name: string;
+  curriculum_subject_id: number;
+  subject: { id: number; name: string; group_name?: string; is_active?: boolean };
   education_level: string;
   grade: string;
-  chapter: string;
-  name: string;
+  title: string;
   sort_order: number;
   is_active: boolean;
+  source_reference?: string | null;
 }
 
-const emptyForm = { subject_name: "", education_level: "SD", grade: "Kelas 1", chapter: "", name: "", sort_order: "0", is_active: true };
-const grades: Record<string, string[]> = {
-  SD: ["Kelas 1", "Kelas 2", "Kelas 3", "Kelas 4", "Kelas 5", "Kelas 6"],
-  SMP: ["Kelas 7", "Kelas 8", "Kelas 9"],
-  SMA: ["Kelas 10", "Kelas 11", "Kelas 12"],
-  Umum: ["Umum"],
-};
+const grades = GRADES_BY_EDUCATION_LEVEL;
+const emptyForm = { curriculum_subject_id: 0, subject_name: "", education_level: "SD", grade: "Kelas 1", title: "", sort_order: "0", is_active: true };
 
 export default function LearningTopics() {
   const confirm = useConfirmDialog();
-  const [topics, setTopics] = useState<Topic[]>([]);
+  const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [subjects, setSubjects] = useState<SubjectOption[]>([]);
   const [search, setSearch] = useState("");
-  const [editing, setEditing] = useState<Topic | null | undefined>(undefined);
+  const [editing, setEditing] = useState<Chapter | null | undefined>(undefined);
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { void load(); }, []);
-
   const load = async () => {
     setLoading(true);
     try {
-      const response = await http.get("/admin/learning-topics");
-      setTopics(response.data.data || []);
+      const [chapterResponse, subjectResponse] = await Promise.all([
+        http.get<Chapter[]>("/admin/chapters?all=1"),
+        http.get<SubjectOption[]>("/admin/subjects?all=1"),
+      ]);
+      setChapters(chapterResponse.data || []);
+      setSubjects(subjectResponse.data || []);
     } catch (error) {
-      toast.error(getApiError(error, "Daftar materi gagal dimuat."));
+      toast.error(getApiError(error, "Katalog bab gagal dimuat."));
     } finally {
       setLoading(false);
     }
   };
 
-  const openForm = (topic?: Topic) => {
-    setEditing(topic || null);
-    setForm(topic ? {
-      subject_name: topic.subject_name,
-      education_level: topic.education_level,
-      grade: topic.grade,
-      chapter: topic.chapter,
-      name: topic.name,
-      sort_order: String(topic.sort_order),
-      is_active: topic.is_active,
+  useEffect(() => { void load(); }, []);
+
+  const openForm = (chapter?: Chapter) => {
+    setEditing(chapter || null);
+    setForm(chapter ? {
+      curriculum_subject_id: chapter.curriculum_subject_id,
+      subject_name: chapter.subject.name,
+      education_level: chapter.education_level,
+      grade: chapter.grade,
+      title: chapter.title,
+      sort_order: String(chapter.sort_order),
+      is_active: chapter.is_active,
     } : emptyForm);
   };
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
+    if (!form.curriculum_subject_id) {
+      toast.error("Pilih mata pelajaran dari daftar.");
+      return;
+    }
     setSaving(true);
-    const payload = { ...form, sort_order: Number(form.sort_order) };
     try {
+      const payload = {
+        curriculum_subject_id: form.curriculum_subject_id,
+        education_level: form.education_level,
+        grade: form.grade,
+        title: form.title,
+        sort_order: Number(form.sort_order),
+        is_active: form.is_active,
+        source_reference: editing?.source_reference || "SIBI · https://buku.kemendikdasmen.go.id/",
+      };
       const response = editing
-        ? await http.put(`/admin/learning-topics/${editing.id}`, payload)
-        : await http.post("/admin/learning-topics", payload);
+        ? await http.put(`/admin/chapters/${editing.id}`, payload)
+        : await http.post("/admin/chapters", payload);
       toast.success(response.data.message);
       setEditing(undefined);
       await load();
     } catch (error) {
-      toast.error(getApiError(error));
+      toast.error(getApiError(error, "Bab gagal disimpan."));
     } finally {
       setSaving(false);
     }
   };
 
-  const remove = async (topic: Topic) => {
+  const remove = async (chapter: Chapter) => {
     const approved = await confirm({
-      title: "Hapus submateri?",
-      description: `${topic.subject_name} · ${topic.chapter} · ${topic.name} tidak lagi muncul pada pencarian murid.`,
-      confirmText: "Hapus materi",
+      title: "Hapus atau nonaktifkan bab?",
+      description: `${chapter.subject.name} · ${chapter.grade} · ${chapter.title} tidak lagi muncul pada pemesanan baru. Riwayat pemesanan tetap aman.`,
+      confirmText: "Lanjutkan",
       tone: "danger",
     });
     if (!approved) return;
     try {
-      const response = await http.delete(`/admin/learning-topics/${topic.id}`);
+      const response = await http.delete(`/admin/chapters/${chapter.id}`);
       toast.success(response.data.message);
       await load();
     } catch (error) {
@@ -100,30 +119,44 @@ export default function LearningTopics() {
     }
   };
 
-  const filtered = useMemo(() => topics.filter((topic) => `${topic.subject_name} ${topic.education_level} ${topic.grade} ${topic.chapter} ${topic.name}`.toLowerCase().includes(search.toLowerCase())), [topics, search]);
+  const filtered = useMemo(() => chapters.filter((chapter) => (
+    `${chapter.subject.name} ${chapter.education_level} ${chapter.grade} ${chapter.title}`
+      .toLocaleLowerCase("id-ID")
+      .includes(search.toLocaleLowerCase("id-ID"))
+  )), [chapters, search]);
 
   return (
     <AdminLayout title="Materi Kurikulum">
       <div className="space-y-6 pb-12">
-        <section className="flex flex-col justify-between gap-5 rounded-[2rem] bg-gradient-to-br from-slate-950 to-indigo-950 p-7 text-white md:flex-row md:items-end">
-          <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Katalog akademik</p><h1 className="mt-3 text-3xl font-black">Jenjang → kelas → bab → submateri</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/70">Materi ini dipilih murid sebelum permintaan dikirim agar tutor memahami kebutuhan sejak awal.</p></div><Button onClick={() => openForm()} className="rounded-xl bg-orange-500 font-bold hover:bg-orange-600"><Plus size={16} className="mr-2" />Tambah materi</Button>
+        <section className="flex flex-col justify-between gap-5 rounded-[2rem] bg-gradient-to-br from-slate-950 to-indigo-950 p-6 text-white sm:p-8 md:flex-row md:items-end">
+          <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Katalog pembelajaran</p><h1 className="mt-3 text-2xl font-black sm:text-3xl">Jenjang → tingkat → mapel → bab</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/70">Materi tersedia untuk kelas 1–12 dan keterampilan umum. Submateri tetap opsional.</p></div>
+          <Button onClick={() => openForm()} className="rounded-xl bg-orange-500 font-bold hover:bg-orange-600"><Plus size={16} className="mr-2" />Tambah bab</Button>
         </section>
-        <div className="relative rounded-2xl border border-slate-100 bg-white p-4"><Search className="absolute left-7 top-7 text-slate-400" size={17} /><Input value={search} onChange={(event) => setSearch(event.target.value)} className="h-11 rounded-xl pl-10" placeholder="Cari mapel, jenjang, bab, atau submateri" /></div>
+        <div className="relative rounded-2xl border border-slate-100 bg-white p-4"><Search className="absolute left-7 top-7 text-slate-400" size={17} /><Input value={search} onChange={(event) => setSearch(event.target.value)} className="h-11 rounded-xl pl-10" placeholder="Cari mapel, jenjang, kelas, atau bab" /></div>
         <div className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white">
-          {loading ? <div className="grid min-h-64 place-items-center"><Loader2 className="animate-spin text-indigo-600" /></div> : filtered.length === 0 ? <div className="py-20 text-center"><Layers3 className="mx-auto h-10 w-10 text-slate-300" /><p className="mt-3 font-black text-slate-700">Belum ada materi</p></div> : <div className="divide-y divide-slate-100">{filtered.map((topic) => <div key={topic.id} className="flex flex-col justify-between gap-4 p-5 hover:bg-slate-50 sm:flex-row sm:items-center"><div className="flex min-w-0 gap-4"><div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600"><BookOpen /></div><div className="min-w-0"><p className="font-black text-slate-900">{topic.name}</p><p className="mt-1 text-sm text-slate-500">{topic.subject_name} · {topic.education_level} · {topic.grade}</p><p className="mt-1 text-xs font-bold text-indigo-600">{topic.chapter}</p></div></div><div className="flex gap-2"><Button variant="outline" size="icon" className="rounded-xl" onClick={() => openForm(topic)}><Pencil size={16} /></Button><Button variant="ghost" size="icon" className="rounded-xl text-rose-600 hover:bg-rose-50" onClick={() => remove(topic)}><Trash2 size={16} /></Button></div></div>)}</div>}
+          {loading ? <div className="grid min-h-64 place-items-center"><Loader2 className="animate-spin text-indigo-600" /></div> : filtered.length === 0 ? <div className="py-20 text-center"><Layers3 className="mx-auto h-10 w-10 text-slate-300" /><p className="mt-3 font-black text-slate-700">Bab tidak ditemukan</p></div> : (
+            <div className="divide-y divide-slate-100">
+              {filtered.map((chapter) => (
+                <div key={chapter.id} className="flex flex-col justify-between gap-4 p-4 hover:bg-slate-50 sm:p-5 lg:flex-row lg:items-center">
+                  <div className="flex min-w-0 gap-4"><div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600"><BookOpen /></div><div className="min-w-0"><p className="font-black text-slate-900">{chapter.title}</p><p className="mt-1 text-sm text-slate-500">{chapter.subject.name} · {chapter.education_level} · {chapter.grade}</p><p className="mt-1 text-xs font-bold text-indigo-600">Urutan {chapter.sort_order}{!chapter.is_active ? " · Nonaktif" : ""}</p></div></div>
+                  <div className="grid grid-cols-2 gap-2 sm:flex"><Button variant="outline" className="rounded-xl" onClick={() => openForm(chapter)}><Pencil size={16} className="sm:mr-2" /><span className="hidden sm:inline">Ubah</span></Button><Button variant="ghost" className="rounded-xl text-rose-600 hover:bg-rose-50" onClick={() => remove(chapter)}><Trash2 size={16} className="sm:mr-2" /><span className="hidden sm:inline">Hapus</span></Button></div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       <Dialog open={editing !== undefined} onOpenChange={(open) => !open && setEditing(undefined)}>
         <DialogContent className="rounded-[2rem] sm:max-w-lg">
           <form onSubmit={save} className="space-y-4">
-            <DialogHeader><DialogTitle>{editing ? "Ubah materi" : "Tambah materi"}</DialogTitle><DialogDescription>Gunakan struktur kurikulum resmi dan nama yang mudah dipahami murid.</DialogDescription></DialogHeader>
-            <div><Label>Mata pelajaran</Label><Input required className="mt-2 h-11 rounded-xl" value={form.subject_name} onChange={(event) => setForm((current) => ({ ...current, subject_name: event.target.value }))} /></div>
-            <div className="grid grid-cols-2 gap-3"><div><Label>Jenjang</Label><Select value={form.education_level} onValueChange={(value) => setForm((current) => ({ ...current, education_level: value, grade: grades[value][0] }))}><SelectTrigger className="mt-2 h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{Object.keys(grades).map((level) => <SelectItem key={level} value={level}>{level}</SelectItem>)}</SelectContent></Select></div><div><Label>Kelas</Label><Select value={form.grade} onValueChange={(value) => setForm((current) => ({ ...current, grade: value }))}><SelectTrigger className="mt-2 h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{grades[form.education_level].map((grade) => <SelectItem key={grade} value={grade}>{grade}</SelectItem>)}</SelectContent></Select></div></div>
-            <div><Label>Bab</Label><Input required className="mt-2 h-11 rounded-xl" value={form.chapter} onChange={(event) => setForm((current) => ({ ...current, chapter: event.target.value }))} /></div>
-            <div><Label>Submateri</Label><Input required className="mt-2 h-11 rounded-xl" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></div>
+            <DialogHeader><DialogTitle>{editing ? "Ubah bab" : "Tambah bab"}</DialogTitle><DialogDescription>Submateri opsional dan dapat ditulis murid pada catatan kebutuhan belajar.</DialogDescription></DialogHeader>
+            <div><Label>Mata pelajaran</Label><SubjectCombobox options={subjects} value={form.subject_name} educationLevel={form.education_level} grade={form.grade} onChange={(value, option) => setForm((current) => ({ ...current, subject_name: value, curriculum_subject_id: option?.id || 0 }))} className="mt-2" /></div>
+            <div className="grid grid-cols-2 gap-3"><div><Label>Jenjang</Label><Select value={form.education_level} onValueChange={(value) => setForm((current) => ({ ...current, education_level: value, grade: grades[value][0], curriculum_subject_id: 0, subject_name: "" }))}><SelectTrigger className="mt-2 h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{Object.keys(grades).map((level) => <SelectItem key={level} value={level}>{level}</SelectItem>)}</SelectContent></Select></div><div><Label>{educationDetailLabel(form.education_level)}</Label><Select value={form.grade} onValueChange={(value) => setForm((current) => ({ ...current, grade: value, curriculum_subject_id: 0, subject_name: "" }))}><SelectTrigger className="mt-2 h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{grades[form.education_level].map((grade) => <SelectItem key={grade} value={grade}>{grade}</SelectItem>)}</SelectContent></Select></div></div>
+            <div><Label>Nama bab</Label><Input required minLength={2} className="mt-2 h-11 rounded-xl" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} /></div>
             <div><Label>Urutan</Label><Input type="number" min="0" className="mt-2 h-11 rounded-xl" value={form.sort_order} onChange={(event) => setForm((current) => ({ ...current, sort_order: event.target.value }))} /></div>
-            <Button disabled={saving} className="h-12 w-full rounded-xl bg-indigo-600 font-black hover:bg-indigo-700">{saving ? <Loader2 size={17} className="mr-2 animate-spin" /> : <GraduationCap size={17} className="mr-2" />}Simpan materi</Button>
+            <label className="flex items-center justify-between rounded-xl bg-slate-50 p-4 text-sm font-bold text-slate-700"><span>Bab aktif</span><Switch checked={form.is_active} onCheckedChange={(value) => setForm((current) => ({ ...current, is_active: value }))} /></label>
+            <Button disabled={saving} className="h-12 w-full rounded-xl bg-indigo-600 font-black hover:bg-indigo-700">{saving ? <Loader2 size={17} className="mr-2 animate-spin" /> : <GraduationCap size={17} className="mr-2" />}Simpan bab</Button>
           </form>
         </DialogContent>
       </Dialog>

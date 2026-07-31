@@ -9,6 +9,7 @@ use App\Models\PaymentSetting;
 use App\Models\Order;
 use App\Models\Classroom;
 use App\Models\Payout; 
+use App\Models\PayoutApproval;
 use App\Models\SocialMedia;
 use App\Models\Booking;
 use App\Models\Notification;
@@ -17,6 +18,7 @@ use App\Models\TeacherProfile;
 use App\Services\GroupClassService;
 use App\Services\TeacherMatchingService;
 use App\Services\TeacherOfferReleaseService;
+use App\Services\PackageCheckoutService;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB; 
 use Carbon\Carbon;
@@ -185,7 +187,10 @@ class AdminController extends Controller
 
     public function getUsers(Request $request)
     {
-        $role = $request->query('role', 'student');
+        $validated = $request->validate([
+            'role' => 'nullable|in:student,teacher',
+        ]);
+        $role = $validated['role'] ?? 'student';
 
         // [FIX UTAMA] Hapus 'rejected' dari exclusion list.
         // Sekarang hanya menyembunyikan yang 'pending'.
@@ -198,6 +203,21 @@ class AdminController extends Controller
                     ->get();
 
         $users->transform(function($u) {
+            if ($u->role === 'student') {
+                $u->setAttribute(
+                    'student_birth_date',
+                    $u->date_of_birth?->toDateString()
+                );
+                $u->setAttribute(
+                    'guardian',
+                    $u->guardian_consent_at ? [
+                        'name' => $u->guardian_name,
+                        'phone' => $u->guardian_phone,
+                        'relationship' => $u->guardian_relationship,
+                        'consent_at' => $u->guardian_consent_at?->toIso8601String(),
+                    ] : null
+                );
+            }
             if ($u->role === 'teacher' && $u->teacherProfile) {
                 $u->photo_url = $u->teacherProfile->photo ? asset('storage/' . $u->teacherProfile->photo) : null;
                 $u->teacherProfile->setAttribute(
@@ -342,7 +362,11 @@ class AdminController extends Controller
     }
 
     // --- [VERIFIKASI PEMBAYARAN (JADWAL KOMPLEKS)] ---
-    public function verifyPayment(Request $request, GroupClassService $groupService)
+    public function verifyPayment(
+        Request $request,
+        GroupClassService $groupService,
+        PackageCheckoutService $packageCheckoutService
+    )
     {
         $validated = $request->validate([
             'order_id' => 'required|exists:orders,id',
@@ -365,6 +389,19 @@ class AdminController extends Controller
             return response()->json([
                 'message' => 'Alasan penolakan pembayaran wajib diisi.',
             ], 422);
+        }
+
+        if ($order->learning_package_id) {
+            if ($validated['status'] === 'rejected') {
+                $packageCheckoutService->rejectPackagePayment($order, $reason);
+                return response()->json(['message' => 'Pembayaran paket ditolak.']);
+            }
+            $result = $packageCheckoutService->activatePaidPackage($order, $request->user());
+            return response()->json([
+                'message' => $result === 'refund_pending'
+                    ? 'Pembayaran tercatat, tetapi sesi pertama sudah dimulai. Refund penuh masuk antrean admin.'
+                    : 'Pembayaran diterima dan seluruh sesi paket diaktifkan.',
+            ]);
         }
 
         if (($details['flow_version'] ?? 0) >= 3) {
@@ -821,6 +858,9 @@ class AdminController extends Controller
                 $lockedSettings = PaymentSetting::query()
                     ->lockForUpdate()
                     ->findOrFail($settings->id);
+                $paymentDestinationIsConfigured = filled($lockedSettings->bank_name)
+                    && filled($lockedSettings->account_number)
+                    && filled($lockedSettings->account_name);
                 $hasOpenPayments = Order::query()
                     ->where(function ($query) {
                         $query->where('status', 'submitted')
@@ -833,7 +873,7 @@ class AdminController extends Controller
                     })
                     ->exists();
 
-                if ($hasOpenPayments) {
+                if ($paymentDestinationIsConfigured && $hasOpenPayments) {
                     abort(422, 'Rekening tidak dapat diubah saat masih ada tagihan aktif atau bukti transfer yang belum diperiksa.');
                 }
 
@@ -897,10 +937,14 @@ class AdminController extends Controller
         return response()->json(['message' => 'Persentase diperbarui. Akan berlaku untuk transaksi MENDATANG.']);
     }
 
-    public function getFinanceData()
+    public function getFinanceData(Request $request)
     {
         Carbon::setLocale('id');
         $currentGlobalFee = (float) (\App\Models\Setting::where('key', 'admin_fee')->value('value') ?? 20);
+        $highValueThreshold = max(
+            100000,
+            (float) (\App\Models\Setting::where('key', 'high_value_payout_threshold')->value('value') ?? 5000000)
+        );
 
         $history = Payout::with('user')->latest()->limit(200)->get()->map(function ($p) {
             return [
@@ -926,14 +970,33 @@ class AdminController extends Controller
 
         $pending = $readyBookings
             ->groupBy('teacher_id')
-            ->map(function ($bookings) {
+            ->map(function ($bookings) use ($highValueThreshold) {
                 $first = $bookings->first();
                 $teacher = $first->teacher;
                 $profile = $teacher?->teacherProfile;
+                $bookingIds = $bookings->pluck('id')->sort()->values()->all();
+                $netAmount = (float) $bookings->sum('teacher_net_amount');
+                $approval = null;
+                if ($netAmount >= $highValueThreshold) {
+                    $fingerprint = FinanceApprovalController::fingerprint(
+                        (int) $first->teacher_id,
+                        $bookingIds,
+                        $netAmount,
+                        (int) ($profile?->bank_details_version ?? 0),
+                        $profile?->bank_account_fingerprint
+                    );
+                    $approval = PayoutApproval::query()
+                        ->where('fingerprint', $fingerprint)
+                        ->whereIn('status', ['pending', 'approved'])
+                        ->whereNull('consumed_at')
+                        ->where('expires_at', '>', now())
+                        ->latest()
+                        ->first();
+                }
 
                 return [
                     'teacherId' => $first->teacher_id,
-                    'bookingIds' => $bookings->pluck('id')->values(),
+                    'bookingIds' => $bookingIds,
                     'name' => $teacher?->name ?? 'Tutor',
                     'period' => 'Saldo sampai '.now()->translatedFormat('d M Y'),
                     'totalClasses' => $bookings->count(),
@@ -942,7 +1005,17 @@ class AdminController extends Controller
                     'commissionAmount' => (float) $bookings->sum(
                         fn ($booking) => (float) $booking->gross_amount - (float) $booking->teacher_net_amount
                     ),
-                    'netAmount' => (float) $bookings->sum('teacher_net_amount'),
+                    'netAmount' => $netAmount,
+                    'requiresSecondApproval' => $netAmount >= $highValueThreshold,
+                    'approval' => $approval ? [
+                        'id' => $approval->id,
+                        'status' => $approval->status,
+                        'requestedBy' => $approval->requested_by,
+                        'approvedBy' => $approval->approved_by,
+                        'expiresAt' => $approval->expires_at,
+                    ] : null,
+                    'payoutHoldUntil' => $profile?->payout_hold_until,
+                    'payoutBlocked' => (bool) $profile?->payout_hold_until?->isFuture(),
                     'bankDetails' => [
                         'bank' => $profile?->bank_name ?: 'Belum diatur',
                         'number' => $profile?->account_number ?: '-',
@@ -975,7 +1048,11 @@ class AdminController extends Controller
                 'teacher_7days' => $teacherShare7Days,
                 'admin_7days'   => $adminProfit7Days,
                 'admin_fee_percent' => $currentGlobalFee 
-            ]
+            ],
+            'security' => [
+                'current_admin_id' => $request->user()->id,
+                'high_value_threshold' => $highValueThreshold,
+            ],
         ]);
     }
 
@@ -985,6 +1062,7 @@ class AdminController extends Controller
             'teacher_id' => 'required|exists:users,id',
             'booking_ids' => 'required|array|min:1|max:200',
             'booking_ids.*' => 'integer|distinct|exists:bookings,id',
+            'approval_id' => 'nullable|integer|exists:payout_approvals,id',
             'proof_file' => 'required|image|mimes:jpg,jpeg,png,webp|max:5120',
         ]);
 
@@ -1002,11 +1080,26 @@ class AdminController extends Controller
                 'message' => 'Rekening tutor belum lengkap. Minta tutor memperbarui data rekening sebelum pencairan.',
             ], 422);
         }
+        if ($teacher->teacherProfile?->payout_hold_until?->isFuture()) {
+            return response()->json([
+                'message' => 'Pencairan ditahan sampai '.$teacher->teacherProfile->payout_hold_until
+                    ->translatedFormat('d M Y, H:i').' WIB setelah perubahan rekening.',
+            ], 422);
+        }
 
         $path = $request->file('proof_file')->store('payout_proofs', 'local');
+        $highValueThreshold = max(
+            100000,
+            (float) (\App\Models\Setting::where('key', 'high_value_payout_threshold')->value('value') ?? 5000000)
+        );
 
         try {
-            $payout = DB::transaction(function () use ($request, $validated, $path) {
+            $payout = DB::transaction(function () use (
+                $request,
+                $validated,
+                $path,
+                $highValueThreshold
+            ) {
                 $profile = TeacherProfile::query()
                     ->where('user_id', $validated['teacher_id'])
                     ->lockForUpdate()
@@ -1018,6 +1111,14 @@ class AdminController extends Controller
                     || blank($profile->account_name)
                 ) {
                     abort(422, 'Rekening tutor belum lengkap atau berubah. Muat ulang data sebelum mencairkan.');
+                }
+                if ($profile->payout_hold_until?->isFuture()) {
+                    abort(
+                        422,
+                        'Pencairan masih ditahan sampai '
+                        .$profile->payout_hold_until->translatedFormat('d M Y, H:i')
+                        .' WIB.'
+                    );
                 }
 
                 $bookings = Booking::query()
@@ -1035,6 +1136,34 @@ class AdminController extends Controller
                 $gross = (float) $bookings->sum('gross_amount');
                 $net = (float) $bookings->sum('teacher_net_amount');
                 $commission = $gross - $net;
+                $bookingIds = $bookings->pluck('id')->sort()->values()->all();
+                $approval = null;
+
+                if ($net >= $highValueThreshold) {
+                    if (empty($validated['approval_id'])) {
+                        abort(422, 'Pencairan bernilai besar harus disetujui admin kedua.');
+                    }
+                    $approval = PayoutApproval::query()
+                        ->lockForUpdate()
+                        ->findOrFail($validated['approval_id']);
+                    $expectedFingerprint = FinanceApprovalController::fingerprint(
+                        (int) $validated['teacher_id'],
+                        $bookingIds,
+                        $net,
+                        (int) $profile->bank_details_version,
+                        $profile->bank_account_fingerprint
+                    );
+                    if (
+                        $approval->status !== 'approved'
+                        || $approval->consumed_at
+                        || $approval->expires_at->isPast()
+                        || (int) $approval->teacher_id !== (int) $validated['teacher_id']
+                        || !hash_equals($approval->fingerprint, $expectedFingerprint)
+                        || (int) $approval->requested_by === (int) $approval->approved_by
+                    ) {
+                        abort(422, 'Persetujuan admin kedua tidak berlaku untuk pencairan ini.');
+                    }
+                }
 
                 $record = Payout::create([
                     'user_id' => $validated['teacher_id'],
@@ -1047,14 +1176,19 @@ class AdminController extends Controller
                     'commission_amount' => $commission,
                     'processed_by' => $request->user()->id,
                     'processed_at' => now(),
-                    'booking_ids' => $bookings->pluck('id')->values()->all(),
+                    'booking_ids' => $bookingIds,
                     'bank_name' => $profile->bank_name,
                     'account_number' => $profile->account_number,
                     'account_name' => $profile->account_name,
+                    'payout_approval_id' => $approval?->id,
                 ]);
 
                 $bookings->each->update([
                     'payout_status' => 'paid',
+                ]);
+                $approval?->update([
+                    'status' => 'consumed',
+                    'consumed_at' => now(),
                 ]);
 
                 Notification::create([

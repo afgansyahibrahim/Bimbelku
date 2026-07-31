@@ -1,0 +1,676 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Booking;
+use App\Models\BookingParticipant;
+use App\Models\BookingRequest;
+use App\Models\LearningPackage;
+use App\Models\Notification;
+use App\Models\Order;
+use App\Models\PackageRenewal;
+use App\Models\PackageSession;
+use App\Models\PackageSubject;
+use App\Models\PaymentSetting;
+use App\Models\Promotion;
+use App\Models\PromotionClaim;
+use App\Models\Refund;
+use App\Models\Setting;
+use App\Models\TeacherOffer;
+use App\Models\TeacherProfile;
+use App\Models\User;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+
+class PackageCheckoutService
+{
+    public function __construct(
+        private readonly TeacherMatchingService $matchingService,
+    ) {
+    }
+
+    public function calculateDiscount(
+        Promotion $promotion,
+        int $subtotal,
+        int $planId,
+        string $level,
+        array $subjects,
+        string $mode,
+        User $student,
+        ?PromotionClaim $claim = null
+    ): int {
+        abort_unless($promotion->isAvailable(), 422, 'Promo belum aktif atau sudah berakhir.');
+        abort_if($subtotal < (int) $promotion->minimum_purchase, 422, 'Minimal pembelian promo belum terpenuhi.');
+
+        $this->assertTarget($promotion->target_plan_ids, $planId, 'Promo tidak berlaku untuk paket ini.');
+        $this->assertTarget($promotion->target_levels, $level, 'Promo tidak berlaku untuk jenjang ini.');
+        $this->assertTarget($promotion->target_modes, $mode, 'Promo tidak berlaku untuk metode belajar ini.');
+
+        $targetSubjects = $promotion->target_subjects ?? [];
+        if ($targetSubjects && !collect($subjects)->contains(
+            fn (string $subject) => in_array($subject, $targetSubjects, true)
+        )) {
+            abort(422, 'Promo tidak berlaku untuk mata pelajaran yang dipilih.');
+        }
+
+        if ($promotion->new_students_only) {
+            $hasPaidOrder = Order::query()
+                ->where('user_id', $student->id)
+                ->where('status', 'paid')
+                ->exists();
+            abort_if($hasPaidOrder, 422, 'Promo hanya berlaku bagi murid baru.');
+        }
+
+        $occupiedQuota = $promotion->claims()
+            ->whereIn('status', ['available', 'reserved', 'used'])
+            ->count();
+        abort_if(
+            $promotion->total_quota !== null
+                && ($claim ? $occupiedQuota > $promotion->total_quota : $occupiedQuota >= $promotion->total_quota),
+            422,
+            'Kuota promo sudah habis.'
+        );
+
+        $discount = $promotion->discount_type === 'percentage'
+            ? (int) floor($subtotal * min(100, (float) $promotion->discount_value) / 100)
+            : (int) round((float) $promotion->discount_value);
+
+        if ($promotion->maximum_discount !== null) {
+            $discount = min($discount, (int) round((float) $promotion->maximum_discount));
+        }
+
+        return max(0, min($subtotal, $discount));
+    }
+
+    public function reservePromotion(
+        Promotion $promotion,
+        User $student,
+        LearningPackage $package,
+        ?PromotionClaim $claim = null
+    ): PromotionClaim {
+        return DB::transaction(function () use ($promotion, $student, $package, $claim) {
+            $lockedPromotion = Promotion::query()->lockForUpdate()->findOrFail($promotion->id);
+            abort_unless($lockedPromotion->isAvailable(), 422, 'Promo tidak tersedia.');
+
+            $reservedQuota = $lockedPromotion->claims()
+                ->whereIn('status', ['available', 'reserved', 'used'])
+                ->lockForUpdate()
+                ->count();
+            abort_if(
+                $lockedPromotion->total_quota !== null
+                    && ($claim ? $reservedQuota > $lockedPromotion->total_quota : $reservedQuota >= $lockedPromotion->total_quota),
+                422,
+                'Kuota promo baru saja habis.'
+            );
+
+            $userUsage = $lockedPromotion->claims()
+                ->where('user_id', $student->id)
+                ->whereIn('status', ['reserved', 'used'])
+                ->count();
+            abort_if($userUsage >= $lockedPromotion->per_user_limit, 422, 'Batas penggunaan promo pada akun ini sudah tercapai.');
+
+            if ($claim) {
+                $lockedClaim = PromotionClaim::query()
+                    ->where('user_id', $student->id)
+                    ->where('promotion_id', $lockedPromotion->id)
+                    ->where('status', 'available')
+                    ->lockForUpdate()
+                    ->findOrFail($claim->id);
+                $lockedClaim->update([
+                    'learning_package_id' => $package->id,
+                    'status' => 'reserved',
+                    'reserved_at' => now(),
+                ]);
+
+                return $lockedClaim;
+            }
+
+            return PromotionClaim::create([
+                'promotion_id' => $lockedPromotion->id,
+                'user_id' => $student->id,
+                'learning_package_id' => $package->id,
+                'status' => 'reserved',
+                'claimed_at' => now(),
+                'reserved_at' => now(),
+            ]);
+        }, 3);
+    }
+
+    public function dispatchSubject(PackageSubject $subject): ?TeacherOffer
+    {
+        $subject->loadMissing(['package.student', 'sessions', 'preferredTeacher.teacherProfile.subjects']);
+        $request = $subject->bookingRequest;
+        if (!$request) {
+            return null;
+        }
+
+        $preferred = $subject->preferredTeacher;
+        if ($preferred && $this->preferredTeacherCanReceive($preferred, $request, $subject)) {
+            return DB::transaction(function () use ($preferred, $request) {
+                $lockedRequest = BookingRequest::query()->lockForUpdate()->findOrFail($request->id);
+                if (!in_array($lockedRequest->status, ['matching', 'no_teacher'], true)) {
+                    return $lockedRequest->offers()
+                        ->where('status', 'pending')
+                        ->latest('offered_at')
+                        ->first();
+                }
+
+                $expiresAt = now()->addHours(48)->min($this->matchingService->startAt($lockedRequest));
+                if ($expiresAt->lte(now())) {
+                    return null;
+                }
+
+                $offer = TeacherOffer::create([
+                    'booking_request_id' => $lockedRequest->id,
+                    'teacher_id' => $preferred->id,
+                    'status' => 'pending',
+                    'distance_km' => null,
+                    'offered_at' => now(),
+                    'expires_at' => $expiresAt,
+                ]);
+                $lockedRequest->update([
+                    'matched_teacher_id' => $preferred->id,
+                    'status' => 'teacher_pending',
+                    'teacher_response_deadline' => $expiresAt,
+                    'matching_attempts' => DB::raw('matching_attempts + 1'),
+                ]);
+                Notification::create([
+                    'user_id' => $preferred->id,
+                    'title' => 'Permintaan perpanjangan tutor',
+                    'message' => "Murid lama ingin melanjutkan {$lockedRequest->subject_name}. Periksa seluruh jadwal paket.",
+                    'type' => 'info',
+                ]);
+
+                return $offer;
+            }, 3);
+        }
+
+        return $this->matchingService->dispatchNextOffer($request);
+    }
+
+    public function acceptPackageOffer(TeacherOffer $teacherOffer, User $teacher): array
+    {
+        return DB::transaction(function () use ($teacherOffer, $teacher) {
+            $offer = TeacherOffer::query()->lockForUpdate()->findOrFail($teacherOffer->id);
+            abort_unless($offer->teacher_id === $teacher->id, 403);
+            abort_unless($offer->status === 'pending', 422, 'Penawaran ini sudah diproses.');
+            abort_if($offer->expires_at->isPast(), 422, 'Batas waktu jawaban sudah berakhir.');
+
+            $request = BookingRequest::query()
+                ->with('packageSubject.sessions')
+                ->lockForUpdate()
+                ->findOrFail($offer->booking_request_id);
+            $subject = PackageSubject::query()
+                ->with(['sessions', 'package.subjects'])
+                ->lockForUpdate()
+                ->findOrFail($request->package_subject_id);
+            $package = LearningPackage::query()->lockForUpdate()->findOrFail($subject->learning_package_id);
+
+            abort_unless(
+                $request->status === 'teacher_pending'
+                    && (int) $request->matched_teacher_id === (int) $teacher->id,
+                422,
+                'Permintaan sudah dialihkan atau dibatalkan.'
+            );
+            abort_unless(in_array($package->status, ['matching', 'teacher_pending', 'no_teacher'], true), 422, 'Paket tidak lagi menunggu tutor.');
+
+            $profile = TeacherProfile::query()
+                ->where('user_id', $teacher->id)
+                ->lockForUpdate()
+                ->first();
+            abort_unless(
+                $teacher->status === 'active'
+                    && $profile?->verified_at
+                    && $profile?->is_accepting_requests
+                    && $profile->points > 0,
+                422,
+                'Profil tutor sedang tidak dapat menerima permintaan.'
+            );
+            $profile->setRelation('user', $teacher);
+            abort_if(
+                $error = $this->matchingService->compatibilityError($profile, $request),
+                422,
+                $error
+            );
+
+            foreach ($subject->sessions as $session) {
+                abort_if(
+                    $this->matchingService->teacherHasConflict(
+                        $teacher->id,
+                        $session->scheduled_start_at,
+                        $session->scheduled_end_at
+                    ) || $this->teacherHasPackageConflict(
+                        $teacher->id,
+                        $session->scheduled_start_at,
+                        $session->scheduled_end_at,
+                        $subject->id
+                    ),
+                    422,
+                    'Salah satu jadwal paket bertabrakan dengan kelas lain.'
+                );
+                abort_unless(
+                    $this->teacherAvailableAt($teacher, $session->scheduled_start_at, $session->scheduled_end_at),
+                    422,
+                    'Salah satu jadwal paket tidak termasuk jam tersedia tutor.'
+                );
+            }
+
+            $offer->update(['status' => 'accepted', 'responded_at' => now()]);
+            $request->offers()->whereKeyNot($offer->id)->where('status', 'pending')->update([
+                'status' => 'cancelled',
+                'responded_at' => now(),
+            ]);
+            $request->update([
+                'status' => 'teacher_selected',
+                'matched_teacher_id' => $teacher->id,
+                'teacher_decision_deadline' => null,
+            ]);
+            $subject->update([
+                'assigned_teacher_id' => $teacher->id,
+                'status' => 'accepted',
+            ]);
+            PackageRenewal::query()
+                ->where('new_package_id', $package->id)
+                ->where('old_teacher_id', $teacher->id)
+                ->where('status', 'requested')
+                ->update(['status' => 'tutor_accepted']);
+            $profile->update([
+                'no_response_streak' => 0,
+                'no_response_window_started_at' => null,
+            ]);
+
+            $package->refresh()->load('subjects');
+            $allAccepted = $package->subjects->every(fn (PackageSubject $item) => $item->status === 'accepted');
+            if (!$allAccepted) {
+                $package->update(['status' => 'teacher_pending']);
+                Notification::create([
+                    'user_id' => $package->student_id,
+                    'title' => 'Tutor paket ditemukan',
+                    'message' => "{$teacher->name} menerima {$subject->subject_name}. Pencarian mapel lain masih berjalan.",
+                    'type' => 'success',
+                ]);
+
+                return ['package' => $package->fresh('subjects.assignedTeacher'), 'invoice_opened' => false];
+            }
+
+            $order = $this->openInvoice($package);
+
+            return [
+                'package' => $package->fresh(['subjects.assignedTeacher', 'orders']),
+                'order' => $order,
+                'invoice_opened' => true,
+            ];
+        }, 3);
+    }
+
+    public function activatePaidPackage(Order $order, User $admin): string
+    {
+        return DB::transaction(function () use ($order, $admin) {
+            $lockedOrder = Order::query()
+                ->with('learningPackage.subjects.sessions.booking')
+                ->lockForUpdate()
+                ->findOrFail($order->id);
+            $package = LearningPackage::query()->lockForUpdate()->findOrFail($lockedOrder->learning_package_id);
+            abort_unless($lockedOrder->status === 'submitted', 422, 'Pembayaran ini sudah diproses.');
+
+            $package->load('subjects.sessions.booking');
+            $firstSessionAt = $package->subjects
+                ->flatMap->sessions
+                ->sortBy('scheduled_start_at')
+                ->first()
+                ?->scheduled_start_at;
+            if ($firstSessionAt?->lte(now())) {
+                $lockedOrder->update([
+                    'status' => 'refund_pending',
+                    'verified_at' => now(),
+                    'verified_by' => $admin->id,
+                    'payment_rejection_reason' => null,
+                ]);
+                $package->update(['status' => 'refund_pending', 'payment_due_at' => null]);
+                foreach ($package->subjects as $subject) {
+                    $subject->update(['status' => 'refund_pending']);
+                    foreach ($subject->sessions as $session) {
+                        $session->update(['status' => 'refund_pending']);
+                        $session->booking?->update([
+                            'status' => 'refund_pending',
+                            'gross_amount' => 0,
+                            'teacher_net_amount' => 0,
+                            'payout_status' => 'cancelled',
+                        ]);
+                        $session->booking?->participants()->update(['status' => 'refund_pending']);
+                        $session->booking?->bookingRequest?->update(['status' => 'refund_pending']);
+                    }
+                }
+                $package->promotionClaims()
+                    ->where('status', 'reserved')
+                    ->update([
+                        'status' => 'available',
+                        'released_at' => now(),
+                        'learning_package_id' => null,
+                    ]);
+                PackageRenewal::query()
+                    ->where('new_package_id', $package->id)
+                    ->whereIn('status', ['requested', 'tutor_accepted'])
+                    ->update(['status' => 'cancelled']);
+                Refund::firstOrCreate(
+                    ['order_id' => $lockedOrder->id],
+                    [
+                        'user_id' => $lockedOrder->user_id,
+                        'booking_id' => $lockedOrder->booking_id,
+                        'amount' => $lockedOrder->amount,
+                        'reason' => 'Pembayaran paket diverifikasi setelah sesi pertama dimulai',
+                        'status' => 'pending',
+                    ]
+                );
+                Notification::create([
+                    'user_id' => $package->student_id,
+                    'title' => 'Pembayaran paket masuk antrean refund',
+                    'message' => 'Bukti diterima setelah sesi pertama dimulai. Dana dikembalikan penuh dan voucher tersedia kembali.',
+                    'type' => 'warning',
+                ]);
+
+                return 'refund_pending';
+            }
+            $startsAt = $firstSessionAt ?? now();
+            $expiresAt = $startsAt->copy()->addDays($package->plan->validity_days);
+
+            $lockedOrder->update([
+                'status' => 'paid',
+                'verified_at' => now(),
+                'verified_by' => $admin->id,
+                'payment_rejection_reason' => null,
+            ]);
+            $package->update([
+                'status' => 'active',
+                'starts_at' => $startsAt,
+                'expires_at' => $expiresAt,
+                'payment_due_at' => null,
+            ]);
+            foreach ($package->subjects as $subject) {
+                $subject->update(['status' => 'active']);
+                foreach ($subject->sessions as $session) {
+                    $session->update(['status' => 'scheduled']);
+                    $session->booking?->update(['status' => 'confirmed']);
+                    $session->booking?->bookingRequest?->update(['status' => 'confirmed']);
+                    $session->booking?->participants()->update(['status' => 'confirmed']);
+                }
+                $subject->assignedTeacher?->teacherProfile?->increment('assignment_count');
+            }
+            $package->promotionClaims()
+                ->where('status', 'reserved')
+                ->update(['status' => 'used', 'used_at' => now(), 'order_id' => $lockedOrder->id]);
+            PackageRenewal::query()
+                ->where('new_package_id', $package->id)
+                ->whereIn('status', ['requested', 'tutor_accepted'])
+                ->update(['status' => 'completed']);
+
+            Notification::create([
+                'user_id' => $package->student_id,
+                'title' => 'Paket belajar aktif',
+                'message' => "Pembayaran {$package->package_code} diterima. {$package->total_sessions} sesi sudah masuk ke Kelas Saya.",
+                'type' => 'success',
+            ]);
+            $package->subjects->pluck('assigned_teacher_id')->filter()->unique()->each(
+                fn (int $teacherId) => Notification::create([
+                    'user_id' => $teacherId,
+                    'title' => 'Paket murid sudah aktif',
+                    'message' => "Pembayaran paket {$package->package_code} diterima. Jadwal mengajar sudah dikonfirmasi.",
+                    'type' => 'success',
+                ])
+            );
+
+            return 'active';
+        }, 3);
+    }
+
+    public function rejectPackagePayment(Order $order, string $reason): void
+    {
+        DB::transaction(function () use ($order, $reason) {
+            $lockedOrder = Order::query()->lockForUpdate()->findOrFail($order->id);
+            abort_unless($lockedOrder->status === 'submitted', 422, 'Pembayaran ini sudah diproses.');
+            $lockedOrder->update([
+                'status' => 'rejected',
+                'payment_rejection_reason' => $reason,
+            ]);
+            $lockedOrder->learningPackage?->update(['status' => 'payment_rejected']);
+            $lockedOrder->learningPackage?->subjects()
+                ->with('sessions.booking')
+                ->get()
+                ->flatMap->sessions
+                ->each(fn (PackageSession $session) => $session->booking?->update(['status' => 'payment_rejected']));
+            Notification::create([
+                'user_id' => $lockedOrder->user_id,
+                'title' => 'Pembayaran paket ditolak',
+                'message' => 'Bukti pembayaran ditolak: '.$reason,
+                'type' => 'warning',
+            ]);
+        }, 3);
+    }
+
+    private function openInvoice(LearningPackage $package): Order
+    {
+        $paymentSettings = PaymentSetting::query()->lockForUpdate()->first();
+        abort_unless(
+            $paymentSettings
+                && filled($paymentSettings->bank_name)
+                && filled($paymentSettings->account_number)
+                && filled($paymentSettings->account_name),
+            503,
+            'Rekening pembayaran belum dikonfigurasi admin.'
+        );
+
+        $package->load(['plan', 'subjects.sessions', 'subjects.assignedTeacher', 'promotionClaims']);
+        $firstSessionAt = $package->subjects
+            ->flatMap->sessions
+            ->sortBy('scheduled_start_at')
+            ->first()
+            ?->scheduled_start_at;
+        $paymentDueAt = now()->addHours(48);
+        if ($firstSessionAt) {
+            $paymentDueAt = $paymentDueAt->min(Carbon::parse($firstSessionAt)->subHours(2));
+        }
+        abort_if($paymentDueAt->lte(now()), 422, 'Jadwal terlalu dekat untuk membuka tagihan paket.');
+
+        $snapshot = [
+            'flow_version' => 5,
+            'learning_package_id' => $package->id,
+            'package_code' => $package->package_code,
+            'package_name' => $package->plan->name,
+            'subject' => $package->subjects->pluck('subject_name')->join(', '),
+            'teacher_name' => $package->subjects->pluck('assignedTeacher.name')->filter()->join(', '),
+            'type' => 'Paket Privat',
+            'method' => $package->learning_mode,
+            'session_count' => $package->total_sessions,
+            'subtotal_amount' => (float) $package->subtotal_amount,
+            'discount_amount' => (float) $package->discount_amount,
+            'start_at' => $firstSessionAt?->toIso8601String(),
+        ];
+
+        $order = Order::create([
+            'user_id' => $package->student_id,
+            'classroom_id' => null,
+            'booking_id' => null,
+            'learning_package_id' => $package->id,
+            'promotion_id' => $package->promotion_id,
+            'subtotal_amount' => $package->subtotal_amount,
+            'discount_amount' => $package->discount_amount,
+            'amount' => $package->total_amount,
+            'status' => 'pending',
+            'class_details_snapshot' => $snapshot,
+            'order_id' => 'PKG-'.now()->format('YmdHis').'-'.$package->id.'-'.random_int(10, 99),
+        ]);
+
+        $commissionPercent = (float) (Setting::where('key', 'admin_fee')->value('value') ?? 20);
+        $firstBooking = null;
+
+        foreach ($package->subjects as $subject) {
+            foreach ($subject->sessions as $session) {
+                $anchor = $subject->bookingRequest;
+                $bookingRequest = $session->sequence === 1 && $anchor
+                    ? $anchor
+                    : BookingRequest::create([
+                        'student_id' => $package->student_id,
+                        'matched_teacher_id' => $subject->assigned_teacher_id,
+                        'package_subject_id' => $subject->id,
+                        'subject_name' => $subject->subject_name,
+                        'curriculum_subject_id' => $subject->curriculum_subject_id,
+                        'education_level' => $package->education_level,
+                        'grade' => $package->grade,
+                        'chapter' => $subject->chapter,
+                        'subtopic' => $subject->subtopic,
+                        'topic' => $subject->learning_goal,
+                        'learning_goal' => $subject->learning_goal,
+                        'learning_mode' => $package->learning_mode,
+                        'class_type' => 'private',
+                        'scheduled_date' => $session->scheduled_start_at->toDateString(),
+                        'start_time' => $session->scheduled_start_at->format('H:i:s'),
+                        'end_time' => $session->scheduled_end_at->format('H:i:s'),
+                        'duration_hours' => 1,
+                        'address' => $package->address,
+                        'maps_link' => $package->maps_link,
+                        'latitude' => $package->student->latitude,
+                        'longitude' => $package->student->longitude,
+                        'status' => 'awaiting_payment',
+                        'hourly_rate' => $subject->unit_price,
+                        'total_amount' => $subject->unit_price,
+                        'payment_due_at' => $paymentDueAt,
+                    ]);
+
+                $bookingRequest->update([
+                    'matched_teacher_id' => $subject->assigned_teacher_id,
+                    'status' => 'awaiting_payment',
+                    'hourly_rate' => $subject->unit_price,
+                    'total_amount' => $subject->unit_price,
+                    'payment_due_at' => $paymentDueAt,
+                ]);
+
+                $booking = Booking::updateOrCreate(
+                    ['booking_request_id' => $bookingRequest->id],
+                    [
+                        'student_id' => $package->student_id,
+                        'teacher_id' => $subject->assigned_teacher_id,
+                        'order_id' => $order->id,
+                        'start_at' => $session->scheduled_start_at,
+                        'end_at' => $session->scheduled_end_at,
+                        'duration_hours' => 1,
+                        'learning_mode' => $package->learning_mode,
+                        'class_type' => 'private',
+                        'hourly_rate' => $subject->unit_price,
+                        'total_amount' => $subject->unit_price,
+                        'gross_amount' => 0,
+                        'teacher_net_amount' => 0,
+                        'commission_percent' => $commissionPercent,
+                        'status' => 'awaiting_payment',
+                        'payment_due_at' => $paymentDueAt,
+                        'address' => $package->address,
+                        'maps_link' => $package->maps_link,
+                        'payout_status' => 'locked',
+                    ]
+                );
+                $bookingRequest->update(['booking_id' => $booking->id]);
+                BookingParticipant::updateOrCreate(
+                    ['booking_id' => $booking->id, 'student_id' => $package->student_id],
+                    [
+                        'booking_request_id' => $bookingRequest->id,
+                        'order_id' => $order->id,
+                        'amount' => $subject->unit_price,
+                        'status' => 'awaiting_payment',
+                        'approved_at' => null,
+                    ]
+                );
+                $session->update(['booking_id' => $booking->id, 'status' => 'awaiting_payment']);
+                $firstBooking ??= $booking;
+            }
+        }
+
+        $order->update(['booking_id' => $firstBooking?->id]);
+        $package->update(['status' => 'awaiting_payment', 'payment_due_at' => $paymentDueAt]);
+
+        Notification::create([
+            'user_id' => $package->student_id,
+            'title' => 'Semua tutor sudah menerima',
+            'message' => "Tagihan paket {$package->package_code} tersedia selama 48 jam.",
+            'type' => 'success',
+        ]);
+
+        return $order->fresh(['booking', 'learningPackage']);
+    }
+
+    private function assertTarget(?array $targets, string|int $value, string $message): void
+    {
+        if ($targets && !in_array($value, $targets, false)) {
+            abort(422, $message);
+        }
+    }
+
+    private function preferredTeacherCanReceive(User $teacher, BookingRequest $request, PackageSubject $subject): bool
+    {
+        if ($teacher->role !== 'teacher' || $teacher->status !== 'active') {
+            return false;
+        }
+        $profile = $teacher->teacherProfile;
+        if (!$profile?->verified_at || !$profile->is_accepting_requests || $profile->points <= 0) {
+            return false;
+        }
+        $profile->setRelation('user', $teacher);
+        if ($this->matchingService->compatibilityError($profile, $request)) {
+            return false;
+        }
+
+        return $subject->sessions->every(fn (PackageSession $session) =>
+            !$this->matchingService->teacherHasConflict(
+                $teacher->id,
+                $session->scheduled_start_at,
+                $session->scheduled_end_at
+            )
+            && !$this->teacherHasPackageConflict(
+                $teacher->id,
+                $session->scheduled_start_at,
+                $session->scheduled_end_at,
+                $subject->id
+            )
+            && $this->teacherAvailableAt(
+                $teacher,
+                $session->scheduled_start_at,
+                $session->scheduled_end_at
+            )
+        );
+    }
+
+    private function teacherHasPackageConflict(
+        int $teacherId,
+        Carbon $start,
+        Carbon $end,
+        ?int $ignoreSubjectId = null
+    ): bool {
+        return PackageSession::query()
+            ->whereHas('subject', fn ($subjects) => $subjects
+                ->where('assigned_teacher_id', $teacherId)
+                ->when($ignoreSubjectId, fn ($query) => $query->whereKeyNot($ignoreSubjectId))
+                ->whereHas('package', fn ($packages) => $packages
+                    ->whereIn('status', [
+                        'matching',
+                        'teacher_pending',
+                        'no_teacher',
+                        'awaiting_payment',
+                        'payment_rejected',
+                        'payment_submitted',
+                        'active',
+                    ])))
+            ->where('scheduled_start_at', '<', $end)
+            ->where('scheduled_end_at', '>', $start)
+            ->exists();
+    }
+
+    private function teacherAvailableAt(User $teacher, Carbon $start, Carbon $end): bool
+    {
+        $day = [1 => 'Senin', 2 => 'Selasa', 3 => 'Rabu', 4 => 'Kamis', 5 => 'Jumat', 6 => 'Sabtu', 7 => 'Minggu'][$start->dayOfWeekIso];
+
+        return $teacher->availabilities()
+            ->where('day', $day)
+            ->where('is_active', true)
+            ->where('start_time', '<=', $start->format('H:i:s'))
+            ->where('end_time', '>=', $end->format('H:i:s'))
+            ->exists();
+    }
+}

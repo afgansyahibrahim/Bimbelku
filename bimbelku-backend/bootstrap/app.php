@@ -14,6 +14,9 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
+            'finance.2fa' => \App\Http\Middleware\RequireFinanceAuthorization::class,
+            'idempotency' => \App\Http\Middleware\EnforceIdempotency::class,
+            'finance.audit' => \App\Http\Middleware\AuditFinancialAction::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

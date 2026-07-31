@@ -1,5 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
-import { Monitor, MapPin, User, Users } from "lucide-react";
+import { Monitor, MapPin, User, ShieldCheck } from "lucide-react";
 import Reveal from "@/components/Reveal";
 
 const features = [
@@ -22,9 +22,9 @@ const features = [
     color: "bg-secondary text-secondary-foreground",
   },
   {
-    icon: Users,
-    title: "Kelas Grup",
-    description: "Sistem menggabungkan kebutuhan materi dan jadwal yang sama",
+    icon: ShieldCheck,
+    title: "Tutor Terverifikasi",
+    description: "Identitas, kompetensi, dan kesiapan tutor diperiksa admin",
     color: "bg-accent/20 text-accent",
   },
 ];
@@ -41,7 +41,7 @@ const FeaturesSection = () => {
           </Reveal>
           <Reveal delay={0.2}>
              <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-                Fleksibilitas penuh untuk memilih mode dan tipe kelas sesuai kebutuhanmu
+                Layanan privat dirancang untuk kebutuhan akademik dan keterampilan umum
              </p>
           </Reveal>
         </div>

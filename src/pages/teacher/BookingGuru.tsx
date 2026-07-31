@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import TeacherLayout from "@/components/TeacherLayout";
+import { openProtectedFile } from "@/components/ProtectedImage";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -55,6 +56,21 @@ interface Offer {
     commission_percent?: number;
     estimated_net_amount?: number;
     student: { id: number; name: string };
+    package_subject?: {
+      id: number;
+      allocated_sessions: number;
+      subtotal_amount: number;
+      package?: {
+        package_code: string;
+        plan?: { name: string };
+      };
+      sessions: Array<{
+        id: number;
+        sequence: number;
+        scheduled_start_at: string;
+        scheduled_end_at: string;
+      }>;
+    };
   };
 }
 
@@ -113,9 +129,12 @@ export default function BookingGuru() {
   };
 
   const acceptOffer = async (offer: Offer) => {
+    const packageSessions = offer.booking_request.package_subject?.sessions?.length || 0;
     const approved = await confirm({
       title: "Terima permintaan ini?",
-      description: `Pastikan Anda menguasai materi dan tersedia pada ${offer.booking_request.start_time.slice(0, 5)}–${offer.booking_request.end_time.slice(0, 5)} WIB. Slot akan ditahan untuk proses pembayaran.`,
+      description: packageSessions
+        ? `Pastikan Anda tersedia untuk seluruh ${packageSessions} jadwal paket. Semua slot akan ditahan selama proses pembayaran.`
+        : `Pastikan Anda menguasai materi dan tersedia pada ${offer.booking_request.start_time.slice(0, 5)}–${offer.booking_request.end_time.slice(0, 5)} WIB. Slot akan ditahan untuk proses pembayaran.`,
       confirmText: "Terima permintaan",
       tone: "primary",
     });
@@ -151,16 +170,7 @@ export default function BookingGuru() {
 
   const openAttachment = async (url: string) => {
     try {
-      const response = await http.get(url, { responseType: "blob" });
-      const objectUrl = URL.createObjectURL(response.data);
-      const preview = window.open(objectUrl, "_blank", "noopener,noreferrer");
-      if (!preview) {
-        const anchor = document.createElement("a");
-        anchor.href = objectUrl;
-        anchor.download = "lampiran-murid";
-        anchor.click();
-      }
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      await openProtectedFile(url, "lampiran-murid");
     } catch (error) {
       toast.error(getApiError(error, "Lampiran gagal dibuka."));
     }
@@ -305,6 +315,33 @@ function OfferCard({
         <Info icon={Clock3} label="Durasi" value={`${request.duration_hours} jam`} />
       </div>
 
+      {request.package_subject && (
+        <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Penawaran paket</p>
+              <p className="mt-1 text-sm font-black text-indigo-950">
+                {request.package_subject.package?.plan?.name || "Paket Belajar"} · {request.package_subject.allocated_sessions} sesi
+              </p>
+            </div>
+            <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-indigo-700">
+              {request.package_subject.package?.package_code}
+            </span>
+          </div>
+          <div className="mt-3 space-y-2">
+            {request.package_subject.sessions.map((session) => (
+              <div key={session.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-xs">
+                <span className="font-bold text-slate-500">Sesi {session.sequence}</span>
+                <span className="text-right font-black text-slate-800">
+                  {new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(session.scheduled_start_at))}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-xs leading-5 text-indigo-700">Menerima penawaran berarti menyetujui seluruh jadwal di atas.</p>
+        </div>
+      )}
+
       {(request.chapter || request.subtopic || request.topic || request.learning_goal || request.attachment_url) && (
         <div className="mt-4 rounded-2xl bg-slate-50 p-4">
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Kebutuhan belajar</p>
@@ -334,7 +371,7 @@ function OfferCard({
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Estimasi pendapatan tutor</p>
           <p className="mt-1 text-lg font-black text-slate-900">{formatCurrency(request.estimated_net_amount)}</p>
           <p className="mt-1 text-[10px] font-medium text-slate-400">
-            Nilai sesi {formatCurrency(request.total_amount)} · komisi platform {request.commission_percent ?? 20}%
+            {request.package_subject ? "Nilai seluruh sesi mapel" : "Nilai sesi"} {formatCurrency(request.total_amount)} · komisi platform {request.commission_percent ?? 20}%
           </p>
         </div>
         {isPending && (

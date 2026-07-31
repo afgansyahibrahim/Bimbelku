@@ -3,17 +3,23 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\CurriculumSubject;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB; 
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Hash;
 use App\Models\TeacherSubject;
 use App\Models\TeacherProfile;
 use App\Models\Order;
 use App\Models\Payout;
 use App\Models\Booking;
+use App\Models\Notification;
+use App\Models\Setting;
+use App\Models\User;
 use App\Services\TeacherMatchingService;
+use App\Support\EducationCatalog;
 use App\Services\TeacherOfferReleaseService;
 use Carbon\Carbon;
 
@@ -35,6 +41,14 @@ class TeacherController extends Controller
         $profile->load('subjects');
 
         $profileData = $profile->toArray();
+        $profileData['whatsapp_number'] = $profile->whatsapp_number;
+        $profileData['latitude'] = $profile->latitude;
+        $profileData['longitude'] = $profile->longitude;
+        $profileData['bank_name'] = $profile->bank_name;
+        $profileData['account_number'] = $profile->account_number;
+        $profileData['account_name'] = $profile->account_name;
+        $profileData['bank_account_changed_at'] = $profile->bank_account_changed_at;
+        $profileData['payout_hold_until'] = $profile->payout_hold_until;
         $profileData['photo_url'] = $profile->photo ? asset('storage/' . $profile->photo) : null;
         $profileData['cv_url'] = $profile->cv_file ? "/teachers/{$user->id}/documents/cv_file" : null;
         $profileData['identity_document_url'] = $profile->identity_document ? "/teachers/{$user->id}/documents/identity_document" : null;
@@ -253,7 +267,7 @@ class TeacherController extends Controller
             'subjects' => 'required|array|size:1',
             'subjects.0.name' => 'required|string|max:120',
             'subjects.0.levels' => 'required|array|min:1',
-            'subjects.0.levels.*' => 'required|in:SD,SMP,SMA,Umum',
+            'subjects.0.levels.*' => ['required', \Illuminate\Validation\Rule::in(EducationCatalog::LEVELS)],
             'subjects.0.is_online' => 'required|boolean',
             'subjects.0.is_offline' => 'required|boolean',
         ]);
@@ -269,6 +283,22 @@ class TeacherController extends Controller
                 'message' => 'Sedikitnya satu mode mengajar harus diaktifkan.',
             ], 422);
         }
+        $catalogSubject = CurriculumSubject::query()
+            ->where('is_active', true)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($subject['name'])])
+            ->first();
+        if (!$catalogSubject) {
+            return response()->json([
+                'message' => 'Pilih mata pelajaran dari katalog aktif.',
+            ], 422);
+        }
+        if (array_diff($subject['levels'], $catalogSubject->education_levels ?? [])) {
+            return response()->json([
+                'message' => 'Jenjang yang dipilih tidak tersedia pada mata pelajaran tersebut.',
+            ], 422);
+        }
+        $subject['name'] = $catalogSubject->name;
+        $subject['curriculum_subject_id'] = $catalogSubject->id;
 
         $reverificationRequired = false;
         $matchingEligibilityChanged = false;
@@ -303,6 +333,7 @@ class TeacherController extends Controller
             TeacherSubject::create([
                 'teacher_profile_id' => $lockedProfile->id,
                 'name' => $subject['name'],
+                'curriculum_subject_id' => $subject['curriculum_subject_id'],
                 'levels' => array_values(array_unique($subject['levels'])),
                 'is_active' => true,
                 'is_online' => $subject['is_online'],
@@ -350,12 +381,90 @@ class TeacherController extends Controller
             'bank_name' => ['required', 'string', 'max:100'],
             'account_number' => ['required', 'string', 'max:50', 'regex:/^[0-9 .-]+$/'],
             'account_name' => ['required', 'string', 'max:150'],
+            'current_password' => ['required', 'string', 'max:200'],
         ]);
 
         $user = Auth::user();
-        $profile = TeacherProfile::firstOrCreate(['user_id' => $user->id]);
-        $profile->update($validated);
-        return response()->json(['message' => 'Rekening berhasil disimpan.']);
+        if (!Hash::check($validated['current_password'], $user->password)) {
+            return response()->json(['message' => 'Kata sandi akun tidak sesuai.'], 422);
+        }
+
+        $holdHours = min(
+            72,
+            max(1, (int) (Setting::where('key', 'bank_change_hold_hours')->value('value') ?? 24))
+        );
+        $normalizedAccount = preg_replace('/\D+/', '', $validated['account_number']) ?? '';
+        $holdUntil = now()->addHours($holdHours);
+
+        $result = DB::transaction(function () use (
+            $user,
+            $validated,
+            $normalizedAccount,
+            $holdUntil
+        ) {
+            $lockedUser = $user->newQuery()->lockForUpdate()->findOrFail($user->id);
+            if (!Hash::check($validated['current_password'], $lockedUser->password)) {
+                abort(422, 'Kata sandi akun tidak sesuai.');
+            }
+
+            $profile = TeacherProfile::query()
+                ->firstOrCreate(['user_id' => $lockedUser->id]);
+            $lockedProfile = TeacherProfile::query()->lockForUpdate()->findOrFail($profile->id);
+            $fingerprint = hash_hmac('sha256', implode('|', [
+                mb_strtolower(trim($validated['bank_name'])),
+                $normalizedAccount,
+                mb_strtolower(trim($validated['account_name'])),
+            ]), (string) config('app.key'));
+            $changed = !hash_equals(
+                (string) ($lockedProfile->bank_account_fingerprint ?? ''),
+                $fingerprint
+            );
+
+            if ($changed) {
+                $lockedProfile->forceFill([
+                    'bank_name' => trim($validated['bank_name']),
+                    'account_number' => trim($validated['account_number']),
+                    'account_name' => trim($validated['account_name']),
+                    'bank_account_fingerprint' => $fingerprint,
+                    'bank_account_changed_at' => now(),
+                    'payout_hold_until' => $holdUntil,
+                    'bank_details_version' => (int) $lockedProfile->bank_details_version + 1,
+                ])->save();
+            }
+
+            return [
+                'changed' => $changed,
+                'payout_hold_until' => $changed
+                    ? $holdUntil
+                    : $lockedProfile->payout_hold_until,
+            ];
+        }, 3);
+
+        if ($result['changed']) {
+            Notification::create([
+                'user_id' => $user->id,
+                'title' => 'Rekening pencairan diubah',
+                'message' => 'Pencairan ditahan sementara untuk melindungi saldo setelah perubahan rekening.',
+                'type' => 'warning',
+            ]);
+            User::query()
+                ->where('role', 'admin')
+                ->where('status', 'active')
+                ->pluck('id')
+                ->each(fn ($adminId) => Notification::create([
+                    'user_id' => $adminId,
+                    'title' => 'Perubahan rekening tutor',
+                    'message' => "Rekening pencairan {$user->name} berubah. Pencairan ditahan sementara.",
+                    'type' => 'warning',
+                ]));
+        }
+
+        return response()->json([
+            'message' => $result['changed']
+                ? 'Rekening disimpan. Pencairan ditahan sementara demi keamanan.'
+                : 'Data rekening tidak berubah.',
+            'payout_hold_until' => $result['payout_hold_until'],
+        ]);
     }
 
     // ==========================================

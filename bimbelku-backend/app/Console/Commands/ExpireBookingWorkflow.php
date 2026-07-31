@@ -6,6 +6,7 @@ use App\Models\Booking;
 use App\Models\BookingRequest;
 use App\Models\Notification;
 use App\Models\Order;
+use App\Models\PackageRenewal;
 use App\Models\Refund;
 use App\Models\Setting;
 use App\Models\TeacherOffer;
@@ -29,6 +30,7 @@ class ExpireBookingWorkflow extends Command
             'offers' => $this->expireOffers($matchingService),
             'matching' => $this->resumeMatching($matchingService),
             'profile_decisions' => $this->expireProfileDecisions($groupService),
+            'package_payments' => $this->expirePackagePayments(),
             'payments' => $this->expirePayments($groupService),
             'started' => $this->startDueBookings(),
             'reviews' => $this->queueCompletionReviews(),
@@ -49,6 +51,7 @@ class ExpireBookingWorkflow extends Command
             ->chunkById(100, function ($offers) use ($matchingService, &$count) {
                 foreach ($offers as $offer) {
                     $matchingService->expireOfferAndContinue($offer);
+                    $this->syncPackageMatchingStatus($offer->bookingRequest?->fresh());
                     $count++;
                 }
             });
@@ -68,6 +71,7 @@ class ExpireBookingWorkflow extends Command
                 ->chunkById(100, function ($requests) use ($matchingService, &$count) {
                 foreach ($requests as $bookingRequest) {
                     $offer = $matchingService->dispatchNextOffer($bookingRequest);
+                    $this->syncPackageMatchingStatus($bookingRequest->fresh());
                     if ($offer?->wasRecentlyCreated) {
                         $count++;
                     }
@@ -128,10 +132,80 @@ class ExpireBookingWorkflow extends Command
         return $count;
     }
 
+    private function expirePackagePayments(): int
+    {
+        $count = 0;
+        Order::query()
+            ->whereNotNull('learning_package_id')
+            ->whereIn('status', ['pending', 'rejected'])
+            ->whereHas('learningPackage', fn ($query) => $query
+                ->whereNotNull('payment_due_at')
+                ->where('payment_due_at', '<=', now()))
+            ->with(['learningPackage.subjects.sessions.booking.bookingRequest', 'learningPackage.promotionClaims'])
+            ->chunkById(100, function ($orders) use (&$count) {
+                foreach ($orders as $order) {
+                    DB::transaction(function () use ($order, &$count) {
+                        $lockedOrder = Order::query()->lockForUpdate()->find($order->id);
+                        if (!$lockedOrder || !in_array($lockedOrder->status, ['pending', 'rejected'], true)) {
+                            return;
+                        }
+                        $package = $lockedOrder->learningPackage()
+                            ->with(['subjects.sessions.booking.bookingRequest', 'promotionClaims'])
+                            ->lockForUpdate()
+                            ->first();
+                        if (!$package || !$package->payment_due_at?->lte(now())) {
+                            return;
+                        }
+
+                        $lockedOrder->update(['status' => 'expired']);
+                        $package->update(['status' => 'payment_expired', 'payment_due_at' => null]);
+                        foreach ($package->subjects as $subject) {
+                            $subject->update(['status' => 'payment_expired']);
+                            foreach ($subject->sessions as $session) {
+                                $session->update(['status' => 'payment_expired']);
+                                $booking = $session->booking;
+                                $booking?->update(['status' => 'payment_expired', 'payout_status' => 'cancelled']);
+                                $booking?->participants()->update(['status' => 'payment_expired']);
+                                $bookingRequest = $booking?->bookingRequest;
+                                $bookingRequest?->update(['status' => 'payment_expired']);
+                                if ($bookingRequest) {
+                                    $bookingRequest->offers()
+                                        ->whereIn('status', ['pending', 'accepted'])
+                                        ->update(['status' => 'cancelled', 'responded_at' => now()]);
+                                }
+                            }
+                        }
+                        $package->promotionClaims()
+                            ->where('status', 'reserved')
+                            ->update([
+                                'status' => 'available',
+                                'released_at' => now(),
+                                'learning_package_id' => null,
+                            ]);
+                        PackageRenewal::query()
+                            ->where('new_package_id', $package->id)
+                            ->whereIn('status', ['requested', 'tutor_accepted'])
+                            ->update(['status' => 'cancelled']);
+
+                        Notification::create([
+                            'user_id' => $lockedOrder->user_id,
+                            'title' => 'Batas pembayaran paket berakhir',
+                            'message' => 'Slot tutor dilepas karena pembayaran paket tidak diselesaikan dalam 48 jam.',
+                            'type' => 'warning',
+                        ]);
+                        $count++;
+                    }, 3);
+                }
+            });
+
+        return $count;
+    }
+
     private function expirePayments(GroupClassService $groupService): int
     {
         $count = 0;
         Order::query()
+            ->whereNull('learning_package_id')
             ->whereIn('status', ['pending', 'rejected'])
             ->whereHas('booking', fn ($query) => $query
                 ->whereNotNull('payment_due_at')
@@ -257,6 +331,30 @@ class ExpireBookingWorkflow extends Command
             });
 
         return $count;
+    }
+
+    private function syncPackageMatchingStatus(?BookingRequest $bookingRequest): void
+    {
+        if (!$bookingRequest?->package_subject_id) {
+            return;
+        }
+        $subject = $bookingRequest->packageSubject()
+            ->with('package.subjects')
+            ->first();
+        if (!$subject || !in_array($subject->package?->status, ['matching', 'teacher_pending', 'no_teacher'], true)) {
+            return;
+        }
+
+        if (in_array($bookingRequest->status, ['matching', 'teacher_pending', 'no_teacher'], true)) {
+            $subject->update(['status' => $bookingRequest->status]);
+        }
+        $subjects = $subject->package->subjects()->get();
+        $packageStatus = $subjects->contains('status', 'no_teacher')
+            ? 'no_teacher'
+            : ($subjects->contains('status', 'accepted') || $subjects->contains('status', 'teacher_pending')
+                ? 'teacher_pending'
+                : 'matching');
+        $subject->package->update(['status' => $packageStatus]);
     }
 
     private function startDueBookings(): int

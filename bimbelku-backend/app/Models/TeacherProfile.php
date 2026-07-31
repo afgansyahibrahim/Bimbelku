@@ -16,6 +16,13 @@ class TeacherProfile extends Model
         'live_selfie',
         'qualification_document',
         'certification_document',
+        'phone',
+        'whatsapp_number',
+        'latitude',
+        'longitude',
+        'bank_name',
+        'account_number',
+        'account_name',
     ];
 
     protected $guarded = ['id'];
@@ -30,6 +37,9 @@ class TeacherProfile extends Model
         'is_accepting_requests' => 'boolean',
         'verified_at' => 'datetime',
         'suspended_until' => 'datetime',
+        'bank_account_changed_at' => 'datetime',
+        'payout_hold_until' => 'datetime',
+        'bank_details_version' => 'integer',
         'no_response_streak' => 'integer',
         'no_response_window_started_at' => 'datetime',
     ];

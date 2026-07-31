@@ -3,7 +3,8 @@ import { useCallback, useState, useEffect } from "react";
 import AdminLayout from "../../components/AdminLayout";
 import { 
   Users, Search, Ban, Unlock, GraduationCap, School, 
-  Eye, X, Mail, Calendar, Building2, BookOpen, Linkedin, FileText, CheckCircle, Loader2, Download, Wifi, MapPin
+  Eye, X, Mail, Calendar, Building2, BookOpen, Linkedin, FileText, CheckCircle, Loader2, ExternalLink, Wifi, MapPin,
+  Phone, UserRoundCheck,
 } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
@@ -135,6 +136,25 @@ export default function UserManagement() {
                             </label>
                             <p className="font-bold text-gray-900">{selectedUser.grade || "-"}</p>
                         </div>
+                        <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                            <label className="text-xs text-gray-500 uppercase font-bold flex items-center gap-1 mb-1">
+                                <Calendar size={14} /> Tanggal Lahir
+                            </label>
+                            <p className="font-bold text-gray-900">{selectedUser.student_birth_date || "Data lama belum dilengkapi"}</p>
+                        </div>
+                        {selectedUser.guardian && (
+                          <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
+                            <label className="mb-2 flex items-center gap-1 text-xs font-bold uppercase text-amber-700">
+                              <UserRoundCheck size={14} /> Orang Tua / Wali
+                            </label>
+                            <p className="font-bold text-gray-900">{selectedUser.guardian.name}</p>
+                            <p className="mt-1 text-sm text-gray-600">{guardianRelationship(selectedUser.guardian.relationship)}</p>
+                            <p className="mt-2 flex items-center gap-2 text-sm text-gray-700">
+                              <Phone size={14} /> {selectedUser.guardian.phone}
+                            </p>
+                            <p className="mt-2 text-xs font-semibold text-emerald-700">Persetujuan wali telah tercatat.</p>
+                          </div>
+                        )}
                     </div>
                   )}
 
@@ -167,7 +187,7 @@ export default function UserManagement() {
                         </div>
                       )}
 
-                      {/* Download CV */}
+                      {/* Preview CV */}
                       <div>
                         <label className="text-xs text-gray-500 uppercase font-bold flex items-center gap-1 mb-2">
                           <FileText size={14} /> Dokumen CV
@@ -185,10 +205,10 @@ export default function UserManagement() {
                                     <FileText size={20} />
                                 </div>
                                 <div className="flex-1">
-                                    <p className="text-sm font-bold text-gray-900">Download CV</p>
-                                    <p className="text-xs text-gray-500">Klik untuk melihat PDF</p>
+                                    <p className="text-sm font-bold text-gray-900">Lihat CV</p>
+                                    <p className="text-xs text-gray-500">Buka pratinjau PDF tanpa mengunduh</p>
                                 </div>
-                                <Download size={18} className="text-gray-400 group-hover:text-orange-600"/>
+                                <ExternalLink size={18} className="text-gray-400 group-hover:text-orange-600"/>
                              </button>
                         ) : (
                             <div className="p-3 bg-gray-100 rounded-xl text-sm text-gray-500 italic">Tidak ada file CV.</div>
@@ -244,7 +264,7 @@ export default function UserManagement() {
 
         {/* TABEL */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
+          <table className="min-w-[760px] w-full text-left">
             <thead className="bg-gray-50 text-xs uppercase text-gray-500 font-semibold">
               <tr>
                 <th className="px-6 py-4">Nama Lengkap</th>
@@ -315,4 +335,12 @@ export default function UserManagement() {
       </div>
     </AdminLayout>
   );
+}
+
+function guardianRelationship(value?: string) {
+  return {
+    orang_tua: "Orang tua",
+    wali_keluarga: "Wali keluarga",
+    wali_resmi: "Wali resmi lainnya",
+  }[value || ""] || "Wali";
 }

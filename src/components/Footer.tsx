@@ -1,9 +1,8 @@
-import { API_BASE_URL } from "@/lib/http";
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import axios from "axios";
 import { Mail, MapPin, Phone, GraduationCap } from "lucide-react"; // Hapus ArrowRight jika tidak dipakai
 import Reveal from "@/components/Reveal"; // Import Reveal
+import { getCached } from "@/lib/http";
 
 const Footer = () => {
   const currentYear = new Date().getFullYear();
@@ -13,12 +12,13 @@ const Footer = () => {
   useEffect(() => {
     const fetchData = async () => {
         try {
-            const resSettings = await axios.get(`${API_BASE_URL}/settings/footer`);
+            const [resSettings, resSocials] = await Promise.all([
+              getCached("/settings/footer", { maxAgeMs: 5 * 60_000 }),
+              getCached("/socials", { maxAgeMs: 5 * 60_000 }),
+            ]);
             setSettings(resSettings.data);
-
-            const resSocials = await axios.get(`${API_BASE_URL}/socials`);
             setSocials(resSocials.data);
-        } catch (error) {
+        } catch {
             console.error("Gagal load footer");
         }
     };

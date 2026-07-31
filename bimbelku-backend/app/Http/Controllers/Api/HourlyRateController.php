@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\CurriculumSubject;
 use App\Models\HourlyRate;
 use App\Models\Setting;
+use App\Support\EducationCatalog;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use App\Services\HourlyRateService;
@@ -38,12 +40,31 @@ class HourlyRateController extends Controller
         ]);
         $validated = $request->validate([
             'subject_name' => ['required', 'string', 'max:120'],
-            'education_level' => ['nullable', Rule::in(['SD', 'SMP', 'SMA', 'Umum'])],
+            'education_level' => ['nullable', Rule::in(EducationCatalog::LEVELS)],
             'class_type' => ['required', Rule::in(['private', 'group'])],
             'learning_mode' => ['required', Rule::in(['online', 'offline'])],
             'amount' => ['required', 'integer', 'min:1000', 'max:10000000'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
+        $subject = CurriculumSubject::query()
+            ->where('is_active', true)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($validated['subject_name'])])
+            ->first();
+        if (!$subject) {
+            return response()->json([
+                'message' => 'Pilih mata pelajaran dari katalog atau tambahkan mapel baru dahulu.',
+            ], 422);
+        }
+        if (
+            !empty($validated['education_level'])
+            && !in_array($validated['education_level'], $subject->education_levels ?? [], true)
+        ) {
+            return response()->json([
+                'message' => 'Jenjang tarif tidak tersedia pada mata pelajaran tersebut.',
+            ], 422);
+        }
+        $validated['subject_name'] = $subject->name;
+        $validated['curriculum_subject_id'] = $subject->id;
 
         Setting::firstOrCreate(['key' => 'admin_fee'], ['value' => '20']);
         $rate = DB::transaction(function () use ($validated) {
@@ -62,6 +83,7 @@ class HourlyRateController extends Controller
                 [
                     'amount' => $validated['amount'],
                     'is_active' => $validated['is_active'] ?? true,
+                    'curriculum_subject_id' => $validated['curriculum_subject_id'],
                 ]
             );
         }, 3);

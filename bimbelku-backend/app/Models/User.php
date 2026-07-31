@@ -28,6 +28,11 @@ class User extends Authenticatable
         'status', 
         'school_name', 
         'grade',
+        'date_of_birth',
+        'guardian_name',
+        'guardian_phone',
+        'guardian_relationship',
+        'guardian_consent_at',
         // [BARU] Tambahan kolom alamat
         'address',
         'maps_link',
@@ -41,9 +46,27 @@ class User extends Authenticatable
         'teacher_rejection_streak',
         'last_teacher_rejection_at',
         'search_cooldown_until',
+        'finance_totp_secret',
+        'finance_totp_confirmed_at',
     ];
 
-    protected $hidden = ['password', 'remember_token', 'consent_ip', 'consent_user_agent'];
+    protected $hidden = [
+        'password',
+        'remember_token',
+        'phone',
+        'address',
+        'maps_link',
+        'latitude',
+        'longitude',
+        'date_of_birth',
+        'guardian_name',
+        'guardian_phone',
+        'guardian_relationship',
+        'guardian_consent_at',
+        'consent_ip',
+        'consent_user_agent',
+        'finance_totp_secret',
+    ];
 
     protected $casts = [
         'email_verified_at' => 'datetime',
@@ -51,9 +74,13 @@ class User extends Authenticatable
         'password_updated_at' => 'datetime',
         'terms_accepted_at' => 'datetime',
         'privacy_accepted_at' => 'datetime',
+        'date_of_birth' => 'date',
+        'guardian_consent_at' => 'datetime',
         'last_teacher_rejection_at' => 'datetime',
         'search_cooldown_until' => 'datetime',
         'teacher_rejection_streak' => 'integer',
+        'finance_totp_secret' => 'encrypted',
+        'finance_totp_confirmed_at' => 'datetime',
     ];
 
     // Relasi ke Profil Guru
@@ -117,6 +144,16 @@ class User extends Authenticatable
     public function bookingParticipations()
     {
         return $this->hasMany(BookingParticipant::class, 'student_id');
+    }
+
+    public function learningPackages()
+    {
+        return $this->hasMany(LearningPackage::class, 'student_id');
+    }
+
+    public function promotionClaims()
+    {
+        return $this->hasMany(PromotionClaim::class);
     }
 
     // Relasi Rating

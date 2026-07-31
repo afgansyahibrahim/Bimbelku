@@ -6,7 +6,11 @@ import HeroSection from "@/components/HeroSection";
 // Komponen ini ada di bawah layar, jadi tidak perlu dimuat di detik pertama.
 // Ini akan meringankan beban awal browser secara drastis.
 const FeaturesSection = lazy(() => import("@/components/FeaturesSection"));
+const TrustStrip = lazy(() => import("@/components/TrustStrip"));
+const HowItWorksSection = lazy(() => import("@/components/HowItWorksSection"));
 const SubjectsSection = lazy(() => import("@/components/SubjectsSection"));
+const PackagePreviewSection = lazy(() => import("@/components/PackagePreviewSection"));
+const DashboardPreviewSection = lazy(() => import("@/components/DashboardPreviewSection"));
 const CTASection = lazy(() => import("@/components/CTASection"));
 const Footer = lazy(() => import("@/components/Footer"));
 
@@ -31,12 +35,28 @@ const Index = () => {
         <HeroSection />
 
         {/* 2. BAGIAN BAWAH - Lazy Load dengan Suspense */}
+        <Suspense fallback={<div className="h-20 bg-white" />}>
+          <TrustStrip />
+        </Suspense>
+
+        <Suspense fallback={<SectionLoader />}>
+          <HowItWorksSection />
+        </Suspense>
+
         <Suspense fallback={<SectionLoader />}>
           <FeaturesSection />
         </Suspense>
 
         <Suspense fallback={<SectionLoader />}>
           <SubjectsSection />
+        </Suspense>
+
+        <Suspense fallback={<SectionLoader />}>
+          <PackagePreviewSection />
+        </Suspense>
+
+        <Suspense fallback={<SectionLoader />}>
+          <DashboardPreviewSection />
         </Suspense>
 
         <Suspense fallback={<SectionLoader />}>

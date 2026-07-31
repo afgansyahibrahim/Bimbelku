@@ -1,15 +1,19 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { FormEvent, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   BookOpen,
   CalendarDays,
   CheckCircle2,
   Clock3,
+  CreditCard,
   ExternalLink,
   FileCheck2,
+  GraduationCap,
   Loader2,
   MapPin,
+  MessageCircle,
   MessageSquareWarning,
   Monitor,
   RefreshCw,
@@ -17,9 +21,12 @@ import {
   Star,
   UserRound,
   Users,
+  WifiOff,
 } from "lucide-react";
 import { toast } from "sonner";
+import axios from "axios";
 import StudentLayout from "@/components/StudentLayout";
+import LearningSessionHub from "@/components/LearningSessionHub";
 import ProtectedImage from "@/components/ProtectedImage";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
@@ -41,7 +48,6 @@ interface ClassItem {
   topic?: string;
   mentor: string;
   mentor_avatar?: string;
-  teacher_whatsapp?: string;
   type: "Kelompok" | "Privat";
   method: "online" | "offline";
   status: string;
@@ -52,6 +58,7 @@ interface ClassItem {
   maps_link?: string;
   meeting_link?: string;
   amount: number;
+  payment_due_at?: string;
   completion_evidence_url?: string;
   completion_notes?: string;
   objection_deadline?: string;
@@ -62,11 +69,13 @@ interface ClassItem {
   can_report_teacher_absence: boolean;
   dispute?: { status: string; reason: string; resolution?: string };
   refund?: { status: string; amount: number; proof?: string; reason?: string };
+  order?: { id: number; order_id: string; status: string; payment_rejection_reason?: string };
 }
 
 const labels: Record<string, { label: string; className: string }> = {
   awaiting_payment: { label: "Menunggu pembayaran", className: "bg-orange-50 text-orange-700" },
   payment_submitted: { label: "Pembayaran diperiksa", className: "bg-sky-50 text-sky-700" },
+  payment_collecting: { label: "Menunggu pembayaran", className: "bg-orange-50 text-orange-700" },
   confirmed: { label: "Terjadwal", className: "bg-indigo-50 text-indigo-700" },
   in_progress: { label: "Sedang berlangsung", className: "bg-emerald-50 text-emerald-700" },
   awaiting_student_approval: { label: "Butuh keputusanmu", className: "bg-amber-50 text-amber-700" },
@@ -83,9 +92,11 @@ const rupiah = (value: number) => new Intl.NumberFormat("id-ID", { style: "curre
 const dateTime = (value: string) => new Intl.DateTimeFormat("id-ID", { dateStyle: "full", timeStyle: "short" }).format(new Date(value));
 
 export default function MyClasses() {
+  const navigate = useNavigate();
   const confirm = useConfirmDialog();
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState<number | null>(null);
   const [selected, setSelected] = useState<ClassItem | null>(null);
   const [dispute, setDispute] = useState<ClassItem | null>(null);
@@ -97,19 +108,41 @@ export default function MyClasses() {
   const [ratingClass, setRatingClass] = useState<ClassItem | null>(null);
   const [rating, setRating] = useState(5);
   const [review, setReview] = useState("");
+  const [hubBookingId, setHubBookingId] = useState<number | null>(null);
 
   useEffect(() => { void loadClasses(); }, []);
 
   const loadClasses = async () => {
     setLoading(true);
+    setError(null);
     try {
       const response = await http.get<ClassItem[]>("/student/classes");
       setClasses(response.data);
-    } catch (error) {
-      toast.error(getApiError(error, "Kelas gagal dimuat."));
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        if (!err.response) {
+          setError("network");
+        } else if (err.response.status === 401) {
+          setError("unauthorized");
+        } else if (err.response.status === 403) {
+          setError("forbidden");
+        } else if (err.response.status === 404) {
+          setError("not_found");
+        } else {
+          setError("generic");
+        }
+      } else {
+        setError("generic");
+      }
+      toast.error(getApiError(err, "Kelas gagal dimuat."));
     } finally {
       setLoading(false);
     }
+  };
+
+  const retry = () => {
+    setError(null);
+    void loadClasses();
   };
 
   const approve = async (item: ClassItem) => {
@@ -222,8 +255,36 @@ export default function MyClasses() {
     setAbsenceEvidence(file || null);
   };
 
+  const openPayment = (item: ClassItem) => {
+    if (!item.order?.id) {
+      toast.error("Data tagihan belum tersedia.");
+      return;
+    }
+    navigate("/payment", {
+      state: {
+        orderId: item.order.id,
+        invoiceId: item.order.order_id,
+        tutorName: item.mentor,
+        subject: item.subject,
+        type: `${item.method === "online" ? "Online" : "Offline"} · ${item.type}`,
+        price: Number(item.amount),
+        date: item.start_at,
+        paymentDueAt: item.payment_due_at,
+        rejectionReason: item.order.payment_rejection_reason,
+      },
+    });
+  };
+
   if (loading) {
     return <StudentLayout title="Kelas Saya"><div className="grid min-h-[65vh] place-items-center"><Loader2 className="h-10 w-10 animate-spin text-indigo-600" /></div></StudentLayout>;
+  }
+
+  if (error) {
+    return (
+      <StudentLayout title="Kelas Saya">
+        <ErrorState error={error} onRetry={retry} />
+      </StudentLayout>
+    );
   }
 
   return (
@@ -248,6 +309,7 @@ export default function MyClasses() {
                   <div className="mt-4 space-y-2 text-xs text-slate-600"><Info icon={CalendarDays} text={dateTime(item.start_at)} /><Info icon={Clock3} text={`${new Date(item.start_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}–${new Date(item.end_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`} /><Info icon={Users} text={rupiah(item.amount)} /></div>
                   <div className="mt-auto pt-5">
                     <Button onClick={() => setSelected(item)} variant="outline" className="w-full rounded-xl">Lihat detail</Button>
+                    {["pending", "rejected"].includes(item.order?.status || "") && <Button onClick={() => openPayment(item)} className="mt-2 w-full rounded-xl bg-orange-500 hover:bg-orange-600"><CreditCard size={16} className="mr-2" />{item.order?.status === "rejected" ? "Unggah ulang bukti" : "Bayar sekarang"}</Button>}
                     {item.can_rate && <Button onClick={() => setRatingClass(item)} className="mt-2 w-full rounded-xl bg-amber-400 text-slate-950 hover:bg-amber-500"><Star size={16} className="mr-2 fill-current" />Beri ulasan</Button>}
                   </div>
                 </article>
@@ -261,14 +323,15 @@ export default function MyClasses() {
         <DialogContent className="max-h-[90vh] overflow-y-auto rounded-[2rem] sm:max-w-2xl">
           {selected && <>
             <DialogHeader><DialogTitle className="text-2xl">{selected.title}</DialogTitle><DialogDescription>{selected.mentor} · {dateTime(selected.start_at)}</DialogDescription></DialogHeader>
-            <div className="grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm sm:grid-cols-2"><Info icon={GraduationCap} text={`${selected.education_level || ""} ${selected.grade || ""}`} /><Info icon={Users} text={`${selected.type} · ${rupiah(selected.amount)}`} /><Info icon={selected.method === "online" ? Monitor : MapPin} text={selected.method === "online" ? "Kelas online" : selected.address || "Alamat murid"} /><Info icon={Clock3} text={`${new Date(selected.start_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}–${new Date(selected.end_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`} /></div>
+            <div className="grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm sm:grid-cols-2"><Info icon={GraduationCap} text={`${selected.education_level || ""} ${selected.grade || ""}`} /><Info icon={Users} text={`${selected.type} · ${rupiah(selected.amount)}`} /><Info icon={selected.method === "online" ? Monitor : MapPin} text={selected.method === "online" ? "Kelas online" : selected.address || "Alamat dibuka setelah pembayaran"} /><Info icon={Clock3} text={`${new Date(selected.start_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}–${new Date(selected.end_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`} /></div>
+            {["pending", "rejected"].includes(selected.order?.status || "") && <Button onClick={() => openPayment(selected)} className="rounded-xl bg-orange-500 hover:bg-orange-600"><CreditCard size={16} className="mr-2" />{selected.order?.status === "rejected" ? "Unggah ulang bukti pembayaran" : "Bayar kelas sekarang"}</Button>}
             {(selected.meeting_link || selected.maps_link) && <Button asChild className="rounded-xl bg-indigo-600"><a href={selected.meeting_link || selected.maps_link} target="_blank" rel="noreferrer"><ExternalLink size={16} className="mr-2" />{selected.method === "online" ? "Buka ruang kelas" : "Buka lokasi"}</a></Button>}
-            {selected.teacher_whatsapp && <Button asChild variant="outline" className="rounded-xl border-emerald-200 text-emerald-700"><a href={`https://wa.me/${selected.teacher_whatsapp.replace(/\D/g, "").replace(/^0/, "62")}`} target="_blank" rel="noreferrer">Hubungi tutor</a></Button>}
+            {selected.order?.status === "paid" && <Button variant="outline" className="rounded-xl border-indigo-200 text-indigo-700" onClick={() => { setHubBookingId(selected.id); setSelected(null); }}><MessageCircle size={16} className="mr-2" />Buka ruang belajar</Button>}
             {selected.can_report_teacher_absence && <Button variant="outline" className="rounded-xl border-rose-200 text-rose-700" onClick={() => setAbsenceReport(selected)}><ShieldAlert size={16} className="mr-2" />Tutor belum hadir setelah 15 menit</Button>}
             {selected.completion_evidence_url && <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4"><div className="flex items-center gap-2 font-black text-emerald-900"><FileCheck2 size={18} />Bukti pelaksanaan tutor</div><ProtectedImage source={selected.completion_evidence_url} alt="Bukti pelaksanaan" className="mt-3 max-h-72 w-full rounded-xl object-contain bg-white" /><p className="mt-3 text-sm leading-6 text-emerald-800">{selected.completion_notes}</p>{selected.objection_deadline && <p className="mt-2 text-xs font-bold text-emerald-700">Batas keputusan: {dateTime(selected.objection_deadline)}</p>}</div>}
             {selected.dispute && <div className="flex gap-3 rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm text-rose-800"><MessageSquareWarning className="shrink-0" /><div><p className="font-black">Keberatan {selected.dispute.status}</p><p className="mt-1 leading-6">{selected.dispute.reason}</p></div></div>}
             {selected.refund && <div className="flex gap-3 rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800"><ShieldAlert className="shrink-0" /><div><p className="font-black">Refund {selected.refund.status} · {rupiah(selected.refund.amount)}</p><p className="mt-1">{selected.refund.reason}</p></div></div>}
-            {(selected.can_approve || selected.can_dispute) && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><div className="flex gap-3 text-sm text-amber-900"><AlertCircle className="shrink-0" /><p>Periksa bukti sebelum memilih. Persetujuan bersifat final; keberatan hanya tersedia sebelum batas waktu.</p></div><div className="mt-4 grid grid-cols-2 gap-2">{selected.can_dispute && <Button variant="outline" className="rounded-xl border-rose-200 text-rose-700" onClick={() => setDispute(selected)}>Ajukan keberatan</Button>}{selected.can_approve && <Button className="rounded-xl bg-emerald-600 hover:bg-emerald-700" onClick={() => approve(selected)} disabled={processing === selected.id}><CheckCircle2 size={16} className="mr-2" />Setujui selesai</Button>}</div></div>}
+            {(selected.can_approve || selected.can_dispute) && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><div className="flex gap-3 text-sm text-amber-900"><AlertCircle className="shrink-0" /><p>Periksa bukti sebelum memilih. Persetujuan bersifat final; keberatan hanya tersedia sebelum batas waktu.</p></div><div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">{selected.can_dispute && <Button variant="outline" className="rounded-xl border-rose-200 text-rose-700" onClick={() => setDispute(selected)}>Ajukan keberatan</Button>}{selected.can_approve && <Button className="rounded-xl bg-emerald-600 hover:bg-emerald-700" onClick={() => approve(selected)} disabled={processing === selected.id}><CheckCircle2 size={16} className="mr-2" />Setujui selesai</Button>}</div></div>}
           </>}
         </DialogContent>
       </Dialog>
@@ -291,10 +354,87 @@ export default function MyClasses() {
           </form>
         </DialogContent>
       </Dialog>
+      <LearningSessionHub bookingId={hubBookingId} open={hubBookingId !== null} onOpenChange={(open) => !open && setHubBookingId(null)} />
     </StudentLayout>
   );
 }
 
 function Info({ icon: Icon, text }: { icon: typeof Clock3; text: string }) {
   return <div className="flex items-start gap-2 rounded-xl bg-white/70 px-3 py-2.5"><Icon size={15} className="mt-0.5 shrink-0 text-indigo-500" /><span className="leading-5">{text}</span></div>;
+}
+
+function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
+  if (error === "network") {
+    return (
+      <div className="grid min-h-[400px] place-items-center px-4 text-center">
+        <div>
+          <WifiOff className="mx-auto text-slate-300" size={48} />
+          <h2 className="mt-4 text-xl font-black text-slate-800">Koneksi Terputus</h2>
+          <p className="mt-2 text-sm text-slate-500">Periksa koneksi internet Anda dan coba lagi.</p>
+          <button onClick={onRetry} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 transition-colors">
+            <RefreshCw size={16} /> Coba Lagi
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (error === "forbidden") {
+    return (
+      <div className="grid min-h-[400px] place-items-center px-4 text-center">
+        <div>
+          <AlertCircle className="mx-auto text-amber-500" size={48} />
+          <h2 className="mt-4 text-xl font-black text-slate-800">Akses Ditolak</h2>
+          <p className="mt-2 text-sm text-slate-500">Anda tidak memiliki izin untuk mengakses halaman ini.</p>
+          <Link to="/student/dashboard" className="mt-5 inline-flex rounded-2xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 transition-colors">
+            Kembali ke Beranda
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (error === "not_found") {
+    return (
+      <div className="grid min-h-[400px] place-items-center px-4 text-center">
+        <div>
+          <AlertCircle className="mx-auto text-slate-300" size={48} />
+          <h2 className="mt-4 text-xl font-black text-slate-800">Data Tidak Ditemukan</h2>
+          <p className="mt-2 text-sm text-slate-500">Kelas tidak dapat dimuat saat ini.</p>
+          <button onClick={onRetry} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 transition-colors">
+            <RefreshCw size={16} /> Coba Lagi
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (error === "unauthorized") {
+    return (
+      <div className="grid min-h-[400px] place-items-center px-4 text-center">
+        <div>
+          <AlertCircle className="mx-auto text-orange-500" size={48} />
+          <h2 className="mt-4 text-xl font-black text-slate-800">Sesi Berakhir</h2>
+          <p className="mt-2 text-sm text-slate-500">Sesi Anda telah berakhir. Silakan login kembali.</p>
+          <Link to="/login" className="mt-5 inline-flex rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 transition-colors">
+            Login Kembali
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Generic error
+  return (
+    <div className="grid min-h-[400px] place-items-center px-4 text-center">
+      <div>
+        <AlertCircle className="mx-auto text-rose-500" size={48} />
+        <h2 className="mt-4 text-xl font-black text-slate-800">Terjadi Kesalahan</h2>
+        <p className="mt-2 text-sm text-slate-500">Kelas tidak dapat dimuat. Silakan coba lagi.</p>
+        <button onClick={onRetry} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 transition-colors">
+          <RefreshCw size={16} /> Coba Lagi
+        </button>
+      </div>
+    </div>
+  );
 }

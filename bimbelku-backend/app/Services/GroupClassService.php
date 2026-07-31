@@ -76,8 +76,7 @@ class GroupClassService
                 $joinDeadline = now()->addHours($waitHours);
                 $classCutoff = $request->scheduled_date
                     ->copy()
-                    ->setTimeFromTimeString($request->start_time)
-                    ->subHours(2);
+                    ->setTimeFromTimeString($request->start_time);
 
                 if ($joinDeadline->greaterThan($classCutoff)) {
                     $joinDeadline = $classCutoff;
@@ -152,8 +151,7 @@ class GroupClassService
 
                         $privateSearchCutoff = $locked->scheduled_date
                             ->copy()
-                            ->setTimeFromTimeString($locked->start_time)
-                            ->subMinutes(90);
+                            ->setTimeFromTimeString($locked->start_time);
                         $locked->update([
                             'status' => 'decision_required',
                             'decision_deadline' => now()->addHours(12)->min($privateSearchCutoff),

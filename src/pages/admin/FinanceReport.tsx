@@ -1,5 +1,6 @@
-import { API_BASE_URL } from "@/lib/http";
+import http, { getApiError } from "@/lib/http";
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import AdminLayout from "../../components/AdminLayout";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { 
@@ -43,6 +44,11 @@ export default function FinanceReport() {
   });
 
   const [isLoading, setIsLoading] = useState(true);
+  const [securityLocked, setSecurityLocked] = useState(false);
+  const [security, setSecurity] = useState({
+    current_admin_id: 0,
+    high_value_threshold: 5000000,
+  });
 
   // Modal Payout State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -61,10 +67,8 @@ export default function FinanceReport() {
 
   const fetchFinanceData = async () => {
     try {
-      const token = localStorage.getItem("token");
-      const response = await axios.get(`${API_BASE_URL}/admin/finance`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await http.get("/admin/finance");
+      setSecurityLocked(false);
       
       setPayouts(response.data.pending || []);
       setHistory(response.data.history || []);
@@ -73,10 +77,14 @@ export default function FinanceReport() {
         setStats(response.data.stats);
         setNewFee(response.data.stats.admin_fee_percent.toString()); // Sync input dengan data
       }
+      if (response.data.security) setSecurity(response.data.security);
 
     } catch (error) {
-      console.error("Gagal load data", error);
-      toast.error("Gagal mengambil data keuangan.");
+      if (axios.isAxiosError(error) && error.response?.status === 423) {
+        setSecurityLocked(true);
+      } else {
+        toast.error(getApiError(error, "Gagal mengambil data keuangan."));
+      }
     } finally {
       setIsLoading(false);
     }
@@ -90,16 +98,12 @@ export default function FinanceReport() {
     }
 
     try {
-      const token = localStorage.getItem("token");
-      await axios.post(`${API_BASE_URL}/admin/commission-setting`, 
-        { admin_fee: feeValue },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await http.post("/admin/commission-setting", { admin_fee: feeValue });
       toast.success("Persentase Keuntungan berhasil diupdate!");
       setIsFeeModalOpen(false);
       fetchFinanceData(); // Refresh data agar angka rupiah berubah
     } catch (error) {
-      toast.error("Gagal update persentase.");
+      toast.error(getApiError(error, "Gagal memperbarui persentase."));
     }
   };
 
@@ -140,15 +144,15 @@ export default function FinanceReport() {
     if (!approved) return;
     setIsProcessing(true);
     try {
-      const token = localStorage.getItem("token");
       const formData = new FormData();
       formData.append('teacher_id', selectedPayout.teacherId);
       selectedPayout.bookingIds.forEach((id: number, index: number) => formData.append(`booking_ids[${index}]`, String(id)));
+      if (selectedPayout.approval?.id) {
+        formData.append("approval_id", String(selectedPayout.approval.id));
+      }
       formData.append('proof_file', proofFile); 
 
-      const response = await axios.post(`${API_BASE_URL}/admin/payout`, formData, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await http.post("/admin/payout", formData);
 
       const newHistoryItem = {
         id: response.data.data.id,
@@ -164,13 +168,69 @@ export default function FinanceReport() {
       toast.success("Berhasil dicairkan!");
       setIsModalOpen(false);
     } catch (error) {
-      toast.error("Gagal memproses.");
+      toast.error(getApiError(error, "Gagal memproses pencairan."));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleRequestApproval = async (payout: any) => {
+    const approved = await confirm({
+      title: "Ajukan persetujuan admin kedua?",
+      description: `Pencairan ${formatRupiah(payout.netAmount)} belum boleh ditransfer sebelum diperiksa admin lain.`,
+      confirmText: "Ajukan persetujuan",
+      tone: "warning",
+    });
+    if (!approved) return;
+    setIsProcessing(true);
+    try {
+      await http.post("/admin/payout-approvals", {
+        teacher_id: payout.teacherId,
+        booking_ids: payout.bookingIds,
+      });
+      toast.success("Permintaan persetujuan telah dikirim.");
+      await fetchFinanceData();
+    } catch (error) {
+      toast.error(getApiError(error, "Persetujuan tidak dapat diajukan."));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleApprovePayout = async (payout: any) => {
+    const approved = await confirm({
+      title: "Setujui pencairan bernilai besar?",
+      description: `Periksa tutor, sesi, nominal ${formatRupiah(payout.netAmount)}, serta tujuan rekening sebelum menyetujui.`,
+      confirmText: "Setujui pencairan",
+      tone: "warning",
+    });
+    if (!approved) return;
+    setIsProcessing(true);
+    try {
+      await http.post(`/admin/payout-approvals/${payout.approval.id}/approve`);
+      toast.success("Pencairan disetujui. Transfer dapat diselesaikan.");
+      await fetchFinanceData();
+    } catch (error) {
+      toast.error(getApiError(error, "Persetujuan tidak dapat diproses."));
     } finally {
       setIsProcessing(false);
     }
   };
 
   if (isLoading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-orange-600" /></div>;
+
+  if (securityLocked) {
+    return (
+      <AdminLayout title="Laporan Keuangan">
+        <div className="mx-auto max-w-2xl rounded-[2rem] border border-amber-200 bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-amber-50 text-amber-600"><CreditCard /></div>
+          <h1 className="mt-5 text-2xl font-black text-slate-900">Keuangan sedang terkunci</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">Aktifkan atau masukkan kode autentikator sebelum saldo, rekening tutor, dan tindakan pencairan dibuka.</p>
+          <Button asChild className="mt-6 rounded-xl bg-slate-950"><Link to="/admin/finance-security">Buka keamanan keuangan</Link></Button>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout title="Laporan Keuangan">
@@ -231,6 +291,11 @@ export default function FinanceReport() {
                  <p><strong>Rekening:</strong> {selectedPayout.bankDetails.number}</p>
                  <p><strong>Nama:</strong> {selectedPayout.bankDetails.name}</p>
               </div>
+              {selectedPayout.requiresSecondApproval && (
+                <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-xs leading-5 text-indigo-700">
+                  Persetujuan admin kedua telah tercatat. Unggah bukti hanya setelah transfer dilakukan ke rekening yang ditampilkan.
+                </div>
+              )}
               <input type="file" accept=".jpg,.jpeg,.png,.webp" onChange={handleFileChange} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"/>
               {previewUrl && <img src={previewUrl} className="h-32 object-contain mx-auto rounded-lg border" />}
               <Button onClick={handleConfirmTransfer} disabled={isProcessing} className="w-full bg-slate-900">{isProcessing ? "Memproses..." : "Konfirmasi"}</Button>
@@ -324,7 +389,17 @@ export default function FinanceReport() {
                             </td>
                             <td className="px-6 py-5 text-right font-black text-emerald-600 text-lg">{formatRupiah(p.netAmount)}</td>
                             <td className="px-8 py-5 text-right">
-                               <Button onClick={() => handleOpenTransfer(p)} className="rounded-xl bg-slate-900 hover:bg-orange-600 text-white shadow-sm">Transfer <ArrowUpRight size={16} className="ml-2"/></Button>
+                               {p.payoutBlocked ? (
+                                 <div className="inline-flex flex-col items-end gap-1"><Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Ditahan setelah rekening berubah</Badge><span className="text-[11px] text-slate-400">{p.payoutHoldUntil ? new Date(p.payoutHoldUntil).toLocaleString("id-ID") : ""}</span></div>
+                               ) : p.requiresSecondApproval && !p.approval ? (
+                                 <Button disabled={isProcessing} onClick={() => handleRequestApproval(p)} className="rounded-xl bg-indigo-600 text-white hover:bg-indigo-700">Ajukan persetujuan</Button>
+                               ) : p.approval?.status === "pending" && p.approval.requestedBy === security.current_admin_id ? (
+                                 <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Menunggu admin lain</Badge>
+                               ) : p.approval?.status === "pending" ? (
+                                 <Button disabled={isProcessing} onClick={() => handleApprovePayout(p)} className="rounded-xl bg-indigo-600 text-white hover:bg-indigo-700">Periksa & setujui</Button>
+                               ) : (
+                                 <Button onClick={() => handleOpenTransfer(p)} className="rounded-xl bg-slate-900 hover:bg-orange-600 text-white shadow-sm">Transfer <ArrowUpRight size={16} className="ml-2"/></Button>
+                               )}
                             </td>
                          </tr>
                       ))

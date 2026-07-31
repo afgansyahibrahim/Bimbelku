@@ -1,17 +1,13 @@
 import { Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/sonner";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { BookOpenCheck } from "lucide-react";
 
 // --- IMPORT KOMPONEN KEAMANAN & GLOBAL (Tetap Import Biasa) ---
 import PrivateRoute from "./components/PrivateRoute"; 
-import PendingPaymentPopup from "./components/PendingPaymentPopup"; 
 import { ConfirmDialogProvider } from "./components/ConfirmDialogProvider";
 import SessionLifecycle from "./components/SessionLifecycle";
-
-// --- IMPORT LAYOUTS (Tetap Import Biasa agar kerangka stabil) ---
-import TeacherLayout from "./components/TeacherLayout";
-import StudentLayout from "./components/StudentLayout";
+import FilePreviewProvider from "./components/FilePreviewProvider";
 
 // =================================================================
 // KONFIGURASI LAZY LOAD (Code Splitting)
@@ -52,7 +48,10 @@ const SettingsDisplay = lazy(() => import("./pages/admin/SettingsDisplay"));
 const AdminRatings = lazy(() => import("./pages/admin/AdminRatings"));
 const HourlyRates = lazy(() => import("./pages/admin/HourlyRates"));
 const LearningTopics = lazy(() => import("./pages/admin/LearningTopics"));
+const SubjectManagement = lazy(() => import("./pages/admin/SubjectManagement"));
 const CaseCenter = lazy(() => import("./pages/admin/CaseCenter"));
+const FinanceSecurity = lazy(() => import("./pages/admin/FinanceSecurity"));
+const StageFiveManagement = lazy(() => import("./pages/admin/StageFiveManagement"));
 
 // 5. Halaman Guru
 const TeacherDashboard = lazy(() => import("./pages/teacher/TeacherDashboard"));
@@ -68,12 +67,36 @@ const Dashboard = lazy(() => import("./pages/students/Dashboard"));
 const MyClasses = lazy(() => import("./pages/students/MyClasses"));
 const TransactionHistory = lazy(() => import("./pages/students/TransactionHistory"));
 const Profile = lazy(() => import("./pages/students/Profile"));
+const PackageBuilder = lazy(() => import("./pages/students/PackageBuilder"));
+const MyPackages = lazy(() => import("./pages/students/MyPackages"));
+const Vouchers = lazy(() => import("./pages/students/Vouchers"));
+const PromotionDetail = lazy(() => import("./pages/students/PromotionDetail"));
 
 // 7. Payment
 const PaymentPage = lazy(() => import("./pages/pembayaran/PaymentPage"));
 
 // 8. Halaman Common (Bantuan)
-const HelpCenter = lazy(() => import("./pages/common/HelpCenter")); 
+const StudentHelp = lazy(() => import("./pages/students/Help"));
+const TeacherHelp = lazy(() => import("./pages/teacher/Help"));
+const PendingPaymentPopup = lazy(() => import("./components/PendingPaymentPopup"));
+
+const StudentRuntime = () => {
+  // useLocation membuat pemeriksaan peran ikut diperbarui setelah login/logout
+  // tanpa memuat widget pembayaran pada halaman publik, tutor, atau admin.
+  useLocation();
+  let role = "";
+  try {
+    role = JSON.parse(localStorage.getItem("user") || "null")?.role || "";
+  } catch {
+    role = "";
+  }
+
+  return role === "student" ? (
+    <Suspense fallback={null}>
+      <PendingPaymentPopup />
+    </Suspense>
+  ) : null;
+};
 
 // --- KOMPONEN LOADING PAGE ---
 const PageLoader = () => (
@@ -97,12 +120,13 @@ const App = () => (
   <ConfirmDialogProvider>
         {/* Toast Notifikasi Global */}
         <Toaster position="top-center" richColors closeButton />
+        <FilePreviewProvider />
         
         <BrowserRouter>
         <SessionLifecycle />
         
         {/* === GLOBAL COMPONENTS === */}
-        <PendingPaymentPopup /> 
+        <StudentRuntime /> 
 
         {/* Suspense Wajib Ada untuk Lazy Loading */}
         <Suspense fallback={<PageLoader />}>
@@ -134,6 +158,7 @@ const App = () => (
               <Route path="/admin/settings-payment" element={<PaymentSettings />} />
               <Route path="/admin/settings-footer" element={<EditFooter />} />
               <Route path="/admin/finance" element={<FinanceReport />} />
+              <Route path="/admin/finance-security" element={<FinanceSecurity />} />
               <Route path="/admin/pesan" element={<AdminMessages />} />
               <Route path="/admin/notifikasi" element={<SendMessage />} /> 
               <Route path="/admin/classes" element={<ClassMonitoring />} />
@@ -143,7 +168,9 @@ const App = () => (
               <Route path="/admin/ratings" element={<AdminRatings />} />
               <Route path="/admin/hourly-rates" element={<HourlyRates />} />
               <Route path="/admin/learning-topics" element={<LearningTopics />} />
+              <Route path="/admin/subjects" element={<SubjectManagement />} />
               <Route path="/admin/cases" element={<CaseCenter />} />
+              <Route path="/admin/stage-five" element={<StageFiveManagement />} />
             </Route>
 
             {/* =========================================
@@ -158,11 +185,7 @@ const App = () => (
               <Route path="/guru/rekening" element={<TeacherBankSettings />} />
               <Route path="/guru/gaji" element={<TeacherSalary />} />
               
-              <Route path="/guru/bantuan" element={
-                <TeacherLayout title="Pusat Bantuan">
-                  <HelpCenter />
-                </TeacherLayout>
-              } />
+              <Route path="/guru/bantuan" element={<TeacherHelp />} />
             </Route>
 
             {/* =========================================
@@ -175,12 +198,12 @@ const App = () => (
               <Route path="/student/my-classes" element={<MyClasses />} />
               <Route path="/student/history" element={<TransactionHistory />} />
               <Route path="/student/profile" element={<Profile />} />
+              <Route path="/student/packages" element={<MyPackages />} />
+              <Route path="/student/packages/new" element={<PackageBuilder />} />
+              <Route path="/student/vouchers" element={<Vouchers />} />
+              <Route path="/student/offers/:id" element={<PromotionDetail />} />
               
-              <Route path="/student/help" element={
-                <StudentLayout title="Bantuan & Support">
-                  <HelpCenter />
-                </StudentLayout>
-              } />
+              <Route path="/student/help" element={<StudentHelp />} />
               
               <Route path="/payment" element={<PaymentPage />} />
             </Route>

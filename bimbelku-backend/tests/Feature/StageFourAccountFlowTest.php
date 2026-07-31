@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\TeacherProfile;
 use App\Models\User;
+use Database\Seeders\CurriculumCatalogSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,75 @@ class StageFourAccountFlowTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_minor_student_registration_requires_guardian_consent(): void
+    {
+        $birthDate = now()->subYears(12)->toDateString();
+        $payload = [
+            'name' => 'Murid Anak',
+            'email' => 'murid.anak@example.com',
+            'phone' => '081234567891',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'role' => 'student',
+            'date_of_birth' => $birthDate,
+            'terms_accepted' => true,
+            'privacy_accepted' => true,
+        ];
+
+        $this->postJson('/api/register', $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'Nama orang tua atau wali wajib diisi untuk murid di bawah 18 tahun.'
+            );
+
+        $response = $this->postJson('/api/register', [
+            ...$payload,
+            'guardian_name' => 'Wali Murid',
+            'guardian_phone' => '081234567892',
+            'guardian_relationship' => 'orang_tua',
+            'guardian_consent' => true,
+        ]);
+
+        $response
+            ->assertCreated()
+            ->assertJsonMissing(['guardian_name' => 'Wali Murid'])
+            ->assertJsonMissing(['guardian_phone' => '081234567892']);
+
+        $this->assertDatabaseHas('users', [
+            'email' => 'murid.anak@example.com',
+            'date_of_birth' => $birthDate,
+            'guardian_name' => 'Wali Murid',
+            'guardian_phone' => '081234567892',
+            'guardian_relationship' => 'orang_tua',
+        ]);
+        $this->assertNotNull(
+            User::query()->where('email', 'murid.anak@example.com')->value('guardian_consent_at')
+        );
+    }
+
+    public function test_adult_student_registration_does_not_require_guardian_data(): void
+    {
+        $response = $this->postJson('/api/register', [
+            'name' => 'Murid Dewasa',
+            'email' => 'murid.dewasa@example.com',
+            'phone' => '081234567893',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'role' => 'student',
+            'date_of_birth' => now()->subYears(20)->toDateString(),
+            'terms_accepted' => true,
+            'privacy_accepted' => true,
+        ]);
+
+        $response->assertCreated();
+        $this->assertDatabaseHas('users', [
+            'email' => 'murid.dewasa@example.com',
+            'guardian_name' => null,
+            'guardian_consent_at' => null,
+        ]);
+    }
+
     public function test_student_registration_creates_an_active_account(): void
     {
         $response = $this->postJson('/api/register', [
@@ -25,6 +95,7 @@ class StageFourAccountFlowTest extends TestCase
             'password' => 'password123',
             'password_confirmation' => 'password123',
             'role' => 'student',
+            'date_of_birth' => now()->subYears(20)->toDateString(),
             'terms_accepted' => true,
             'privacy_accepted' => true,
         ]);
@@ -43,6 +114,7 @@ class StageFourAccountFlowTest extends TestCase
 
     public function test_teacher_registration_remains_pending_with_private_documents(): void
     {
+        $this->seed(CurriculumCatalogSeeder::class);
         Storage::fake('local');
         Storage::fake('public');
 
@@ -79,6 +151,49 @@ class StageFourAccountFlowTest extends TestCase
         Storage::disk('local')->assertExists($profile->live_selfie);
         Storage::disk('local')->assertExists($profile->qualification_document);
         Storage::disk('public')->assertMissing($profile->identity_document);
+        $this->assertArrayNotHasKey('phone', $teacher->toArray());
+        $this->assertArrayNotHasKey('whatsapp_number', $profile->toArray());
+        $this->assertArrayNotHasKey('latitude', $profile->toArray());
+        $this->assertArrayNotHasKey('account_number', $profile->toArray());
+    }
+
+    public function test_student_cannot_open_another_users_teacher_document(): void
+    {
+        Storage::fake('local');
+        $student = User::factory()->create([
+            'role' => 'student',
+            'status' => 'active',
+        ]);
+        $teacher = User::factory()->create([
+            'role' => 'teacher',
+            'status' => 'pending',
+        ]);
+        $path = UploadedFile::fake()->image('identitas.jpg')->store(
+            'teacher_identity',
+            'local'
+        );
+        TeacherProfile::create([
+            'user_id' => $teacher->id,
+            'identity_document' => $path,
+            'points' => 150,
+            'is_accepting_requests' => false,
+        ]);
+        Sanctum::actingAs($student);
+
+        $this->get("/api/teachers/{$teacher->id}/documents/identity_document")
+            ->assertForbidden();
+    }
+
+    public function test_admin_user_listing_rejects_the_admin_role_filter(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        Sanctum::actingAs($admin);
+
+        $this->getJson('/api/admin/users?role=admin')
+            ->assertUnprocessable();
     }
 
     public function test_student_can_save_a_personal_cover_without_changing_password(): void
@@ -163,6 +278,7 @@ class StageFourAccountFlowTest extends TestCase
         $this->assertSame('http://127.0.0.1:8080', config('app.frontend_url'));
         $this->assertContains('http://127.0.0.1:8080', config('cors.allowed_origins'));
         $this->assertContains('http://localhost:8080', config('cors.allowed_origins'));
+        $this->assertSame('2026-07-29', config('app.policy_version'));
     }
 
     public function test_teacher_personal_cover_does_not_trigger_reverification(): void

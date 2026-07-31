@@ -1,16 +1,15 @@
-import { API_BASE_URL } from "@/lib/http";
 import React, { useEffect, useState } from "react";
 import TeacherLayout from "../../components/TeacherLayout";
 import { 
   Banknote, History, Calendar, CheckCircle2, 
-  Download, Loader2, DollarSign, Users, Clock, Percent
+  Eye, Loader2, DollarSign, Users, Clock, Percent
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import axios from "axios";
 import { openProtectedFile } from "@/components/ProtectedImage";
+import { getCached } from "@/lib/http";
 
 // Helper Rupiah
 const formatRupiah = (num: number) => 
@@ -26,10 +25,7 @@ export default function TeacherSalary() {
 
   const fetchSalary = async () => {
     try {
-      const token = localStorage.getItem("token");
-      const response = await axios.get(`${API_BASE_URL}/teacher/salary`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await getCached("/teacher/salary", { maxAgeMs: 15_000 });
       setData(response.data);
     } catch (error) {
       console.error("Error fetching salary:", error);
@@ -127,8 +123,47 @@ export default function TeacherSalary() {
               <History size={20} className="text-gray-500"/> Riwayat Pencairan
            </h2>
            
-           <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
-              <div className="overflow-x-auto">
+           <div className="overflow-hidden rounded-[2rem] border border-gray-100 bg-white shadow-sm">
+              <div className="space-y-3 p-4 md:hidden">
+                 {data?.history?.map((item: any) => (
+                    <article key={item.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                       <div className="flex items-start justify-between gap-3">
+                          <div>
+                             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Periode saldo</p>
+                             <h3 className="mt-1 font-black text-slate-900">{item.period}</h3>
+                          </div>
+                          <Badge className="gap-1 border-none bg-green-100 text-green-700 hover:bg-green-100">
+                             <CheckCircle2 size={12}/>{item.status}
+                          </Badge>
+                       </div>
+                       <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                          <div className="rounded-xl bg-white p-3">
+                             <p className="font-bold text-slate-400">Tanggal transfer</p>
+                             <p className="mt-1 font-black text-slate-700">{item.transfer_date || "-"}</p>
+                          </div>
+                          <div className="rounded-xl bg-white p-3">
+                             <p className="font-bold text-slate-400">Jumlah murid</p>
+                             <p className="mt-1 font-black text-slate-700">{item.total_students ? `${item.total_students} murid` : "-"}</p>
+                          </div>
+                       </div>
+                       <div className="mt-4 flex items-end justify-between gap-3">
+                          <div>
+                             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nominal cair</p>
+                             <p className="mt-1 text-lg font-black text-green-600">{formatRupiah(item.amount)}</p>
+                          </div>
+                          {item.proof_url ? (
+                             <Button type="button" variant="outline" size="sm" className="rounded-xl text-blue-600" onClick={() => void openProtectedFile(item.proof_url, `struk-gaji-${item.id}`).catch(() => toast.error("Struk tidak dapat dibuka."))}>
+                                <Eye size={14} className="mr-1"/>Bukti
+                             </Button>
+                          ) : <span className="text-xs text-slate-400">Tanpa bukti</span>}
+                       </div>
+                    </article>
+                 ))}
+                 {(!data?.history || data.history.length === 0) && (
+                    <div className="py-10 text-center text-sm italic text-gray-400">Belum ada riwayat pencairan.</div>
+                 )}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
                 <table className="w-full text-left">
                    <thead className="bg-gray-50/50 text-xs uppercase text-gray-500 font-bold border-b border-gray-100">
                       <tr>
@@ -164,7 +199,7 @@ export default function TeacherSalary() {
                             <td className="px-6 py-4 text-center">
                                {item.proof_url ? (
                                  <Button type="button" variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-8 text-xs" onClick={() => void openProtectedFile(item.proof_url, `struk-gaji-${item.id}`).catch(() => toast.error("Struk tidak dapat dibuka."))}>
-                                    <Download size={14} className="mr-1"/> Struk
+                                    <Eye size={14} className="mr-1"/> Lihat struk
                                  </Button>
                                ) : (
                                  <span className="text-gray-400 text-xs">-</span>

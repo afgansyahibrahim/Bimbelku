@@ -27,6 +27,7 @@ class Payout extends Model
         'bank_name',
         'account_number',
         'account_name',
+        'payout_approval_id',
     ];
 
     protected $casts = [

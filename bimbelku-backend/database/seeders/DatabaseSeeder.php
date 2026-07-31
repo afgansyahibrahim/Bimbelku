@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\HourlyRate;
+use App\Models\CurriculumSubject;
 use App\Models\TeacherAvailability;
 use App\Models\TeacherProfile;
 use App\Models\TeacherSubject;
@@ -14,6 +15,8 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        $this->call(CurriculumCatalogSeeder::class);
+        $this->call(StageFiveExperienceSeeder::class);
         $this->call(AdminSeeder::class);
 
         if (!filter_var(env('SEED_DEMO_USERS', false), FILTER_VALIDATE_BOOLEAN)) {
@@ -52,10 +55,14 @@ class DatabaseSeeder extends Seeder
                 'verified_at' => now(),
             ]
         );
+        $mathematics = CurriculumSubject::query()
+            ->where('normalized_name', 'matematika')
+            ->first();
 
         TeacherSubject::query()->where('teacher_profile_id', $profile->id)->delete();
         TeacherSubject::create([
             'teacher_profile_id' => $profile->id,
+            'curriculum_subject_id' => $mathematics?->id,
             'name' => 'Matematika',
             'levels' => ['SD', 'SMP', 'SMA'],
             'is_active' => true,
@@ -104,6 +111,7 @@ class DatabaseSeeder extends Seeder
             HourlyRate::updateOrCreate(
                 [
                     'subject_name' => 'Matematika',
+                    'curriculum_subject_id' => $mathematics?->id,
                     'education_level' => null,
                     'class_type' => $rate['class_type'],
                     'learning_mode' => $rate['learning_mode'],

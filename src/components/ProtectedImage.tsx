@@ -1,11 +1,16 @@
 import { useEffect, useState } from "react";
-import { ImageOff, Loader2 } from "lucide-react";
+import { ImageOff, Loader2, ScanSearch } from "lucide-react";
 import http from "@/lib/http";
+import {
+  inferContentType,
+  showFilePreview,
+} from "@/lib/filePreview";
 
 interface ProtectedImageProps {
   source: string;
   alt: string;
   className?: string;
+  previewable?: boolean;
 }
 
 const apiPath = (source: string) => source
@@ -13,27 +18,39 @@ const apiPath = (source: string) => source
   .replace(/^\/api\//, "")
   .replace(/^\//, "");
 
-export async function openProtectedFile(source: string, filename = "bukti"): Promise<void> {
+export async function openProtectedFile(source: string, filename = "berkas"): Promise<void> {
   if (/^https?:\/\//.test(source) && !source.includes("/api/")) {
-    window.open(source, "_blank", "noopener,noreferrer");
+    showFilePreview({
+      url: source,
+      filename,
+      contentType: inferContentType(source),
+    });
     return;
   }
 
-  const response = await http.get(apiPath(source), { responseType: "blob" });
-  const objectUrl = URL.createObjectURL(response.data);
-  const anchor = document.createElement("a");
-  anchor.href = objectUrl;
-  anchor.target = "_blank";
-  anchor.rel = "noopener noreferrer";
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+  const response = await http.get<Blob>(apiPath(source), { responseType: "blob" });
+  const responseType = String(response.headers["content-type"] || "").split(";")[0];
+  const blob = response.data.type || !responseType
+    ? response.data
+    : response.data.slice(0, response.data.size, responseType);
+  const objectUrl = URL.createObjectURL(blob);
+
+  showFilePreview({
+    url: objectUrl,
+    filename,
+    contentType: blob.type || responseType || inferContentType(source),
+    release: () => URL.revokeObjectURL(objectUrl),
+  });
 }
 
-export default function ProtectedImage({ source, alt, className }: ProtectedImageProps) {
+export default function ProtectedImage({
+  source,
+  alt,
+  className,
+  previewable = true,
+}: ProtectedImageProps) {
   const [resolved, setResolved] = useState("");
+  const [contentType, setContentType] = useState("");
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -45,6 +62,7 @@ export default function ProtectedImage({ source, alt, className }: ProtectedImag
 
     if (/^https?:\/\//.test(source) && !source.includes("/api/")) {
       setResolved(source);
+      setContentType(inferContentType(source));
       return () => undefined;
     }
 
@@ -52,6 +70,11 @@ export default function ProtectedImage({ source, alt, className }: ProtectedImag
       .then((response) => {
         if (!active) return;
         objectUrl = URL.createObjectURL(response.data);
+        setContentType(
+          response.data.type
+          || String(response.headers["content-type"] || "").split(";")[0]
+          || inferContentType(source),
+        );
         setResolved(objectUrl);
       })
       .catch(() => {
@@ -72,5 +95,25 @@ export default function ProtectedImage({ source, alt, className }: ProtectedImag
     return <div className={`grid place-items-center bg-slate-100 text-indigo-500 ${className || ""}`}><Loader2 className="animate-spin" /></div>;
   }
 
-  return <img src={resolved} alt={alt} className={className} />;
+  if (!previewable) {
+    return <img src={resolved} alt={alt} className={className} />;
+  }
+
+  return (
+    <button
+      type="button"
+      className={`group relative block overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${className || ""}`}
+      onClick={() => showFilePreview({
+        url: resolved,
+        filename: alt,
+        contentType: contentType || inferContentType(source) || "image/jpeg",
+      })}
+      aria-label={`Perbesar ${alt}`}
+    >
+      <img src={resolved} alt={alt} className="h-full w-full object-contain" />
+      <span className="pointer-events-none absolute bottom-2 right-2 inline-flex items-center gap-1.5 rounded-lg bg-slate-950/75 px-2.5 py-1.5 text-[11px] font-bold text-white opacity-90 shadow-lg backdrop-blur transition group-hover:bg-indigo-700">
+        <ScanSearch size={14} /> Perbesar
+      </span>
+    </button>
+  );
 }

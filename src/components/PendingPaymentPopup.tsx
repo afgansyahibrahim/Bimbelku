@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { X, Clock, CreditCard, Loader2, AlertTriangle, ChevronRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import http from "@/lib/http";
+import http, { getCached } from "@/lib/http";
 
 export default function PendingPaymentPopup() {
   const navigate = useNavigate();
@@ -39,7 +39,10 @@ export default function PendingPaymentPopup() {
             return;
         }
 
-        const response = await http.get("/active-order");
+        const response = await getCached("/active-order", {
+          maxAgeMs: 10_000,
+          force: true,
+        });
         if (response.data && response.data.order_id) {
             setOrder(response.data);
             setIsVisible(true);
@@ -52,13 +55,18 @@ export default function PendingPaymentPopup() {
 };
 
   useEffect(() => {
-    checkActiveOrder();
+    void checkActiveOrder();
+    const handleDataChanged = () => void checkActiveOrder();
+    window.addEventListener("bimbelku:data-changed", handleDataChanged);
     // Cek berkala saat halaman aktif agar beban server tetap ringan
     const intervalCheck = setInterval(() => {
       if (document.visibilityState === "visible") void checkActiveOrder();
     }, 60000);
-    return () => clearInterval(intervalCheck);
-  }, [location.pathname]);
+    return () => {
+      clearInterval(intervalCheck);
+      window.removeEventListener("bimbelku:data-changed", handleDataChanged);
+    };
+  }, []);
 
   // 2. Penghitung mundur sesuai batas pembayaran dari server
   useEffect(() => {
@@ -220,7 +228,7 @@ export default function PendingPaymentPopup() {
       {/* === MODAL KONFIRMASI PEMBATALAN === */}
       {showConfirmCancel && (
         <div role="dialog" aria-modal="true" aria-labelledby="cancel-order-title" className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-           <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 shadow-2xl animate-in zoom-in-95 duration-300">
+           <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-white rounded-[2rem] w-full max-w-sm p-5 sm:rounded-[2.5rem] sm:p-8 shadow-2xl animate-in zoom-in-95 duration-300">
               <div className="text-center">
                  <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-6 text-rose-500">
                     <AlertTriangle size={40} />

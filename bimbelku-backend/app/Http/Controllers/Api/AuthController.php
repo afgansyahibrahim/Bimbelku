@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\CurriculumSubject;
 use Illuminate\Http\Request;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
@@ -10,8 +11,10 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
 use App\Models\TeacherProfile;
 use App\Models\TeacherSubject;
+use App\Support\EducationCatalog;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Carbon\Carbon;
 
 class AuthController extends Controller
 {
@@ -36,12 +39,17 @@ class AuthController extends Controller
             'privacy_accepted' => 'accepted',
             'school_name' => 'nullable|string|max:255',
             'grade' => 'nullable|string|max:50',
+            'date_of_birth' => 'required_if:role,student|nullable|date|before_or_equal:today',
+            'guardian_name' => 'nullable|string|max:255',
+            'guardian_phone' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+() .-]+$/'],
+            'guardian_relationship' => 'nullable|in:orang_tua,wali_keluarga,wali_resmi',
+            'guardian_consent' => 'nullable',
             'address'  => 'nullable|string|max:1500',
             'maps_link'=> 'nullable|string|url:http,https|max:500',
             'cv_file'  => 'nullable|file|mimes:pdf|max:5120',
             'expertise' => 'required_if:role,teacher|nullable|string|max:120',
             'levels' => 'required_if:role,teacher|nullable|array|min:1',
-            'levels.*' => 'in:SD,SMP,SMA,Umum',
+            'levels.*' => ['required', \Illuminate\Validation\Rule::in(EducationCatalog::LEVELS)],
             'teaching_method' => 'required_if:role,teacher|nullable|in:online,offline,hybrid',
             'linkedin' => 'nullable|url:http,https|max:500',
             'identity_document' => 'required_if:role,teacher|nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:5120',
@@ -55,6 +63,50 @@ class AuthController extends Controller
                 'message' => $validator->errors()->first(),
                 'errors' => $validator->errors(),
             ], 422);
+        }
+
+        $isMinorStudent = $request->role === 'student'
+            && $request->filled('date_of_birth')
+            && Carbon::parse($request->date_of_birth)->age < 18;
+
+        if ($isMinorStudent) {
+            $guardianValidator = Validator::make($request->all(), [
+                'guardian_name' => 'required|string|max:255',
+                'guardian_phone' => ['required', 'string', 'max:30', 'regex:/^[0-9+() .-]+$/'],
+                'guardian_relationship' => 'required|in:orang_tua,wali_keluarga,wali_resmi',
+                'guardian_consent' => 'accepted',
+            ], [
+                'guardian_name.required' => 'Nama orang tua atau wali wajib diisi untuk murid di bawah 18 tahun.',
+                'guardian_phone.required' => 'Nomor orang tua atau wali wajib diisi untuk murid di bawah 18 tahun.',
+                'guardian_relationship.required' => 'Hubungan orang tua atau wali wajib dipilih.',
+                'guardian_consent.accepted' => 'Persetujuan orang tua atau wali wajib diberikan.',
+            ]);
+
+            if ($guardianValidator->fails()) {
+                return response()->json([
+                    'message' => $guardianValidator->errors()->first(),
+                    'errors' => $guardianValidator->errors(),
+                ], 422);
+            }
+        }
+
+        $catalogSubject = null;
+        if ($request->role === 'teacher') {
+            $catalogSubject = CurriculumSubject::query()
+                ->where('is_active', true)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower(trim((string) $request->expertise))])
+                ->first();
+            if (!$catalogSubject) {
+                return response()->json([
+                    'message' => 'Pilih mata pelajaran tutor dari katalog aktif.',
+                ], 422);
+            }
+            if (array_diff($request->input('levels', []), $catalogSubject->education_levels ?? [])) {
+                return response()->json([
+                    'message' => 'Jenjang tutor tidak tersedia pada mata pelajaran tersebut.',
+                ], 422);
+            }
+            $request->merge(['expertise' => $catalogSubject->name]);
         }
 
         $status = $request->role === 'teacher' ? 'pending' : 'active';
@@ -75,7 +127,13 @@ class AuthController extends Controller
                 }
             }
 
-            $user = DB::transaction(function () use ($request, $status, $storedFiles) {
+            $user = DB::transaction(function () use (
+                $request,
+                $status,
+                $storedFiles,
+                $catalogSubject,
+                $isMinorStudent
+            ) {
                 $user = User::create([
                     'name' => $request->name,
                     'email' => mb_strtolower($request->email),
@@ -86,6 +144,19 @@ class AuthController extends Controller
                     'status' => $status,
                     'school_name' => $request->school_name ?? null,
                     'grade' => $request->grade ?? null,
+                    'date_of_birth' => $request->role === 'student'
+                        ? $request->date_of_birth
+                        : null,
+                    'guardian_name' => $isMinorStudent
+                        ? trim((string) $request->guardian_name)
+                        : null,
+                    'guardian_phone' => $isMinorStudent
+                        ? trim((string) $request->guardian_phone)
+                        : null,
+                    'guardian_relationship' => $isMinorStudent
+                        ? $request->guardian_relationship
+                        : null,
+                    'guardian_consent_at' => $isMinorStudent ? now() : null,
                     'address' => $request->address ?? null,
                     'maps_link' => $request->maps_link ?? null,
                     'terms_accepted_at' => now(),
@@ -117,6 +188,7 @@ class AuthController extends Controller
                 TeacherSubject::create([
                     'teacher_profile_id' => $profile->id,
                     'name' => $request->expertise,
+                    'curriculum_subject_id' => $catalogSubject?->id,
                     'levels' => array_values(array_unique($request->input('levels', []))),
                     'is_active' => true,
                     'is_online' => in_array($request->teaching_method, ['online', 'hybrid'], true),

@@ -47,6 +47,11 @@ class StageFivePackageExperienceTest extends TestCase
         $this->getJson('/api/content/tutorials?role=student&context=dashboard')
             ->assertOk()
             ->assertJsonPath('0.role', 'student')
+            ->assertJsonCount(4, '0.steps');
+
+        $this->getJson('/api/content/tutorials?role=student&context=package-builder')
+            ->assertOk()
+            ->assertJsonPath('0.title', 'Memesan dua atau lebih mata pelajaran')
             ->assertJsonCount(5, '0.steps');
     }
 
@@ -149,5 +154,45 @@ class StageFivePackageExperienceTest extends TestCase
         $this->postJson('/api/student/packages', $base, ['Idempotency-Key' => 'stage5-wrong-minute'])
             ->assertUnprocessable()
             ->assertJsonPath('message', 'Jam yang dipilih tidak termasuk slot aktif dari aplikasi.');
+    }
+
+    public function test_duration_multiplies_quote_and_total_learning_hours(): void
+    {
+        $this->seed(CurriculumCatalogSeeder::class);
+        $this->seed(StageFiveExperienceSeeder::class);
+        $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
+        Sanctum::actingAs($student);
+
+        $plan = PackagePlan::query()->where('slug', 'bulanan-dasar')->firstOrFail();
+        $subject = CurriculumSubject::query()
+            ->where('normalized_name', 'matematika')
+            ->firstOrFail();
+        $payload = [
+            'package_plan_id' => $plan->id,
+            'education_level' => 'SMP',
+            'learning_mode' => 'online',
+            'subjects' => [[
+                'curriculum_subject_id' => $subject->id,
+                'session_count' => $plan->session_count,
+            ]],
+        ];
+
+        $oneHour = $this->postJson('/api/student/packages/quote', [
+            ...$payload,
+            'duration_hours' => 1,
+        ])->assertOk();
+        $threeHours = $this->postJson('/api/student/packages/quote', [
+            ...$payload,
+            'duration_hours' => 3,
+        ])->assertOk();
+
+        $this->assertSame(
+            (float) $oneHour->json('total_amount') * 3,
+            (float) $threeHours->json('total_amount')
+        );
+        $threeHours
+            ->assertJsonPath('duration_hours', 3)
+            ->assertJsonPath('total_learning_hours', $plan->session_count * 3)
+            ->assertJsonPath('lines.0.duration_hours', 3);
     }
 }

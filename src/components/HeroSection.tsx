@@ -38,7 +38,7 @@ export default function HeroSection() {
           </Reveal>
           <Reveal delay={0.2}>
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-white/80 lg:mx-0">
-              Pilih paket, bagikan sesi ke beberapa mapel, lalu tentukan jadwal. Pembayaran dibuka setelah tutor menerima.
+              Pilih paket, durasi 1–3 jam, mapel, dan jadwal. Periksa pesanan, bayar, lalu sistem mencari tutor yang cocok.
             </p>
           </Reveal>
           <Reveal delay={0.28}>

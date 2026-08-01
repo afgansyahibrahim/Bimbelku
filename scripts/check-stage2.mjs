@@ -12,7 +12,7 @@ const checks = [
     file: "src/components/MobileBottomNav.tsx",
     patterns: [
       /role:\s*Role/,
-      /\/student\/find/,
+      /\/student\/packages\/new/,
       /\/guru\/permintaan/,
       /xl:hidden/,
       /safe-area-inset-bottom/,

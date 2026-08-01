@@ -48,7 +48,11 @@ class StudentController extends Controller
                 'participants.bookingRequest',
                 'participants.order.refund',
                 'disputes' => fn ($query) => $query->where('student_id', $studentId)->latest(),
+                'latestClassroomMessage.sender:id,name',
+                'learningPlan',
+                'latestLearningProgressReport',
             ])
+            ->withCount('learningProgressReports')
             ->latest('start_at')
             ->limit(200)
             ->get();
@@ -120,6 +124,23 @@ class StudentController extends Controller
                 'can_report_teacher_absence' => in_array($booking->status, ['confirmed', 'in_progress'], true)
                     && $hasSessionAccess
                     && now()->gte($booking->start_at->copy()->addMinutes(15)),
+                'workspace' => [
+                    'can_open' => $hasSessionAccess,
+                    'latest_message' => $booking->latestClassroomMessage ? [
+                        'body' => $booking->latestClassroomMessage->body,
+                        'sender_name' => $booking->latestClassroomMessage->sender?->name ?? 'Pengguna BimbelKu',
+                        'created_at' => $booking->latestClassroomMessage->created_at,
+                    ] : null,
+                    'progress_percent' => (int) ($booking->learningPlan?->progress_percent ?? 0),
+                    'progress_status' => $booking->learningPlan?->status,
+                    'report_count' => (int) $booking->learning_progress_reports_count,
+                    'latest_report' => $booking->latestLearningProgressReport ? [
+                        'session_number' => $booking->latestLearningProgressReport->session_number,
+                        'material_covered' => $booking->latestLearningProgressReport->material_covered,
+                        'progress_percent' => $booking->latestLearningProgressReport->progress_percent,
+                        'published_at' => $booking->latestLearningProgressReport->published_at,
+                    ] : null,
+                ],
             ];
         });
 

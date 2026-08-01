@@ -132,6 +132,8 @@ export default function PendingPaymentPopup() {
         price: Number(order.amount),
         createdAt: order.created_at,
         paymentDueAt: order.payment_due_at,
+        durationHours: Number(order.duration_hours || 1),
+        totalLearningHours: Number(order.total_learning_hours || 0),
         date: "Segera"
       }
     });
@@ -193,13 +195,18 @@ export default function PendingPaymentPopup() {
              </button>
           </div>
 
-          <div className="space-y-1 mb-5">
+          <div className="mb-4 space-y-1 sm:mb-5">
              <div className="flex items-center gap-2 mb-2">
                 <Sparkles size={14} className="text-orange-400 fill-orange-400"/>
                 <span className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Tagihan Menunggu</span>
              </div>
              <h4 className="font-black text-slate-900 line-clamp-1 text-lg leading-tight">{order.subject}</h4>
              <p className="text-xs text-slate-500 font-medium">Bersama <span className="text-indigo-600 font-bold">{order.tutor_name}</span></p>
+             {order.duration_hours && (
+               <p className="text-xs font-bold text-slate-500">
+                 {order.duration_hours} jam/pertemuan{order.total_learning_hours ? ` · ${order.total_learning_hours} jam belajar` : ""}
+               </p>
+             )}
              <div className="flex items-end justify-between mt-3">
                  <p className="text-xl font-black text-slate-900 tracking-tighter">
                     Rp {new Intl.NumberFormat('id-ID').format(order.amount)}
@@ -208,16 +215,16 @@ export default function PendingPaymentPopup() {
              </div>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex gap-2 sm:gap-3">
              <button 
                onClick={() => setShowConfirmCancel(true)} 
-               className="flex-1 py-3 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 border border-slate-100 hover:bg-rose-50 hover:text-rose-500 hover:border-rose-100 transition-all"
+               className="min-h-11 flex-1 rounded-xl border border-slate-100 px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500 transition-all hover:border-rose-100 hover:bg-rose-50 hover:text-rose-500 sm:px-4 sm:tracking-widest"
              >
                Batal
              </button>
              <button 
                onClick={handlePayNow} 
-               className="flex-[2] py-3 px-4 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-slate-200 hover:shadow-indigo-200 transition-all flex items-center justify-center gap-2"
+               className="flex min-h-11 flex-[2] items-center justify-center gap-1 rounded-xl bg-slate-900 px-3 py-3 text-[10px] font-black uppercase tracking-wider text-white shadow-lg shadow-slate-200 transition-all hover:bg-indigo-600 hover:shadow-indigo-200 sm:gap-2 sm:px-4 sm:tracking-widest"
              >
                Bayar Sekarang <ChevronRight size={14}/>
              </button>

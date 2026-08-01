@@ -11,6 +11,7 @@ class LearningPackage extends Model
     protected $casts = [
         'total_sessions' => 'integer',
         'used_sessions' => 'integer',
+        'duration_hours' => 'integer',
         'subtotal_amount' => 'decimal:2',
         'discount_amount' => 'decimal:2',
         'total_amount' => 'decimal:2',

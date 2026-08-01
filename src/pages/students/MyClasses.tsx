@@ -1,5 +1,4 @@
 import { FormEvent, useEffect, useState } from "react";
-import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   AlertCircle,
@@ -290,13 +289,13 @@ export default function MyClasses() {
   return (
     <StudentLayout title="Kelas Saya">
       <div className="mx-auto max-w-7xl space-y-7 pb-12">
-        <section className="flex flex-col justify-between gap-5 rounded-[2rem] bg-gradient-to-br from-indigo-950 to-violet-900 p-7 text-white shadow-xl md:flex-row md:items-end">
-          <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Sesi belajar</p><h1 className="mt-3 text-3xl font-black">Jadwal dan penyelesaian</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Tautan atau alamat, bukti pelaksanaan, persetujuan, keberatan, serta refund tersedia dalam satu tempat.</p></div>
-          <Button variant="outline" onClick={loadClasses} className="rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"><RefreshCw size={16} className="mr-2" />Muat ulang</Button>
+        <section className="flex flex-col justify-between gap-5 rounded-[1.75rem] bg-gradient-to-br from-indigo-950 to-violet-900 p-5 text-white shadow-xl sm:rounded-[2rem] sm:p-7 md:flex-row md:items-end">
+          <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Sesi belajar</p><h1 className="mt-3 text-2xl font-black sm:text-3xl">Jadwal dan penyelesaian</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Tautan atau alamat, bukti pelaksanaan, persetujuan, keberatan, serta refund tersedia dalam satu tempat.</p></div>
+          <Button variant="outline" onClick={loadClasses} className="w-full rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white md:w-auto"><RefreshCw size={16} className="mr-2" />Muat ulang</Button>
         </section>
 
         {classes.length === 0 ? (
-          <div className="rounded-[2rem] border-2 border-dashed border-slate-200 bg-white py-20 text-center"><BookOpen className="mx-auto h-11 w-11 text-slate-300" /><p className="mt-4 font-black text-slate-800">Belum ada kelas</p><Button asChild className="mt-5 rounded-xl bg-indigo-600"><Link to="/search">Cari tutor</Link></Button></div>
+          <div className="rounded-[2rem] border-2 border-dashed border-slate-200 bg-white px-5 py-16 text-center sm:py-20"><BookOpen className="mx-auto h-11 w-11 text-slate-300" /><p className="mt-4 font-black text-slate-800">Belum ada kelas</p><Button asChild className="mt-5 rounded-xl bg-indigo-600"><Link to="/student/packages/new">Pilih paket belajar</Link></Button></div>
         ) : (
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             {classes.map((item) => {

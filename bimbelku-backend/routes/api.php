@@ -117,6 +117,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/ratings', [RatingController::class, 'store']);
         Route::get('/student/dashboard-v2', [StudentPackageController::class, 'dashboard']);
         Route::get('/student/packages', [StudentPackageController::class, 'index']);
+        Route::get('/student/packages/tutorial-status', [StudentPackageController::class, 'tutorialStatus']);
         Route::post('/student/packages', [StudentPackageController::class, 'store'])
             ->middleware(['throttle:5,1', 'idempotency']);
         Route::post('/student/packages/{learningPackage}/retry', [StudentPackageController::class, 'retryMatching'])

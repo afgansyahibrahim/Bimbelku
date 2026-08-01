@@ -9,6 +9,7 @@ import {
   CreditCard,
   Loader2,
   MapPin,
+  MessageSquare,
   Monitor,
   Radar,
   RefreshCw,
@@ -37,6 +38,7 @@ type PackageData = {
   total_sessions: number;
   used_sessions: number;
   remaining_sessions: number;
+  duration_hours: number;
   expires_at?: string | null;
   payment_due_at?: string | null;
   subjects: Subject[];
@@ -55,13 +57,29 @@ type DashboardData = {
     start_at: string;
     end_at: string;
   } | null;
+  unread_messages_count: number;
+  recent_notifications: Array<{
+    id: number;
+    title: string;
+    message: string;
+    created_at: string;
+    is_read: boolean;
+  }>;
+  active_disputes_count: number;
 };
 
 const activeStatuses = ["active", "payment_submitted", "awaiting_payment", "payment_rejected", "matching", "teacher_pending", "no_teacher", "refund_pending"];
 
 export default function Dashboard() {
   const [name, setName] = useState("Murid");
-  const [data, setData] = useState<DashboardData>({ packages: [], voucher_count: 0, next_session: null });
+  const [data, setData] = useState<DashboardData>({
+    packages: [],
+    voucher_count: 0,
+    next_session: null,
+    unread_messages_count: 0,
+    recent_notifications: [],
+    active_disputes_count: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,7 +90,15 @@ export default function Dashboard() {
         getCached<DashboardData>("/student/dashboard-v2", { maxAgeMs: 10_000 }),
       ]);
       setName(userResponse.data.name || "Murid");
-      setData(dashboardResponse.data);
+      const raw = dashboardResponse.data;
+      setData({
+        packages: raw.packages ?? [],
+        voucher_count: raw.voucher_count ?? 0,
+        next_session: raw.next_session ?? null,
+        unread_messages_count: raw.unread_messages_count ?? 0,
+        recent_notifications: raw.recent_notifications ?? [],
+        active_disputes_count: raw.active_disputes_count ?? 0,
+      });
       setError(null);
     } catch (error) {
       if (axios.isAxiosError(error)) {
@@ -141,11 +167,78 @@ export default function Dashboard() {
             <AdaptiveCard packageData={activePackage} nextSession={data.next_session} />
 
             {activePackage && (
-              <section className="grid gap-3 sm:grid-cols-3">
+              <section className="grid grid-cols-3 gap-2 sm:gap-3">
                 <Summary icon={BookOpenCheck} label="Sisa sesi" value={`${activePackage.remaining_sessions}`} color="bg-indigo-600" />
                 <Summary icon={UserRound} label="Mata pelajaran" value={`${activePackage.subjects.length}`} color="bg-emerald-600" />
                 <Summary icon={CalendarDays} label="Masa aktif" value={activePackage.expires_at ? `${Math.max(0, Math.ceil((new Date(activePackage.expires_at).getTime() - Date.now()) / 86_400_000))} hari` : "Belum aktif"} color="bg-orange-500" />
               </section>
+            )}
+
+            {data.unread_messages_count > 0 && (
+              <Link
+                to="/student/my-classes"
+                className="group flex items-center justify-between gap-4 rounded-[2rem] border border-orange-100 bg-gradient-to-br from-white to-orange-50 p-5 shadow-sm hover:shadow-md transition-all"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-orange-500 text-white shadow-md">
+                    <MessageSquare size={21} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-wider text-orange-500">Pesan baru</p>
+                    <p className="mt-1 text-xl font-black text-slate-900">{data.unread_messages_count} pesan belum dibaca</p>
+                    <p className="mt-1 text-sm text-slate-500">Buka percakapan untuk membalas.</p>
+                  </div>
+                </div>
+                <ArrowRight size={20} className="text-slate-400 transition group-hover:translate-x-1" />
+              </Link>
+            )}
+
+            {data.recent_notifications.length > 0 && (
+              <section className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900">Notifikasi Terbaru</h2>
+                    <p className="mt-1 text-sm text-slate-500">3 notifikasi terakhir.</p>
+                  </div>
+                  <Link to="/student/account" className="text-sm font-black text-indigo-600">Semua</Link>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {data.recent_notifications.slice(0, 3).map((notif) => (
+                    <div
+                      key={notif.id}
+                      className={`flex items-start gap-3 rounded-2xl p-3 ${notif.is_read ? 'bg-slate-50' : 'bg-blue-50 border border-blue-100'}`}
+                    >
+                      <div className={`w-2 h-2 mt-2 rounded-full shrink-0 ${notif.is_read ? 'bg-slate-300' : 'bg-blue-500'}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-sm ${notif.is_read ? 'font-medium text-slate-600' : 'font-bold text-slate-900'}`}>{notif.title}</p>
+                        <p className="mt-1 text-xs text-slate-500 line-clamp-1">{notif.message}</p>
+                        <p className="mt-1 text-[10px] text-slate-400">
+                          {new Date(notif.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {data.active_disputes_count > 0 && (
+              <Link
+                to="/student/help"
+                className="group flex items-center justify-between gap-4 rounded-[2rem] border border-rose-100 bg-gradient-to-br from-white to-rose-50 p-5 shadow-sm hover:shadow-md transition-all"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-rose-500 text-white shadow-md animate-pulse">
+                    <AlertCircle size={21} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-wider text-rose-500">Memerlukan perhatian</p>
+                    <p className="mt-1 text-xl font-black text-slate-900">{data.active_disputes_count} sengketa aktif</p>
+                    <p className="mt-1 text-sm text-slate-500">Admin akan menyelesaikan dalam 7 hari.</p>
+                  </div>
+                </div>
+                <ArrowRight size={20} className="text-slate-400 transition group-hover:translate-x-1" />
+              </Link>
             )}
 
             {activePackage?.subjects.length ? (
@@ -227,10 +320,10 @@ function AdaptiveCard({ packageData, nextSession }: { packageData?: PackageData;
     return <ActionCard icon={Radar} eyebrow="Pencarian dijeda" title="Tutor Belum Tersedia" description="Perluas pencarian atau batalkan paket tanpa kehilangan voucher." to="/student/packages" action="Atur Pencarian" />;
   }
   if (["awaiting_payment", "payment_rejected"].includes(packageData.status) && packageData.latest_order) {
-    return <ActionCard icon={CreditCard} eyebrow={packageData.status === "payment_rejected" ? "Bukti perlu diperbaiki" : "Tutor sudah cocok"} title="Selesaikan Pembayaran" description="Slot seluruh tutor ditahan selama 48 jam." to="/payment" action="Bayar Sekarang" />;
+    return <ActionCard icon={CreditCard} eyebrow={packageData.status === "payment_rejected" ? "Bukti perlu diperbaiki" : "Pesanan sudah diperiksa"} title="Selesaikan Pembayaran" description="Pencarian tutor dimulai setelah pembayaran diterima admin." to="/payment" action="Bayar Sekarang" />;
   }
   if (packageData.status === "payment_submitted") {
-    return <ActionCard icon={RefreshCw} eyebrow="Bukti sudah masuk" title="Pembayaran Diperiksa Admin" description="Jadwal tetap ditahan selama pemeriksaan berlangsung." to="/student/history" action="Lihat Status" />;
+    return <ActionCard icon={RefreshCw} eyebrow="Bukti sudah masuk" title="Pembayaran Diperiksa Admin" description="Pencarian tutor akan dimulai segera setelah bukti disetujui." to="/student/history" action="Lihat Status" />;
   }
   if (packageData.status === "refund_pending") {
     return <ActionCard icon={RefreshCw} eyebrow="Dana aman" title="Refund Sedang Diproses" description="Admin akan mengirim pengembalian dana dan bukti transfer." to="/student/history" action="Lihat Status" />;
@@ -247,7 +340,7 @@ function ActionCard({ icon: Icon, eyebrow, title, description, to, action, pulse
 }
 
 function Summary({ icon: Icon, label, value, color }: { icon: typeof BookOpenCheck; label: string; value: string; color: string }) {
-  return <div className="flex items-center gap-4 rounded-3xl border border-slate-100 bg-white p-5 shadow-sm"><div className={`grid h-12 w-12 place-items-center rounded-2xl text-white ${color}`}><Icon size={21} /></div><div><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 text-xl font-black text-slate-900">{value}</p></div></div>;
+  return <div className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm sm:flex-row sm:gap-4 sm:rounded-3xl sm:p-5 sm:text-left"><div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-white sm:h-12 sm:w-12 sm:rounded-2xl ${color}`}><Icon size={19} /></div><div className="min-w-0"><p className="text-[9px] font-black uppercase tracking-wide text-slate-400 sm:text-[10px] sm:tracking-wider">{label}</p><p className="mt-1 truncate text-base font-black text-slate-900 sm:text-xl">{value}</p></div></div>;
 }
 
 function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
@@ -325,4 +418,3 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
     </div>
   );
 }
-

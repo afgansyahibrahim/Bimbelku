@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertCircle,
@@ -19,6 +18,7 @@ import { toast } from "sonner";
 import axios from "axios";
 
 import StudentLayout from "@/components/StudentLayout";
+import OrderProgress from "@/components/OrderProgress";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import http, { getApiError, getCached } from "@/lib/http";
 
@@ -30,6 +30,8 @@ type PackageData = {
   total_sessions: number;
   used_sessions: number;
   remaining_sessions: number;
+  duration_hours: number;
+  total_learning_hours: number;
   expires_at?: string | null;
   payment_due_at?: string | null;
   can_renew: boolean;
@@ -120,9 +122,9 @@ export default function MyPackages() {
 
   const cancel = async (item: PackageData) => {
     const approved = await confirm({
-      title: "Batalkan pencarian paket?",
-      description: "Semua penawaran tutor dan slot yang sedang ditahan akan dilepas. Voucher akan dikembalikan.",
-      confirmText: "Batalkan pencarian",
+      title: "Hentikan pencarian tutor?",
+      description: "Penawaran tutor akan dihentikan dan pengembalian dana masuk antrean pemeriksaan admin.",
+      confirmText: "Hentikan & ajukan refund",
       tone: "danger",
     });
     if (!approved) return;
@@ -141,10 +143,10 @@ export default function MyPackages() {
   return (
     <StudentLayout title="Kelas Saya">
       <div className="space-y-6 pb-20">
-        <section className="flex flex-col justify-between gap-5 rounded-[2rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-blue-900 p-6 text-white sm:flex-row sm:items-center sm:p-8">
+        <section className="flex flex-col justify-between gap-5 rounded-[1.75rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-blue-900 p-5 text-white sm:flex-row sm:items-center sm:rounded-[2rem] sm:p-8">
           <div>
             <p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Paket dan tutor</p>
-            <h1 className="mt-3 text-3xl font-black">Kelas Saya</h1>
+            <h1 className="mt-3 text-2xl font-black sm:text-3xl">Kelas Saya</h1>
             <p className="mt-2 max-w-xl text-sm text-indigo-100/70">Periksa sisa sesi, masa aktif, tutor setiap mapel, dan jadwal terdekat.</p>
           </div>
           <Link to="/student/packages/new" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950">
@@ -173,29 +175,33 @@ export default function MyPackages() {
                       </div>
                       <p className="mt-1 text-xs font-bold text-slate-400">{item.package_code} · {item.learning_mode === "online" ? "Online" : "Offline"}</p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex w-full flex-wrap gap-2 sm:w-auto">
                       {canRetry && (
-                        <button type="button" disabled={processing === item.id} onClick={() => retry(item.id)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-black text-white disabled:opacity-50">
+                        <button type="button" disabled={processing === item.id} onClick={() => retry(item.id)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-black text-white disabled:opacity-50 sm:flex-none">
                           {processing === item.id ? <Loader2 className="animate-spin" size={17} /> : <Search size={17} />} Cari Lagi
                         </button>
                       )}
                       {needsPayment && (
-                        <Link to="/payment" className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-black text-white">
+                        <Link to="/payment" className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-black text-white sm:flex-none">
                           <CreditCard size={17} /> Bayar Paket
                         </Link>
                       )}
                       {canCancelSearch && (
-                        <button type="button" disabled={processing === item.id} onClick={() => cancel(item)} className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-black text-rose-600 disabled:opacity-50">
+                        <button type="button" disabled={processing === item.id} onClick={() => cancel(item)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-black text-rose-600 disabled:opacity-50 sm:flex-none">
                           <XCircle size={17} /> Batalkan
                         </button>
                       )}
                     </div>
                   </div>
 
-                  <div className="grid gap-4 p-5 sm:grid-cols-3 sm:p-6">
+                  <div className="border-b border-slate-100 px-5 py-5 sm:px-6">
+                    <OrderProgress status={item.status} />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 p-4 sm:gap-4 sm:p-6">
                     <Stat icon={BookOpenCheck} label="Sisa sesi" value={`${item.remaining_sessions} sesi`} />
                     <Stat icon={CalendarDays} label="Masa aktif" value={item.expires_at ? new Date(item.expires_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "Setelah pembayaran"} />
-                    <Stat icon={RefreshCw} label="Progres" value={`${progress}%`} />
+                    <Stat icon={Clock3} label="Durasi" value={`${item.duration_hours || 1} jam`} />
                   </div>
 
                   <div className="px-5 pb-5 sm:px-6 sm:pb-6">
@@ -249,7 +255,7 @@ export default function MyPackages() {
 }
 
 function Stat({ icon: Icon, label, value }: { icon: typeof BookOpenCheck; label: string; value: string }) {
-  return <div className="flex items-center gap-3 rounded-2xl bg-slate-50 p-4"><div className="grid h-10 w-10 place-items-center rounded-xl bg-white text-indigo-600 shadow-sm"><Icon size={19} /></div><div><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 font-black text-slate-800">{value}</p></div></div>;
+  return <div className="flex min-w-0 flex-col items-center gap-2 rounded-2xl bg-slate-50 p-3 text-center sm:flex-row sm:gap-3 sm:p-4 sm:text-left"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-indigo-600 shadow-sm sm:h-10 sm:w-10"><Icon size={18} /></div><div className="min-w-0"><p className="text-[9px] font-black uppercase tracking-wide text-slate-400 sm:text-[10px] sm:tracking-wider">{label}</p><p className="mt-1 break-words text-xs font-black text-slate-800 sm:text-base">{value}</p></div></div>;
 }
 
 function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {

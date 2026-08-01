@@ -95,6 +95,11 @@ class Booking extends Model
         return $this->hasMany(ClassroomMessage::class);
     }
 
+    public function latestClassroomMessage()
+    {
+        return $this->hasOne(ClassroomMessage::class)->latestOfMany();
+    }
+
     public function learningPlan()
     {
         return $this->hasOne(LearningPlan::class);
@@ -103,6 +108,11 @@ class Booking extends Model
     public function learningProgressReports()
     {
         return $this->hasMany(LearningProgressReport::class);
+    }
+
+    public function latestLearningProgressReport()
+    {
+        return $this->hasOne(LearningProgressReport::class)->latestOfMany('published_at');
     }
 
     public function sessionAttendances()

@@ -67,10 +67,13 @@ const Dashboard = lazy(() => import("./pages/students/Dashboard"));
 const MyClasses = lazy(() => import("./pages/students/MyClasses"));
 const TransactionHistory = lazy(() => import("./pages/students/TransactionHistory"));
 const Profile = lazy(() => import("./pages/students/Profile"));
+const Account = lazy(() => import("./pages/students/Account"));
 const PackageBuilder = lazy(() => import("./pages/students/PackageBuilder"));
 const MyPackages = lazy(() => import("./pages/students/MyPackages"));
 const Vouchers = lazy(() => import("./pages/students/Vouchers"));
 const PromotionDetail = lazy(() => import("./pages/students/PromotionDetail"));
+const Messages = lazy(() => import("./pages/students/Messages"));
+const LearningProgress = lazy(() => import("./pages/students/LearningProgress"));
 
 // 7. Payment
 const PaymentPage = lazy(() => import("./pages/pembayaran/PaymentPage"));
@@ -196,8 +199,11 @@ const App = () => (
               <Route path="/search" element={<SearchPage />} />
               <Route path="/student/find" element={<SearchPage />} />
               <Route path="/student/my-classes" element={<MyClasses />} />
+              <Route path="/student/messages" element={<Messages />} />
+              <Route path="/student/progress" element={<LearningProgress />} />
               <Route path="/student/history" element={<TransactionHistory />} />
               <Route path="/student/profile" element={<Profile />} />
+              <Route path="/student/account" element={<Account />} />
               <Route path="/student/packages" element={<MyPackages />} />
               <Route path="/student/packages/new" element={<PackageBuilder />} />
               <Route path="/student/vouchers" element={<Vouchers />} />

@@ -13,6 +13,9 @@ const Navbar = () => {
   const navigate = useNavigate();
   const confirm = useConfirmDialog();
 
+  const isNavActive = (href: string) =>
+    location.pathname === href || location.pathname.startsWith(`${href}/`);
+
   const navLinks = [
     { href: "/search", label: "Cari Bimbingan" },
     { href: "/why-us", label: "Kenapa Harus Belajar?" },
@@ -88,7 +91,7 @@ const Navbar = () => {
                 key={link.href}
                 to={link.href}
                 className={`text-sm font-medium transition-colors hover:text-primary ${
-                  location.pathname === link.href ? "text-primary" : "text-muted-foreground"
+                  isNavActive(link.href) ? "text-primary" : "text-muted-foreground"
                 }`}
               >
                 {link.label}
@@ -161,7 +164,7 @@ const Navbar = () => {
                   key={link.href}
                   to={link.href}
                   className={`text-sm font-medium transition-colors hover:text-primary ${
-                    location.pathname === link.href ? "text-primary" : "text-muted-foreground"
+                    isNavActive(link.href) ? "text-primary" : "text-muted-foreground"
                   }`}
                   onClick={() => setIsOpen(false)}
                 >

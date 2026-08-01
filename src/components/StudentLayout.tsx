@@ -8,16 +8,10 @@ import RoleQuickGuide from "@/components/RoleQuickGuide";
 import {
   Bell,
   BookOpen,
-  CalendarDays,
-  CheckCircle2,
-  HelpCircle,
-  History,
-  Info,
-  LayoutDashboard,
+  Home,
   Menu,
   MessageSquare,
   Search,
-  Tag,
   User,
   X,
 } from "lucide-react";
@@ -41,7 +35,15 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
   
   const lastNotificationIdRef = useRef<number>(0);
   const location = useLocation();
-  const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(`${path}/`);
+  const activeMenu = (() => {
+    const path = location.pathname;
+    if (path === "/student/dashboard") return "home";
+    if (path === "/student/packages/new") return "search";
+    if (path === "/student/packages" || path.startsWith("/student/packages/") || path === "/student/my-classes" || path.startsWith("/student/my-classes/") || path === "/student/progress") return "classes";
+    if (path === "/student/messages" || path.startsWith("/student/messages/")) return "messages";
+    if (["/student/account", "/student/profile", "/student/history", "/student/vouchers", "/student/help"].some((route) => path === route || path.startsWith(`${route}/`))) return "account";
+    return "";
+  })();
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -111,7 +113,7 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
                   // Munculkan Custom Toast
                   toast.custom((t) => (
                     <div 
-                        className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-100 p-4 flex gap-4 animate-in slide-in-from-top-5 duration-500 cursor-pointer pointer-events-auto hover:bg-slate-50 transition"
+                        className="pointer-events-auto mx-auto flex w-[calc(100vw-1.5rem)] max-w-sm min-w-0 cursor-pointer gap-3 overflow-hidden rounded-2xl border border-slate-100 bg-white p-3.5 shadow-2xl transition hover:bg-slate-50 sm:w-full sm:gap-4 sm:p-4"
                         onClick={() => {
                             toast.dismiss(t);
                             handleNotifClick(latest); // Buka modal saat diklik
@@ -120,9 +122,9 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
                         <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
                             <Bell size={20} className="animate-bounce"/>
                         </div>
-                        <div className="flex-1">
-                            <h4 className="font-bold text-slate-800 text-sm">{latest.title}</h4>
-                            <p className="text-xs text-slate-500 mt-1 line-clamp-2">{latest.message}</p>
+                        <div className="min-w-0 flex-1">
+                            <h4 className="break-words text-sm font-bold text-slate-800">{latest.title}</h4>
+                            <p className="mt-1 line-clamp-2 break-words text-xs text-slate-500">{latest.message}</p>
                             <p className="text-[10px] text-blue-500 mt-2 font-bold">Ketuk untuk membaca</p>
                         </div>
                     </div>
@@ -143,7 +145,7 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
   }, [fetchNotifications]);
 
   return (
-    <div className="flex h-dvh min-h-screen overflow-hidden bg-[#F8FAFC] font-sans text-slate-800 selection:bg-blue-100 selection:text-blue-900">
+    <div className="flex h-dvh min-h-screen w-full max-w-full overflow-hidden bg-[#F8FAFC] font-sans text-slate-800 selection:bg-blue-100 selection:text-blue-900">
       
       {sidebarOpen && (
         <div className="fixed inset-0 z-30 bg-slate-900/60 backdrop-blur-sm transition-opacity duration-300 xl:hidden" onClick={() => setSidebarOpen(false)} />
@@ -167,23 +169,15 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
             </button>
         </div>
 
-        <nav className="flex-1 px-5 space-y-8 overflow-y-auto custom-scrollbar py-6">
+        <nav className="flex-1 overflow-y-auto px-5 py-6 custom-scrollbar">
           <div>
               <p className="px-4 mb-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest flex items-center gap-2"><span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span> Menu Utama</p>
               <div className="space-y-1">
-                  <NavItem to="/student/dashboard" icon={LayoutDashboard} label="Dashboard" active={isActive('/student/dashboard')} />
-                  <NavItem to="/student/packages/new" icon={Search} label="Cari Les" active={isActive('/student/packages/new') || isActive('/student/find') || isActive('/search')} />
-                  <NavItem to="/student/packages" icon={BookOpen} label="Kelas Saya" active={isActive('/student/packages')} />
-                  <NavItem to="/student/vouchers" icon={Tag} label="Voucher" active={isActive('/student/vouchers') || isActive('/student/offers')} />
-                  <NavItem to="/student/my-classes" icon={CalendarDays} label="Seluruh Sesi" active={isActive('/student/my-classes')} />
-              </div>
-          </div>
-          <div>
-              <p className="px-4 mb-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest flex items-center gap-2"><span className="w-1.5 h-1.5 bg-indigo-400 rounded-full"></span> Akun</p>
-              <div className="space-y-1">
-                  <NavItem to="/student/history" icon={History} label="Riwayat Transaksi" active={isActive('/student/history')} />
-                  <NavItem to="/student/profile" icon={User} label="Profil Saya" active={isActive('/student/profile')} />
-                  <NavItem to="/student/help" icon={HelpCircle} label="Bantuan & Support" active={isActive('/student/help')} />
+                  <NavItem to="/student/dashboard" icon={Home} label="Beranda" active={activeMenu === "home"} tour="student-home" />
+                  <NavItem to="/student/packages/new" icon={Search} label="Cari Les" active={activeMenu === "search"} tour="student-cari-les" />
+                  <NavItem to="/student/packages" icon={BookOpen} label="Kelas Saya" active={activeMenu === "classes"} tour="student-kelas" />
+                  <NavItem to="/student/messages" icon={MessageSquare} label="Pesan" active={activeMenu === "messages"} tour="student-pesan" />
+                  <NavItem to="/student/account" icon={User} label="Saya" active={activeMenu === "account"} tour="student-saya" />
               </div>
           </div>
         </nav>
@@ -197,15 +191,15 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
       <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         
         {/* HEADER */}
-        <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-slate-200/50 bg-white/80 px-3 backdrop-blur-xl transition-all sm:h-20 sm:px-6 xl:px-8">
-          <div className="flex items-center gap-4">
+        <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-slate-200/70 bg-white/95 px-3 backdrop-blur-xl transition-all sm:h-20 sm:px-6 xl:px-8">
+          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
             <button aria-label="Buka menu" className="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 shadow-sm transition hover:bg-slate-50 xl:hidden" onClick={() => setSidebarOpen(true)}>
               <Menu size={20} />
             </button>
-            <div><h1 className="text-xl font-black text-slate-800 tracking-tight hidden sm:block">{title}</h1></div>
+            <h1 className="truncate text-sm font-black tracking-tight text-slate-800 sm:text-xl">{title}</h1>
           </div>
           
-          <div className="flex items-center gap-5">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-3 xl:gap-5">
              <RoleQuickGuide role="student" />
              
              {/* DROPDOWN NOTIFIKASI */}
@@ -225,14 +219,14 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
                  {showNotifDropdown && (
                      <>
                         <div className="fixed inset-0 z-[100]" onClick={() => setShowNotifDropdown(false)}></div>
-                        <div className="absolute right-0 z-[101] mt-4 w-[min(24rem,calc(100vw-2rem))] origin-top-right overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-2xl ring-1 ring-slate-100 animate-in fade-in zoom-in-95 duration-200">
+                        <div className="fixed inset-x-3 top-[4.5rem] z-[101] max-w-[calc(100vw-1.5rem)] origin-top-right overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white shadow-2xl ring-1 ring-slate-100 animate-in fade-in zoom-in-95 duration-200 sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-4 sm:w-[min(24rem,calc(100vw-2rem))] sm:rounded-[2rem]">
                             
                             <div className="p-5 border-b border-slate-50 bg-white flex justify-between items-center sticky top-0 z-10">
                                 <h3 className="font-bold text-slate-800 text-lg">Notifikasi</h3>
                                 {unreadCount > 0 && <span className="text-[10px] bg-rose-50 text-rose-600 px-2.5 py-1 rounded-full font-bold border border-rose-100">{unreadCount} Baru</span>}
                             </div>
                             
-                            <div className="max-h-[400px] overflow-y-auto custom-scrollbar p-2 space-y-1">
+                            <div className="max-h-[min(60dvh,400px)] overflow-y-auto custom-scrollbar p-2 space-y-1">
                                 {notifications.length > 0 ? notifications.map((notif) => (
                                     <button
                                         type="button"
@@ -241,9 +235,9 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
                                         className={`group flex w-full items-start gap-4 rounded-2xl p-4 text-left transition-all ${notif.is_read ? 'bg-white hover:bg-slate-50 opacity-60' : 'bg-blue-50/50 hover:bg-blue-50 border border-blue-100'}`}
                                     >
                                         <div className={`w-2 h-2 mt-2 rounded-full shrink-0 ${notif.is_read ? 'bg-slate-300' : 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]'}`}></div>
-                                        <div>
-                                            <h4 className={`text-sm ${notif.is_read ? 'font-medium text-slate-600' : 'font-bold text-slate-800'}`}>{notif.title}</h4>
-                                            <p className="text-xs text-slate-500 mt-1 leading-relaxed line-clamp-2">{notif.message}</p>
+                                        <div className="min-w-0 flex-1">
+                                            <h4 className={`break-words text-sm ${notif.is_read ? 'font-medium text-slate-600' : 'font-bold text-slate-800'}`}>{notif.title}</h4>
+                                            <p className="mt-1 line-clamp-2 break-words text-xs leading-relaxed text-slate-500">{notif.message}</p>
                                             <p className="text-[10px] text-slate-400 mt-2 font-medium flex items-center gap-1">
                                                 {new Date(notif.created_at).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', hour: '2-digit', minute:'2-digit'})}
                                             </p>
@@ -262,7 +256,7 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
              </div>
 
              {/* Profile */}
-             <div className="group flex h-8 cursor-pointer items-center gap-2 border-l border-slate-200 pl-3 sm:gap-4 sm:pl-6">
+             <Link to="/student/account" className="group hidden h-8 items-center gap-2 border-l border-slate-200 pl-3 sm:flex sm:gap-4 sm:pl-6" aria-label="Buka halaman Saya">
                 <div className="text-right hidden sm:block">
                     <p className="text-sm font-bold text-slate-800 leading-tight group-hover:text-blue-600 transition-colors">{userData ? userData.name : "Memuat..."}</p>
                     <p className="text-[10px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full inline-block mt-1">Siswa Aktif</p>
@@ -280,31 +274,31 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
                        )}
                     </div>
                 </div>
-             </div>
+             </Link>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 pb-24 scroll-smooth sm:p-6 sm:pb-24 xl:p-8 xl:pb-8">
-          <div className="max-w-7xl mx-auto pb-10">{children}</div>
+        <div id="student-scroll-container" className="flex-1 overflow-y-auto scroll-smooth p-3 pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-24 xl:p-8 xl:pb-8">
+          <div className="mx-auto max-w-7xl pb-6 sm:pb-10">{children}</div>
         </div>
         <MobileBottomNav role="student" />
         <Link
-          to="/student/my-classes"
+          to="/student/messages"
           aria-label="Buka pesan kelas"
           title="Pesan kelas"
-          className="fixed bottom-24 right-4 z-20 grid h-14 w-14 place-items-center rounded-full bg-slate-950 text-white shadow-xl transition hover:-translate-y-1 hover:bg-indigo-700 xl:bottom-7 xl:right-7"
+          className="fixed bottom-7 right-7 z-20 hidden h-14 w-14 place-items-center rounded-full bg-slate-950 text-white shadow-xl transition hover:-translate-y-1 hover:bg-indigo-700 xl:grid"
         >
           <MessageSquare size={21} />
         </Link>
 
         {/* --- [FIXED] MODAL DETAIL NOTIFIKASI SISWA --- */}
         {selectedNotif && (
-            <div role="dialog" aria-modal="true" aria-label="Detail notifikasi" className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+            <div role="dialog" aria-modal="true" aria-label="Detail notifikasi" className="fixed inset-0 z-[200] flex items-end justify-center bg-slate-900/60 p-0 backdrop-blur-sm animate-in fade-in duration-300 sm:items-center sm:p-4">
                 {/* [PERBAIKAN] 
                     1. flex flex-col: Agar children (header, content, footer) tertata vertikal
                     2. max-h-[90vh]: Batasi tinggi modal agar tidak melebihi layar
                 */}
-                <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl relative animate-in zoom-in-95 duration-300 overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="relative flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[2rem] bg-white shadow-2xl animate-in zoom-in-95 duration-300 sm:max-h-[90vh] sm:rounded-[2.5rem]">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-blue-100/50 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
                     
                     {/* Header: Fixed */}
@@ -323,8 +317,8 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
                         </div>
 
                         <div>
-                            <h3 className="text-2xl font-black text-slate-900 leading-tight">{selectedNotif.title}</h3>
-                            <div className="flex items-center gap-2 mt-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+                            <h3 className="break-words text-xl font-black leading-tight text-slate-900 sm:text-2xl">{selectedNotif.title}</h3>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 sm:text-xs">
                                 <span>Dari Admin</span>
                                 <span>•</span>
                                 <span>{new Date(selectedNotif.created_at).toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'short' })}</span>
@@ -334,7 +328,7 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
 
                     {/* Content: Scrollable */}
                     <div className="relative z-10 overflow-y-auto px-5 custom-scrollbar sm:px-8">
-                        <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 text-slate-600 leading-relaxed text-sm whitespace-pre-wrap">
+                        <div className="whitespace-pre-wrap break-words rounded-3xl border border-slate-100 bg-slate-50 p-4 text-sm leading-relaxed text-slate-600 sm:p-6">
                             {selectedNotif.message}
                         </div>
                     </div>
@@ -365,9 +359,9 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
   );
 }
 
-function NavItem({ to, icon: Icon, label, active }: any) {
+function NavItem({ to, icon: Icon, label, active, tour }: any) {
   return (
-    <Link to={to} aria-current={active ? "page" : undefined} className={`group relative flex items-center justify-between px-5 py-3.5 text-sm font-bold rounded-[1.2rem] transition-all duration-300 mb-1 ${active ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/30 translate-x-1' : 'text-slate-500 hover:bg-slate-50 hover:text-blue-600'}`}>
+    <Link data-tour={tour} to={to} aria-current={active ? "page" : undefined} className={`group relative flex items-center justify-between px-5 py-3.5 text-sm font-bold rounded-[1.2rem] transition-all duration-300 mb-1 ${active ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/30 translate-x-1' : 'text-slate-500 hover:bg-slate-50 hover:text-blue-600'}`}>
       <div className="flex items-center gap-3.5"><Icon size={20} className={`${active ? 'text-blue-200' : 'text-slate-400 group-hover:text-blue-500'} transition-colors duration-300`} strokeWidth={active ? 2.5 : 2}/><span>{label}</span></div>
       {active && <div className="w-1.5 h-1.5 rounded-full bg-white shadow-sm animate-pulse"></div>}
     </Link>

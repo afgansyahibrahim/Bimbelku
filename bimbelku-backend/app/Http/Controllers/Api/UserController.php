@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\EducationCatalog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
@@ -31,6 +33,13 @@ class UserController extends Controller
             'maps_link' => $user->maps_link,
             'latitude' => $user->latitude,
             'longitude' => $user->longitude,
+            'location_consent_at' => $user->location_consent_at?->toIso8601String(),
+            'student_education_level' => $user->student_education_level,
+            'grade' => $user->grade,
+            'school_name' => $user->school_name,
+            'learning_needs' => $user->learning_needs,
+            'terms_accepted_at' => $user->terms_accepted_at?->toIso8601String(),
+            'privacy_accepted_at' => $user->privacy_accepted_at?->toIso8601String(),
             'role' => $user->role,
             'student_birth_date' => $user->role === 'student'
                 ? $user->date_of_birth?->toDateString()
@@ -74,7 +83,23 @@ class UserController extends Controller
             'phone' => ['required', 'string', 'max:30', 'regex:/^[0-9+() .-]+$/'],
             'avatar' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048', // Max 2MB
             'profile_cover' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:5120',
+            'student_education_level' => ['nullable', Rule::in(EducationCatalog::LEVELS)],
+            'grade' => ['nullable', 'string', 'max:50'],
+            'school_name' => ['nullable', 'string', 'max:180'],
+            'learning_needs' => ['nullable', 'string', 'max:1500'],
+            'address' => ['nullable', 'string', 'max:1500'],
+            'maps_link' => ['nullable', 'url', 'max:1500'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'location_consent' => ['nullable', 'boolean'],
         ]);
+        if ($request->filled('student_education_level') && $request->filled('grade')) {
+            abort_unless(
+                EducationCatalog::supports($request->string('student_education_level')->toString(), $request->string('grade')->toString()),
+                422,
+                'Kelas atau tingkat tidak sesuai jenjang.'
+            );
+        }
 
         $oldAvatar = $user->avatar;
         $oldCover = $user->profile_cover;
@@ -88,6 +113,17 @@ class UserController extends Controller
         try {
             $user->name = $request->name;
             $user->phone = trim((string) $request->phone);
+            $user->student_education_level = $request->input('student_education_level') ?: null;
+            $user->grade = $request->input('grade') ?: null;
+            $user->school_name = $request->input('school_name') ?: null;
+            $user->learning_needs = $request->input('learning_needs') ?: null;
+            $user->address = $request->input('address') ?: null;
+            $user->maps_link = $request->input('maps_link') ?: null;
+            $user->latitude = $request->filled('latitude') ? $request->input('latitude') : null;
+            $user->longitude = $request->filled('longitude') ? $request->input('longitude') : null;
+            if ($request->has('location_consent')) {
+                $user->location_consent_at = $request->boolean('location_consent') ? ($user->location_consent_at ?? now()) : null;
+            }
             if ($newAvatar) {
                 $user->avatar = $newAvatar;
             }
@@ -121,6 +157,15 @@ class UserController extends Controller
                 'profile_cover_url' => $user->profile_cover
                     ? asset('storage/' . $user->profile_cover)
                     : null,
+                'student_education_level' => $user->student_education_level,
+                'grade' => $user->grade,
+                'school_name' => $user->school_name,
+                'learning_needs' => $user->learning_needs,
+                'address' => $user->address,
+                'maps_link' => $user->maps_link,
+                'latitude' => $user->latitude,
+                'longitude' => $user->longitude,
+                'location_consent_at' => $user->location_consent_at?->toIso8601String(),
             ]
         ]);
     }

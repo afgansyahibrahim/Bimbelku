@@ -10,8 +10,29 @@ produksi, dan sintaks PHP telah diperiksa di workspace. Tes Laravel sudah
 ditambahkan, tetapi masih harus dijalankan melalui PHP dan Composer di Laragon
 sebelum paket dipasang pada website utama.
 
+Dokumen ini telah menggabungkan seluruh catatan kecil Tahap 5. Berkas terpisah
+untuk optimasi web, paket dan promo, pratinjau berkas, Privat, pembayaran,
+validasi mapel, dan perubahan jenjang sudah tidak diperlukan.
+
 Tidak ada database MySQL pengguna yang dibuka, dikosongkan, atau diubah selama
 pengerjaan ini. Migration baru tidak memakai `migrate:fresh`.
+
+## Keputusan final hasil seluruh revisi Tahap 5
+
+- Jenjang aktif terdiri atas SD, SMP, SMA, dan Umum.
+- Perguruan Tinggi serta pilihan semester tidak ditampilkan pada alur aktif.
+- Katalog, tarif, kompetensi tutor, dan pemesanan memakai sumber mapel yang sama.
+- Nama mapel dinormalisasi agar kapital dan spasi tidak membuat duplikasi.
+- Kelas Privat dipertahankan sebagai alur utama. Kelas kelompok ditunda.
+- Viewer internal membuka foto dan PDF tanpa memaksa unduhan.
+- Foto dapat diperbesar 50–400 persen dan diputar 90 derajat.
+- Query katalog, dashboard, daftar kelas, dan transaksi telah dioptimalkan.
+- Paket, promo, voucher, banner, tutorial, dan dashboard telah ditambahkan.
+- Riwayat lama tidak dihapus ketika jenjang atau mapel dinonaktifkan.
+
+Urutan pembayaran yang tertulis pada bagian alur Tahap 5 merupakan riwayat
+implementasi saat itu. Keputusan tersebut telah digantikan Tahap 6A. Alur aktif
+sekarang ialah pembayaran disetujui lebih dahulu, kemudian pencarian tutor.
 
 ## Hasil Tahap 5
 

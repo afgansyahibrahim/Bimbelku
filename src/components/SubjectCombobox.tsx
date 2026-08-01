@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { BookOpen, Check, ChevronDown, Loader2, Plus, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -42,7 +42,9 @@ export default function SubjectCombobox({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState(value);
   const [creating, setCreating] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
+  const listboxId = useId();
 
   useEffect(() => {
     if (!open) setQuery(value);
@@ -72,6 +74,10 @@ export default function SubjectCombobox({
   const exact = options.find((option) => normalize(option.name) === normalize(query));
   const canCreate = allowCreate && query.trim().length >= 2 && !exact;
 
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [query, educationLevel, grade]);
+
   const select = (option: SubjectOption) => {
     setQuery(option.name);
     onChange(option.name, option);
@@ -99,7 +105,8 @@ export default function SubjectCombobox({
         <input
           role="combobox"
           aria-expanded={open}
-          aria-controls="subject-combobox-options"
+          aria-controls={listboxId}
+          aria-activedescendant={open && filtered[activeIndex] ? `${listboxId}-option-${filtered[activeIndex].id}` : undefined}
           aria-autocomplete="list"
           disabled={disabled}
           value={query}
@@ -116,6 +123,24 @@ export default function SubjectCombobox({
               onChange("");
             }
           }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setOpen(true);
+              setActiveIndex((index) => Math.min(Math.max(0, filtered.length - 1), index + 1));
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setOpen(true);
+              setActiveIndex((index) => Math.max(0, index - 1));
+            } else if (event.key === "Enter" && open) {
+              event.preventDefault();
+              if (filtered[activeIndex]) select(filtered[activeIndex]);
+              else if (canCreate) void create();
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              setOpen(false);
+            }
+          }}
           className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
         <button
@@ -130,15 +155,17 @@ export default function SubjectCombobox({
       </div>
 
       {open && !disabled && (
-        <div id="subject-combobox-options" role="listbox" className="absolute z-[120] mt-2 max-h-72 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl">
-          {filtered.map((option) => (
+        <div id={listboxId} role="listbox" className="absolute z-[120] mt-2 max-h-72 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl">
+          {filtered.map((option, index) => (
             <button
+              id={`${listboxId}-option-${option.id}`}
               type="button"
               role="option"
               aria-selected={normalize(value) === normalize(option.name)}
               key={option.id}
               onClick={() => select(option)}
-              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-indigo-50"
+              onMouseEnter={() => setActiveIndex(index)}
+              className={cn("flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-indigo-50", activeIndex === index && "bg-indigo-50")}
             >
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-600"><BookOpen size={17} /></span>
               <span className="min-w-0 flex-1">

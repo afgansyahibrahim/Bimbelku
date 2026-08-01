@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import StudentLayout from "@/components/StudentLayout";
+import OrderProgress from "@/components/OrderProgress";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +49,8 @@ interface OrderData {
   date?: string;
   paymentDueAt?: string;
   rejectionReason?: string;
+  durationHours?: number;
+  totalLearningHours?: number;
 }
 
 type State = "loading" | "pending" | "submitted" | "paid" | "expired" | "cancelled" | "refund_pending" | "refunded";
@@ -122,6 +125,8 @@ export default function PaymentPage() {
             date: response.data.scheduled_at,
             paymentDueAt: response.data.payment_due_at,
             rejectionReason: response.data.rejection_reason,
+            durationHours: Number(response.data.duration_hours || 1),
+            totalLearningHours: Number(response.data.total_learning_hours || 0),
           };
         }
       }
@@ -220,7 +225,7 @@ export default function PaymentPage() {
     if (!order) return;
     const approved = await confirm({
       title: "Batalkan tagihan?",
-      description: "Tutor dan slot jadwal akan dilepas. Tindakan ini tidak dapat dibatalkan.",
+      description: "Tagihan dan pesanan akan dibatalkan. Tindakan ini tidak dapat dipulihkan.",
       confirmText: "Ya, batalkan",
       tone: "danger",
     });
@@ -240,7 +245,7 @@ export default function PaymentPage() {
   }
 
   if (state === "paid") {
-    return <StudentLayout title="Pembayaran"><Result icon={CheckCircle2} color="emerald" title="Pembayaran diterima" text="Admin telah memverifikasi transfer. Sesi dan tutor kini terkunci pada jadwalmu." action="Buka Kelas Saya" onClick={() => navigate("/student/packages")} /></StudentLayout>;
+    return <StudentLayout title="Pembayaran"><Result icon={CheckCircle2} color="emerald" title="Pembayaran diterima" text="Admin telah memverifikasi transfer. Sistem sekarang mencari tutor yang tersedia pada seluruh jadwalmu." action="Pantau Pencarian" onClick={() => navigate("/student/packages")} /></StudentLayout>;
   }
 
   if (state === "refund_pending" || state === "refunded") {
@@ -248,16 +253,16 @@ export default function PaymentPage() {
   }
 
   if (state === "expired" || state === "cancelled" || !order || !settings) {
-    return <StudentLayout title="Pembayaran"><Result icon={XCircle} color="rose" title={state === "cancelled" ? "Tagihan dibatalkan" : "Tagihan tidak tersedia"} text={state === "cancelled" ? "Pesanan dan slot tutor sudah dilepas." : "Batas pembayaran telah berakhir atau tidak ada tagihan aktif."} action="Pilih paket belajar" onClick={() => navigate("/student/packages/new")} /></StudentLayout>;
+    return <StudentLayout title="Pembayaran"><Result icon={XCircle} color="rose" title={state === "cancelled" ? "Tagihan dibatalkan" : "Tagihan tidak tersedia"} text={state === "cancelled" ? "Tagihan dan pesanan sudah dibatalkan." : "Batas pembayaran telah berakhir atau tidak ada tagihan aktif."} action="Pilih paket belajar" onClick={() => navigate("/student/packages/new")} /></StudentLayout>;
   }
 
   if (state === "submitted") {
     return (
       <StudentLayout title="Pembayaran">
         <div className="mx-auto grid min-h-[65vh] max-w-2xl place-items-center">
-          <div className="w-full rounded-[2rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-5 text-center text-white shadow-2xl sm:rounded-[2.5rem] sm:p-8">
+          <div className="w-full rounded-[1.75rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-5 text-center text-white shadow-2xl sm:rounded-[2.5rem] sm:p-8">
             <div className="relative mx-auto h-36 w-36"><div className="absolute inset-0 animate-ping rounded-full border border-indigo-300/30" /><div className="absolute inset-4 animate-spin rounded-full border-4 border-indigo-400/20 border-t-indigo-300" /><div className="absolute inset-0 grid place-items-center"><ShieldCheck size={42} className="text-indigo-200" /></div></div>
-            <p className="mt-6 text-xs font-black uppercase tracking-[.2em] text-indigo-200">Pemeriksaan manual admin</p><h1 className="mt-3 text-3xl font-black">Bukti transfer sudah diterima</h1><p className="mx-auto mt-3 max-w-lg leading-7 text-indigo-100/70">Anda tidak perlu mengunggah ulang. Status diperiksa otomatis setiap 15 detik dan akan berubah setelah admin memberi keputusan.</p>
+            <p className="mt-6 text-xs font-black uppercase tracking-[.2em] text-indigo-200">Pemeriksaan manual admin</p><h1 className="mt-3 text-2xl font-black sm:text-3xl">Bukti transfer sudah diterima</h1><p className="mx-auto mt-3 max-w-lg text-sm leading-7 text-indigo-100/70 sm:text-base">Anda tidak perlu mengunggah ulang. Status diperiksa otomatis setiap 15 detik dan akan berubah setelah admin memberi keputusan.</p>
             <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row"><Button variant="outline" onClick={() => checkStatus(order.orderId)} className="rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"><RefreshCw size={16} className="mr-2" />Periksa sekarang</Button><Button onClick={() => navigate("/student/dashboard")} className="rounded-xl bg-white text-indigo-950 hover:bg-indigo-50">Ke dashboard</Button></div>
           </div>
         </div>
@@ -269,15 +274,16 @@ export default function PaymentPage() {
     <StudentLayout title="Pembayaran">
       <div className="mx-auto max-w-6xl space-y-6 pb-12">
         <button onClick={() => navigate(order.packageName ? "/student/packages" : "/search")} className="inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-slate-900"><ArrowLeft size={17} />Kembali</button>
+        {order.packageName && <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm"><OrderProgress status="awaiting_payment" /></div>}
         {reason && <div className="flex gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-5 text-rose-800"><AlertCircle className="shrink-0" /><div><p className="font-black">Bukti sebelumnya ditolak</p><p className="mt-1 text-sm leading-6">{reason}</p></div></div>}
         {!paymentAccountReady && <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900"><AlertCircle className="shrink-0" /><div><p className="font-black">Rekening pembayaran belum tersedia</p><p className="mt-1 text-sm leading-6">Admin perlu mengisi rekening tujuan terlebih dahulu. Jangan melakukan transfer sebelum informasi rekening tampil lengkap.</p></div></div>}
         {paymentExpired && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm font-bold text-rose-700">Batas waktu telah berakhir. Muat ulang status untuk menutup tagihan.</div>}
 
         <div className="grid items-start gap-7 lg:grid-cols-[.9fr_1.1fr]">
           <section className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm">
-            <div className="bg-gradient-to-br from-slate-950 to-indigo-950 p-6 text-white"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-widest text-indigo-200">Tagihan</p><p className="mt-2 font-mono text-xl font-black">{order.invoiceId || `#${order.orderId}`}</p></div><span className="rounded-full bg-orange-500 px-3 py-1.5 text-xs font-bold">Belum dibayar</span></div></div>
-            <div className="space-y-5 p-6">
-              <div><p className="text-xs font-bold uppercase tracking-widest text-slate-400">{order.packageName ? "Paket" : "Kelas"}</p><h1 className="mt-2 text-2xl font-black text-slate-900">{order.packageName || order.subject}</h1>{order.packageName && <p className="mt-1 text-sm font-semibold text-slate-600">{order.subject}</p>}<p className="mt-1 text-sm text-slate-500">{order.type} · tutor {order.tutorName}</p></div>
+            <div className="bg-gradient-to-br from-slate-950 to-indigo-950 p-5 text-white sm:p-6"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-bold uppercase tracking-widest text-indigo-200">Tagihan</p><p className="mt-2 break-all font-mono text-lg font-black sm:text-xl">{order.invoiceId || `#${order.orderId}`}</p></div><span className="rounded-full bg-orange-500 px-3 py-1.5 text-xs font-bold">Belum dibayar</span></div></div>
+            <div className="space-y-5 p-5 sm:p-6">
+              <div><p className="text-xs font-bold uppercase tracking-widest text-slate-400">{order.packageName ? "Paket" : "Kelas"}</p><h1 className="mt-2 text-xl font-black text-slate-900 sm:text-2xl">{order.packageName || order.subject}</h1>{order.packageName && <p className="mt-1 text-sm font-semibold text-slate-600">{order.subject}</p>}<p className="mt-1 text-sm text-slate-500">{order.type}{order.packageName ? ` · ${order.durationHours || 1} jam/pertemuan · tutor dicari setelah pembayaran` : ` · tutor ${order.tutorName}`}</p>{Boolean(order.totalLearningHours) && <p className="mt-2 inline-flex rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">Total {order.totalLearningHours} jam belajar</p>}</div>
               <div className="flex flex-col gap-2 rounded-2xl bg-indigo-50 p-4 sm:flex-row sm:items-end sm:justify-between">
                 <span className="text-sm font-bold text-indigo-700">Total transfer</span>
                 <div className="text-left sm:text-right">
@@ -300,7 +306,7 @@ export default function PaymentPage() {
             </div>
           </section>
 
-          <form onSubmit={upload} className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm md:p-8">
+          <form onSubmit={upload} className="rounded-[1.75rem] border border-slate-100 bg-white p-5 shadow-sm sm:rounded-[2rem] md:p-8">
             <p className="text-xs font-black uppercase tracking-[.2em] text-indigo-500">Konfirmasi transfer</p><h2 className="mt-2 text-2xl font-black text-slate-900">{reason ? "Unggah bukti pengganti" : "Kirim bukti pembayaran"}</h2><p className="mt-2 text-sm leading-6 text-slate-500">Pastikan nama pengirim, tujuan rekening, waktu, dan nominal terlihat jelas.</p>
             <div className="mt-7 space-y-5">
               <div><Label className="flex items-center gap-2 font-bold"><UserRound size={16} />Nama pemilik rekening</Label><Input required className="mt-2 h-12 rounded-xl" value={senderName} onChange={(event) => setSenderName(event.target.value)} /></div>

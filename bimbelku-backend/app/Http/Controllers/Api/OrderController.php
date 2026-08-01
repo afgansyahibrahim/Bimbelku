@@ -187,6 +187,8 @@ class OrderController extends Controller
             'subtotal_amount' => $order->subtotal_amount,
             'discount_amount' => $order->discount_amount,
             'package_name' => $details['package_name'] ?? null,
+            'duration_hours' => (int) ($details['duration_hours'] ?? $order->learningPackage?->duration_hours ?? 1),
+            'total_learning_hours' => (int) ($details['total_learning_hours'] ?? 0),
         ]);
     }
 
@@ -308,6 +310,8 @@ class OrderController extends Controller
                 'booking_id' => $order->booking_id,
                 'learning_package_id' => $order->learning_package_id,
                 'package_name' => $order->learningPackage?->plan?->name,
+                'duration_hours' => (int) ($details['duration_hours'] ?? $order->learningPackage?->duration_hours ?? 1),
+                'total_learning_hours' => (int) ($details['total_learning_hours'] ?? 0),
                 'subtotal_amount' => $order->subtotal_amount,
                 'discount_amount' => $order->discount_amount,
                 'refund' => $order->refund,
@@ -413,14 +417,16 @@ class OrderController extends Controller
                 ]);
                 $package->update(['status' => 'payment_submitted']);
                 $package->subjects()
-                    ->with('sessions.booking')
+                    ->with(['sessions.booking', 'bookingRequest'])
                     ->get()
-                    ->flatMap->sessions
-                    ->each(function ($session) {
-                        $session->update(['status' => 'payment_submitted']);
-                        $session->booking?->update(['status' => 'payment_submitted']);
-                        $session->booking?->participants()->update(['status' => 'payment_submitted']);
-                        $session->booking?->bookingRequest?->update(['status' => 'payment_submitted']);
+                    ->each(function ($subject) {
+                        $subject->update(['status' => 'payment_submitted']);
+                        $subject->bookingRequest?->update(['status' => 'payment_submitted']);
+                        $subject->sessions->each(function ($session) {
+                            $session->update(['status' => 'payment_submitted']);
+                            $session->booking?->update(['status' => 'payment_submitted']);
+                            $session->booking?->participants()->update(['status' => 'payment_submitted']);
+                        });
                     });
             }, 3);
         } catch (\Throwable $exception) {
@@ -457,9 +463,13 @@ class OrderController extends Controller
             if (!$package) return;
 
             $package->update(['status' => 'payment_expired', 'payment_due_at' => null]);
-            $package->subjects()->with('sessions.booking.bookingRequest')->get()->each(
+            $package->subjects()->with(['sessions.booking.bookingRequest', 'bookingRequest.offers'])->get()->each(
                 function ($subject) {
                     $subject->update(['status' => 'payment_expired']);
+                    $subject->bookingRequest?->update(['status' => 'payment_expired']);
+                    $subject->bookingRequest?->offers()
+                        ->whereIn('status', ['pending', 'accepted'])
+                        ->update(['status' => 'cancelled', 'responded_at' => now()]);
                     $subject->sessions->each(function ($session) {
                         $session->update(['status' => 'payment_expired']);
                         $session->booking?->update(['status' => 'payment_expired', 'payout_status' => 'cancelled']);
@@ -484,7 +494,7 @@ class OrderController extends Controller
             Notification::create([
                 'user_id' => $lockedOrder->user_id,
                 'title' => 'Batas pembayaran paket berakhir',
-                'message' => 'Slot tutor dilepas karena pembayaran tidak diselesaikan dalam 48 jam.',
+                'message' => 'Tagihan dibatalkan karena pembayaran tidak diselesaikan dalam 48 jam.',
                 'type' => 'warning',
             ]);
         }, 3);
@@ -498,9 +508,13 @@ class OrderController extends Controller
             $package = $lockedOrder->learningPackage()->lockForUpdate()->firstOrFail();
             $lockedOrder->update(['status' => 'cancelled']);
             $package->update(['status' => 'cancelled', 'payment_due_at' => null]);
-            $package->subjects()->with('sessions.booking.bookingRequest')->get()->each(
+            $package->subjects()->with(['sessions.booking.bookingRequest', 'bookingRequest.offers'])->get()->each(
                 function ($subject) {
                     $subject->update(['status' => 'cancelled']);
+                    $subject->bookingRequest?->update(['status' => 'cancelled']);
+                    $subject->bookingRequest?->offers()
+                        ->whereIn('status', ['pending', 'accepted'])
+                        ->update(['status' => 'cancelled', 'responded_at' => now()]);
                     $subject->sessions->each(function ($session) {
                         $session->update(['status' => 'cancelled']);
                         $session->booking?->update(['status' => 'cancelled', 'payout_status' => 'cancelled']);

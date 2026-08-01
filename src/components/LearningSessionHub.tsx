@@ -106,6 +106,7 @@ interface LearningSessionHubProps {
   bookingId: number | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialTab?: HubTab;
 }
 
 const dateTime = (value?: string) => value
@@ -122,7 +123,7 @@ const emptyPlan = {
   target_score: "",
 };
 
-export default function LearningSessionHub({ bookingId, open, onOpenChange }: LearningSessionHubProps) {
+export default function LearningSessionHub({ bookingId, open, onOpenChange, initialTab = "session" }: LearningSessionHubProps) {
   const [hub, setHub] = useState<HubData | null>(null);
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -173,14 +174,14 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange }: Le
 
   useEffect(() => {
     if (!open || !bookingId) return;
-    setTab("session");
+    setTab(initialTab);
     setSessionPin("");
     setPinExpiresAt("");
     setTeacherPin("");
     void load();
     const timer = window.setInterval(() => void load(true), 15000);
     return () => window.clearInterval(timer);
-  }, [open, bookingId, load]);
+  }, [open, bookingId, initialTab, load]);
 
   const sendMessage = async (event: FormEvent) => {
     event.preventDefault();

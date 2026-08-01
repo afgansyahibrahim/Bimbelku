@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import CameraCapture from "@/components/CameraCapture";
+import DateOfBirthInput from "@/components/DateOfBirthInput";
 import SubjectCombobox, { SubjectOption } from "@/components/SubjectCombobox";
 import { EDUCATION_LEVELS } from "@/lib/educationCatalog";
 import http, { getApiError, getCached } from "@/lib/http";
@@ -220,7 +221,12 @@ export default function Register() {
                   <FormField label="Jenjang" icon={BookOpen}><Select value={form.grade} onValueChange={(value) => setValue("grade", value)}><SelectTrigger className="h-12 rounded-xl bg-white"><SelectValue placeholder="Pilih jenjang" /></SelectTrigger><SelectContent>{EDUCATION_LEVELS.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></FormField>
                 </div>
                 <FormField label="Tanggal lahir murid" icon={CalendarDays}>
-                  <Input required type="date" max={today} className="h-12 rounded-xl bg-white" value={form.date_of_birth} onChange={(event) => setValue("date_of_birth", event.target.value)} />
+                  <DateOfBirthInput
+                    value={form.date_of_birth}
+                    max={today}
+                    onChange={(value) => setValue("date_of_birth", value)}
+                    className="h-12 rounded-xl bg-white font-bold tracking-wide"
+                  />
                 </FormField>
                 {isMinorStudent && (
                   <div className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">

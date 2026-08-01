@@ -400,7 +400,9 @@ class AdminController extends Controller
             return response()->json([
                 'message' => $result === 'refund_pending'
                     ? 'Pembayaran tercatat, tetapi sesi pertama sudah dimulai. Refund penuh masuk antrean admin.'
-                    : 'Pembayaran diterima dan seluruh sesi paket diaktifkan.',
+                    : ($result === 'no_teacher'
+                        ? 'Pembayaran diterima, tetapi belum ada tutor yang tersedia.'
+                        : 'Pembayaran diterima dan pencarian tutor dimulai.'),
             ]);
         }
 

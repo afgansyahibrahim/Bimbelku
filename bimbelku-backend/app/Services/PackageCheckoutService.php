@@ -290,30 +290,30 @@ class PackageCheckoutService
                     'type' => 'success',
                 ]);
 
-                return ['package' => $package->fresh('subjects.assignedTeacher'), 'invoice_opened' => false];
+                return ['package' => $package->fresh('subjects.assignedTeacher'), 'package_activated' => false];
             }
 
-            $order = $this->openInvoice($package);
+            $this->activateMatchedPackage($package);
 
             return [
                 'package' => $package->fresh(['subjects.assignedTeacher', 'orders']),
-                'order' => $order,
-                'invoice_opened' => true,
+                'order' => $package->orders()->latest()->first(),
+                'package_activated' => true,
             ];
         }, 3);
     }
 
     public function activatePaidPackage(Order $order, User $admin): string
     {
-        return DB::transaction(function () use ($order, $admin) {
+        $subjectIds = DB::transaction(function () use ($order, $admin) {
             $lockedOrder = Order::query()
-                ->with('learningPackage.subjects.sessions.booking')
+                ->with('learningPackage.subjects.sessions')
                 ->lockForUpdate()
                 ->findOrFail($order->id);
             $package = LearningPackage::query()->lockForUpdate()->findOrFail($lockedOrder->learning_package_id);
             abort_unless($lockedOrder->status === 'submitted', 422, 'Pembayaran ini sudah diproses.');
 
-            $package->load('subjects.sessions.booking');
+            $package->load('subjects.sessions');
             $firstSessionAt = $package->subjects
                 ->flatMap->sessions
                 ->sortBy('scheduled_start_at')
@@ -329,16 +329,9 @@ class PackageCheckoutService
                 $package->update(['status' => 'refund_pending', 'payment_due_at' => null]);
                 foreach ($package->subjects as $subject) {
                     $subject->update(['status' => 'refund_pending']);
+                    $subject->bookingRequest?->update(['status' => 'refund_pending']);
                     foreach ($subject->sessions as $session) {
                         $session->update(['status' => 'refund_pending']);
-                        $session->booking?->update([
-                            'status' => 'refund_pending',
-                            'gross_amount' => 0,
-                            'teacher_net_amount' => 0,
-                            'payout_status' => 'cancelled',
-                        ]);
-                        $session->booking?->participants()->update(['status' => 'refund_pending']);
-                        $session->booking?->bookingRequest?->update(['status' => 'refund_pending']);
                     }
                 }
                 $package->promotionClaims()
@@ -369,10 +362,8 @@ class PackageCheckoutService
                     'type' => 'warning',
                 ]);
 
-                return 'refund_pending';
+                return [];
             }
-            $startsAt = $firstSessionAt ?? now();
-            $expiresAt = $startsAt->copy()->addDays($package->plan->validity_days);
 
             $lockedOrder->update([
                 'status' => 'paid',
@@ -381,46 +372,59 @@ class PackageCheckoutService
                 'payment_rejection_reason' => null,
             ]);
             $package->update([
-                'status' => 'active',
-                'starts_at' => $startsAt,
-                'expires_at' => $expiresAt,
+                'status' => 'matching',
+                'starts_at' => null,
+                'expires_at' => null,
                 'payment_due_at' => null,
             ]);
             foreach ($package->subjects as $subject) {
-                $subject->update(['status' => 'active']);
+                $subject->update(['status' => 'matching', 'assigned_teacher_id' => null]);
+                $subject->bookingRequest?->update([
+                    'status' => 'matching',
+                    'matched_teacher_id' => null,
+                    'payment_due_at' => null,
+                    'search_radius_km' => 3,
+                    'search_started_at' => now(),
+                    'search_expires_at' => now()->addHours(48),
+                ]);
                 foreach ($subject->sessions as $session) {
-                    $session->update(['status' => 'scheduled']);
-                    $session->booking?->update(['status' => 'confirmed']);
-                    $session->booking?->bookingRequest?->update(['status' => 'confirmed']);
-                    $session->booking?->participants()->update(['status' => 'confirmed']);
+                    $session->update(['status' => 'planned', 'booking_id' => null]);
                 }
-                $subject->assignedTeacher?->teacherProfile?->increment('assignment_count');
             }
             $package->promotionClaims()
                 ->where('status', 'reserved')
                 ->update(['status' => 'used', 'used_at' => now(), 'order_id' => $lockedOrder->id]);
-            PackageRenewal::query()
-                ->where('new_package_id', $package->id)
-                ->whereIn('status', ['requested', 'tutor_accepted'])
-                ->update(['status' => 'completed']);
 
             Notification::create([
                 'user_id' => $package->student_id,
-                'title' => 'Paket belajar aktif',
-                'message' => "Pembayaran {$package->package_code} diterima. {$package->total_sessions} sesi sudah masuk ke Kelas Saya.",
+                'title' => 'Pembayaran diterima',
+                'message' => "Pembayaran {$package->package_code} diterima. Sistem mulai mencari tutor untuk setiap mata pelajaran.",
                 'type' => 'success',
             ]);
-            $package->subjects->pluck('assigned_teacher_id')->filter()->unique()->each(
-                fn (int $teacherId) => Notification::create([
-                    'user_id' => $teacherId,
-                    'title' => 'Paket murid sudah aktif',
-                    'message' => "Pembayaran paket {$package->package_code} diterima. Jadwal mengajar sudah dikonfirmasi.",
-                    'type' => 'success',
-                ])
-            );
 
-            return 'active';
+            return $package->subjects->pluck('id')->all();
         }, 3);
+
+        if ($subjectIds === []) {
+            return 'refund_pending';
+        }
+
+        $noTeacher = false;
+        PackageSubject::query()
+            ->whereIn('id', $subjectIds)
+            ->with('bookingRequest')
+            ->get()
+            ->each(function (PackageSubject $subject) use (&$noTeacher) {
+                if (!$this->dispatchSubject($subject)) {
+                    $subject->update(['status' => 'no_teacher']);
+                    $noTeacher = true;
+                }
+            });
+        LearningPackage::query()->whereKey($order->learning_package_id)->update([
+            'status' => $noTeacher ? 'no_teacher' : 'matching',
+        ]);
+
+        return $noTeacher ? 'no_teacher' : 'matching';
     }
 
     public function rejectPackagePayment(Order $order, string $reason): void
@@ -433,11 +437,12 @@ class PackageCheckoutService
                 'payment_rejection_reason' => $reason,
             ]);
             $lockedOrder->learningPackage?->update(['status' => 'payment_rejected']);
-            $lockedOrder->learningPackage?->subjects()
-                ->with('sessions.booking')
-                ->get()
-                ->flatMap->sessions
-                ->each(fn (PackageSession $session) => $session->booking?->update(['status' => 'payment_rejected']));
+            $lockedOrder->learningPackage?->subjects()->update(['status' => 'payment_rejected']);
+            $lockedOrder->learningPackage?->subjects()->with(['sessions', 'bookingRequest'])->get()
+                ->each(function (PackageSubject $subject) {
+                    $subject->sessions()->update(['status' => 'payment_rejected']);
+                    $subject->bookingRequest?->update(['status' => 'payment_rejected']);
+                });
             Notification::create([
                 'user_id' => $lockedOrder->user_id,
                 'title' => 'Pembayaran paket ditolak',
@@ -447,7 +452,7 @@ class PackageCheckoutService
         }, 3);
     }
 
-    private function openInvoice(LearningPackage $package): Order
+    public function createInvoiceBeforeMatching(LearningPackage $package): Order
     {
         $paymentSettings = PaymentSetting::query()->lockForUpdate()->first();
         abort_unless(
@@ -459,7 +464,7 @@ class PackageCheckoutService
             'Rekening pembayaran belum dikonfigurasi admin.'
         );
 
-        $package->load(['plan', 'subjects.sessions', 'subjects.assignedTeacher', 'promotionClaims']);
+        $package->load(['plan', 'subjects.sessions', 'promotionClaims']);
         $firstSessionAt = $package->subjects
             ->flatMap->sessions
             ->sortBy('scheduled_start_at')
@@ -472,15 +477,17 @@ class PackageCheckoutService
         abort_if($paymentDueAt->lte(now()), 422, 'Jadwal terlalu dekat untuk membuka tagihan paket.');
 
         $snapshot = [
-            'flow_version' => 5,
+            'flow_version' => 6,
             'learning_package_id' => $package->id,
             'package_code' => $package->package_code,
             'package_name' => $package->plan->name,
             'subject' => $package->subjects->pluck('subject_name')->join(', '),
-            'teacher_name' => $package->subjects->pluck('assignedTeacher.name')->filter()->join(', '),
+            'teacher_name' => 'Dicari setelah pembayaran',
             'type' => 'Paket Privat',
             'method' => $package->learning_mode,
             'session_count' => $package->total_sessions,
+            'duration_hours' => (int) ($package->duration_hours ?? 1),
+            'total_learning_hours' => $package->total_sessions * (int) ($package->duration_hours ?? 1),
             'subtotal_amount' => (float) $package->subtotal_amount,
             'discount_amount' => (float) $package->discount_amount,
             'start_at' => $firstSessionAt?->toIso8601String(),
@@ -500,10 +507,46 @@ class PackageCheckoutService
             'order_id' => 'PKG-'.now()->format('YmdHis').'-'.$package->id.'-'.random_int(10, 99),
         ]);
 
+        foreach ($package->subjects as $subject) {
+            $subject->update(['status' => 'awaiting_payment', 'assigned_teacher_id' => null]);
+            $subject->sessions()->update(['status' => 'awaiting_payment', 'booking_id' => null]);
+            $subject->bookingRequest?->update([
+                'matched_teacher_id' => null,
+                'status' => 'awaiting_payment',
+                'payment_due_at' => $paymentDueAt,
+                'search_started_at' => null,
+                'search_expires_at' => null,
+            ]);
+        }
+
+        $package->update(['status' => 'awaiting_payment', 'payment_due_at' => $paymentDueAt]);
+
+        Notification::create([
+            'user_id' => $package->student_id,
+            'title' => 'Tagihan paket tersedia',
+            'message' => "Periksa dan bayar paket {$package->package_code}. Pencarian tutor dimulai setelah pembayaran diterima.",
+            'type' => 'success',
+        ]);
+
+        return $order->fresh(['booking', 'learningPackage']);
+    }
+
+    private function activateMatchedPackage(LearningPackage $package): void
+    {
+        $package->load([
+            'student', 'plan', 'subjects.sessions', 'subjects.bookingRequest',
+            'subjects.assignedTeacher.teacherProfile', 'orders',
+        ]);
+        $order = $package->orders()->where('status', 'paid')->lockForUpdate()->latest()->first();
+        abort_unless($order, 422, 'Pembayaran paket belum diterima.');
+
         $commissionPercent = (float) (Setting::where('key', 'admin_fee')->value('value') ?? 20);
+        $durationHours = (int) ($package->duration_hours ?? 1);
         $firstBooking = null;
+        $firstSessionAt = $package->subjects->flatMap->sessions->sortBy('scheduled_start_at')->first()?->scheduled_start_at;
 
         foreach ($package->subjects as $subject) {
+            abort_unless($subject->assigned_teacher_id, 422, 'Semua tutor harus menerima paket terlebih dahulu.');
             foreach ($subject->sessions as $session) {
                 $anchor = $subject->bookingRequest;
                 $bookingRequest = $session->sequence === 1 && $anchor
@@ -525,25 +568,25 @@ class PackageCheckoutService
                         'scheduled_date' => $session->scheduled_start_at->toDateString(),
                         'start_time' => $session->scheduled_start_at->format('H:i:s'),
                         'end_time' => $session->scheduled_end_at->format('H:i:s'),
-                        'duration_hours' => 1,
+                        'duration_hours' => $durationHours,
                         'address' => $package->address,
                         'maps_link' => $package->maps_link,
                         'latitude' => $package->student->latitude,
                         'longitude' => $package->student->longitude,
-                        'status' => 'awaiting_payment',
+                        'status' => 'confirmed',
                         'hourly_rate' => $subject->unit_price,
-                        'total_amount' => $subject->unit_price,
-                        'payment_due_at' => $paymentDueAt,
+                        'total_amount' => $subject->unit_price * $durationHours,
                     ]);
 
                 $bookingRequest->update([
                     'matched_teacher_id' => $subject->assigned_teacher_id,
-                    'status' => 'awaiting_payment',
+                    'status' => 'confirmed',
                     'hourly_rate' => $subject->unit_price,
-                    'total_amount' => $subject->unit_price,
-                    'payment_due_at' => $paymentDueAt,
+                    'total_amount' => $subject->unit_price * $durationHours,
+                    'payment_due_at' => null,
                 ]);
-
+                $gross = (float) $subject->unit_price * $durationHours;
+                $teacherNet = max(0, $gross * (100 - $commissionPercent) / 100);
                 $booking = Booking::updateOrCreate(
                     ['booking_request_id' => $bookingRequest->id],
                     [
@@ -552,16 +595,16 @@ class PackageCheckoutService
                         'order_id' => $order->id,
                         'start_at' => $session->scheduled_start_at,
                         'end_at' => $session->scheduled_end_at,
-                        'duration_hours' => 1,
+                        'duration_hours' => $durationHours,
                         'learning_mode' => $package->learning_mode,
                         'class_type' => 'private',
                         'hourly_rate' => $subject->unit_price,
-                        'total_amount' => $subject->unit_price,
-                        'gross_amount' => 0,
-                        'teacher_net_amount' => 0,
+                        'total_amount' => $gross,
+                        'gross_amount' => $gross,
+                        'teacher_net_amount' => $teacherNet,
                         'commission_percent' => $commissionPercent,
-                        'status' => 'awaiting_payment',
-                        'payment_due_at' => $paymentDueAt,
+                        'status' => 'confirmed',
+                        'payment_due_at' => null,
                         'address' => $package->address,
                         'maps_link' => $package->maps_link,
                         'payout_status' => 'locked',
@@ -573,27 +616,37 @@ class PackageCheckoutService
                     [
                         'booking_request_id' => $bookingRequest->id,
                         'order_id' => $order->id,
-                        'amount' => $subject->unit_price,
-                        'status' => 'awaiting_payment',
-                        'approved_at' => null,
+                        'amount' => $gross,
+                        'status' => 'confirmed',
+                        'approved_at' => now(),
                     ]
                 );
-                $session->update(['booking_id' => $booking->id, 'status' => 'awaiting_payment']);
+                $session->update(['booking_id' => $booking->id, 'status' => 'scheduled']);
                 $firstBooking ??= $booking;
             }
+            $subject->update(['status' => 'active']);
+            $subject->assignedTeacher?->teacherProfile?->increment('assignment_count');
         }
 
+        $startsAt = $firstSessionAt ?? now();
+        $package->update([
+            'status' => 'active',
+            'starts_at' => $startsAt,
+            'expires_at' => $startsAt->copy()->addDays($package->plan->validity_days),
+            'payment_due_at' => null,
+        ]);
         $order->update(['booking_id' => $firstBooking?->id]);
-        $package->update(['status' => 'awaiting_payment', 'payment_due_at' => $paymentDueAt]);
+        PackageRenewal::query()
+            ->where('new_package_id', $package->id)
+            ->whereIn('status', ['requested', 'tutor_accepted'])
+            ->update(['status' => 'completed']);
 
         Notification::create([
             'user_id' => $package->student_id,
-            'title' => 'Semua tutor sudah menerima',
-            'message' => "Tagihan paket {$package->package_code} tersedia selama 48 jam.",
+            'title' => 'Semua tutor ditemukan',
+            'message' => "Paket {$package->package_code} aktif. Seluruh sesi sudah masuk ke Kelas Saya.",
             'type' => 'success',
         ]);
-
-        return $order->fresh(['booking', 'learningPackage']);
     }
 
     private function assertTarget(?array $targets, string|int $value, string $message): void

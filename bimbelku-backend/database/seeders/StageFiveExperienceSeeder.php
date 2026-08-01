@@ -121,11 +121,63 @@ class StageFiveExperienceSeeder extends Seeder
             ]
         );
         $this->syncSteps($studentTutorial, [
-            ['title' => 'Pilih paket', 'body' => 'Tentukan 1, 4, 8, atau 12 sesi sesuai target belajar.'],
-            ['title' => 'Bagi sesi', 'body' => 'Bagikan jumlah sesi kepada maksimal tiga mata pelajaran sesuai paket.'],
-            ['title' => 'Tentukan jadwal', 'body' => 'Pilih slot satu jam yang disediakan aplikasi untuk setiap sesi.'],
-            ['title' => 'Tunggu tutor', 'body' => 'Radar mencari tutor yang menguasai mapel dan tersedia pada seluruh jadwal.'],
-            ['title' => 'Bayar dan belajar', 'body' => 'Tagihan dibuka setelah semua tutor menerima. Paket masuk ke Kelas Saya setelah diverifikasi.'],
+            [
+                'title' => 'Mulai dari Cari Les',
+                'body' => 'Pilih paket, mata pelajaran, pembagian sesi, dan pola jadwal dari satu alur.',
+                'callout' => ['selector' => '[data-tour="student-cari-les"]'],
+            ],
+            [
+                'title' => 'Periksa sebelum membayar',
+                'body' => 'Ringkasan pesanan muncul di tengah layar agar seluruh rincian dapat diperiksa sebelum konfirmasi.',
+                'callout' => ['selector' => '[data-tour="student-cari-les"]'],
+            ],
+            [
+                'title' => 'Pantau di Kelas Saya',
+                'body' => 'Setelah pembayaran diterima, sistem mencari tutor dan statusnya dapat dipantau di Kelas Saya.',
+                'callout' => ['selector' => '[data-tour="student-kelas"]'],
+            ],
+            [
+                'title' => 'Kelola dari halaman Saya',
+                'body' => 'Profil, voucher, transaksi, bantuan, dan tutorial tersedia di halaman Saya.',
+                'callout' => ['selector' => '[data-tour="student-saya"]'],
+            ],
+        ]);
+
+        $multiSubjectTutorial = Tutorial::updateOrCreate(
+            ['role' => 'student', 'context' => 'package-builder'],
+            [
+                'title' => 'Memesan dua atau lebih mata pelajaran',
+                'description' => 'Satu paket dapat dibagi ke beberapa mapel tanpa menambah jumlah sesi.',
+                'sort_order' => 5,
+                'is_active' => true,
+            ]
+        );
+        $this->syncSteps($multiSubjectTutorial, [
+            [
+                'title' => 'Pilih paket multi-mapel',
+                'body' => 'Pilih paket yang mendukung dua atau tiga mata pelajaran. Batas mapel terlihat pada setiap kartu paket.',
+                'callout' => ['selector' => '[data-tour="package-plan-picker"]'],
+            ],
+            [
+                'title' => 'Tentukan durasi pertemuan',
+                'body' => 'Pilih 1, 2, atau 3 jam. Durasi yang sama digunakan pada seluruh pertemuan dalam paket.',
+                'callout' => ['selector' => '[data-tour="package-duration-picker"]'],
+            ],
+            [
+                'title' => 'Tambahkan mata pelajaran',
+                'body' => 'Tekan Tambah Mapel. Sistem langsung membagi seluruh sesi secara merata tanpa mengubah total paket.',
+                'callout' => ['selector' => '[data-tour="package-add-subject"]'],
+            ],
+            [
+                'title' => 'Atur pembagian sesi',
+                'body' => 'Gunakan tombol kurang dan tambah untuk memindahkan satu sesi. Tombol Bagi merata dapat mengembalikan pembagian seimbang.',
+                'callout' => ['selector' => '[data-tour="package-allocation"]'],
+            ],
+            [
+                'title' => 'Periksa jadwal dan pesanan',
+                'body' => 'Pastikan jam setiap mapel tidak bertumpang tindih. Buka ringkasan sebelum mengonfirmasi pembayaran.',
+                'callout' => ['selector' => '[data-tour="package-review-order"]'],
+            ],
         ]);
 
         $teacherTutorial = Tutorial::updateOrCreate(
@@ -140,7 +192,7 @@ class StageFiveExperienceSeeder extends Seeder
         $this->syncSteps($teacherTutorial, [
             ['title' => 'Periksa semua jadwal', 'body' => 'Penerimaan paket berlaku untuk seluruh sesi pada mata pelajaran tersebut.'],
             ['title' => 'Terima jika tersedia', 'body' => 'Sistem memeriksa ulang benturan sebelum keputusan disimpan.'],
-            ['title' => 'Tunggu pembayaran', 'body' => 'Seluruh jadwal aktif setelah pembayaran paket diperiksa admin.'],
+            ['title' => 'Paket sudah dibayar', 'body' => 'Penawaran baru dikirim setelah pembayaran murid diterima. Jadwal aktif setelah seluruh tutor menerima.'],
         ]);
 
         $adminTutorial = Tutorial::updateOrCreate(

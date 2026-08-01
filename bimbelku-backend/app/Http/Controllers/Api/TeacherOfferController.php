@@ -165,8 +165,8 @@ class TeacherOfferController extends Controller
             $result = $packageCheckoutService->acceptPackageOffer($teacherOffer, $request->user());
 
             return response()->json([
-                'message' => $result['invoice_opened']
-                    ? 'Seluruh tutor menerima paket. Tagihan murid sudah dibuka.'
+                'message' => $result['package_activated']
+                    ? 'Seluruh tutor menerima paket. Jadwal belajar sudah aktif.'
                     : 'Permintaan paket diterima. Sistem masih mencari tutor untuk mapel lain.',
                 'data' => $result,
             ]);

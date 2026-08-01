@@ -15,9 +15,11 @@
     "check:stage3": "node scripts/check-stage3.mjs",
     "check:stage4": "node scripts/check-stage4.mjs",
     "check:stage5-experience": "node scripts/check-stage5-experience.mjs",
+    "check:stage6a": "node scripts/check-stage6a.mjs",
+    "check:pages": "node scripts/check-page-routes.mjs",
     "check:php-static": "node scripts/check-php-static.mjs",
     "check:performance": "node scripts/check-performance-budget.mjs",
-    "check": "npm run lint && npm run typecheck && npm run check:contracts && npm run check:file-preview && npm run check:stage2 && npm run check:stage3 && npm run check:stage4 && npm run check:stage5-experience && npm run check:php-static && npm run build && npm run check:performance",
+    "check": "npm run lint && npm run typecheck && npm run check:contracts && npm run check:file-preview && npm run check:stage2 && npm run check:stage3 && npm run check:stage4 && npm run check:stage5-experience && npm run check:stage6a && npm run check:pages && npm run check:php-static && npm run build && npm run check:performance",
     "preview": "vite preview"
   },
   "dependencies": {

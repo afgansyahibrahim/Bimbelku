@@ -51,10 +51,12 @@ export default function Login() {
       toast.success(`Selamat datang, ${user.name}!`);
       navigate(dashboard, { replace: true });
 
-    } catch (error: any) {
-      console.error(error);
-      const status = error.response?.status;
-      const message = error.response?.data?.message || "Gagal masuk. Periksa email/password.";
+    } catch (error: unknown) {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      const message = axios.isAxiosError(error)
+        ? (error.response?.data as { message?: string } | undefined)?.message
+          || "Gagal masuk. Periksa email/password."
+        : "Gagal masuk. Silakan coba lagi.";
 
       if (status === 403) {
         toast.warning("Akun Belum Aktif", {

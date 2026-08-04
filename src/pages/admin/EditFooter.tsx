@@ -8,7 +8,7 @@ import {
   Save, Loader2, Plus, Trash2, MapPin, Phone, Mail, 
   Link as LinkIcon, UploadCloud, Globe, LayoutTemplate 
 } from "lucide-react";
-import { isValidHttpUrl, validateUpload } from "@/lib/validation";
+import { isValidHttpUrl, isValidPhone, sanitizePhoneInput, validateUpload } from "@/lib/validation";
 
 /* ================= TYPES ================= */
 type SocialItem = {
@@ -64,7 +64,7 @@ export default function EditFooter() {
         const res = await axios.get(`${API_BASE_URL}/settings/footer`);
         setFormData({
           footer_address: res.data.footer_address ?? "",
-          footer_phone: res.data.footer_phone ?? "",
+          footer_phone: sanitizePhoneInput(res.data.footer_phone ?? ""),
           footer_email: res.data.footer_email ?? "",
         });
 
@@ -83,6 +83,10 @@ export default function EditFooter() {
   // --- HANDLER SIMPAN SETTINGS ---
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isValidPhone(formData.footer_phone)) {
+      toast.error("Nomor telepon atau WhatsApp harus berisi 8–15 angka.");
+      return;
+    }
     setIsSaving(true);
     try {
       const token = localStorage.getItem("token");
@@ -241,7 +245,9 @@ export default function EditFooter() {
                                     <Phone size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors"/>
                                     <input 
                                         value={formData.footer_phone} 
-                                        onChange={(e) => setFormData({...formData, footer_phone: e.target.value})} 
+                                        inputMode="tel"
+                                        maxLength={16}
+                                        onChange={(e) => setFormData({...formData, footer_phone: sanitizePhoneInput(e.target.value)})} 
                                         className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 outline-none focus:bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-300 transition"
                                         placeholder="+62..."
                                     />
@@ -306,7 +312,7 @@ export default function EditFooter() {
                                 {socials.map((item) => (
                                     <div key={item.id} className="group relative bg-white border border-slate-200 hover:border-indigo-200 p-4 rounded-2xl transition-all hover:shadow-lg flex flex-col items-center text-center">
                                         <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform overflow-hidden p-2 border border-slate-100">
-                                            <img src={item.icon_url} alt={item.name} className="w-full h-full object-contain"/>
+                                            <img src={item.icon_url} alt={item.name} loading="lazy" decoding="async" className="w-full h-full object-contain"/>
                                         </div>
                                         <h4 className="font-bold text-slate-800 text-sm truncate w-full">{item.name}</h4>
                                         <a href={item.link} target="_blank" rel="noreferrer" className="text-[10px] text-slate-400 hover:text-indigo-500 truncate w-full block mt-1">
@@ -379,7 +385,7 @@ export default function EditFooter() {
                                         
                                         {previewFile ? (
                                             <div className="relative w-full h-full flex items-center justify-center p-4">
-                                                <img src={previewFile} alt="Preview" className="max-w-full max-h-[100px] object-contain drop-shadow-md"/>
+                                                <img src={previewFile} alt="Preview" loading="lazy" decoding="async" className="max-w-full max-h-[100px] object-contain drop-shadow-md"/>
                                                 <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <p className="text-xs font-bold text-white">Ganti Gambar</p>
                                                 </div>

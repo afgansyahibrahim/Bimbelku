@@ -102,7 +102,7 @@ export default function UserManagement() {
               <button onClick={() => setModalOpen(false)}><X size={24} className="text-gray-400 hover:text-gray-600" /></button>
             </div>
 
-            <div className="p-6 overflow-y-auto max-h-[80vh]">
+            <div className="p-6 overflow-y-auto max-h-[80dvh]">
                {/* HEADER PROFIL */}
                <div className="flex items-center gap-4 mb-6">
                   <div className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold border-2 border-white shadow-sm ${selectedUser.role === 'teacher' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>

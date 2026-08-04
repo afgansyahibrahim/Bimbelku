@@ -126,6 +126,7 @@ http.interceptors.request.use((config) => {
     /\/orders\/\d+\/pay$/.test(url)
     || url === "/student/packages"
     || url.includes("/teacher/bank")
+    || url === "/teacher/payout-requests"
     || url.includes("/admin/verify-payment")
     || url.includes("/admin/payment-settings")
     || url.includes("/admin/commission-setting")

@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Models\Booking;
 use App\Models\BookingParticipant;
 use App\Models\BookingRequest;
-use App\Models\FinanceAuthorization;
 use App\Models\Order;
 use App\Models\PaymentSetting;
 use App\Models\TeacherProfile;
@@ -218,16 +217,6 @@ class StageTwoBackendSecurityTest extends TestCase
             'status' => 'pending',
         ]);
         Sanctum::actingAs($admin);
-        $admin->forceFill([
-            'finance_totp_secret' => 'JBSWY3DPEHPK3PXP',
-            'finance_totp_confirmed_at' => now(),
-        ])->save();
-        FinanceAuthorization::create([
-            'user_id' => $admin->id,
-            'token_fingerprint' => hash('sha256', 'no-bearer-token'),
-            'verified_at' => now(),
-            'expires_at' => now()->addMinutes(10),
-        ]);
 
         $this->postJson('/api/admin/payment-settings', [
             'merchant_name' => 'BimbelKu Official',

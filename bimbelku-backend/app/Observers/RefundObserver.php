@@ -15,7 +15,12 @@ class RefundObserver
     public function updated(Refund $refund): void
     {
         if ($refund->wasChanged('status') && $refund->status === 'paid') {
-            app(FinancialLedgerService::class)->recordRefundPaid($refund);
+            $ledger = app(FinancialLedgerService::class);
+            if ($refund->destination_method === 'bimbelku_balance') {
+                $ledger->recordRefundCreditedToWallet($refund);
+            } else {
+                $ledger->recordRefundPaid($refund);
+            }
         }
     }
 }

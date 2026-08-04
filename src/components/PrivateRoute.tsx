@@ -1,14 +1,21 @@
-import { Navigate, Outlet } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { canAdmin, permissionForAdminPath } from "@/lib/adminPermissions";
 
 interface PrivateRouteProps {
-  allowedRoles?: string[]; // Daftar role yang boleh masuk (Opsional)
+  allowedRoles?: string[];
 }
 
+type StoredUser = {
+  role?: string;
+  admin_type?: string | null;
+  admin_permissions?: string[];
+};
+
 export default function PrivateRoute({ allowedRoles }: PrivateRouteProps) {
-  // 1. Ambil data user dari LocalStorage
+  const location = useLocation();
   const token = localStorage.getItem("token");
   const userString = localStorage.getItem("user");
-  let user: { role?: string } | null = null;
+  let user: StoredUser | null = null;
 
   try {
     user = userString ? JSON.parse(userString) : null;
@@ -17,16 +24,20 @@ export default function PrivateRoute({ allowedRoles }: PrivateRouteProps) {
     localStorage.removeItem("user");
   }
 
-  // 2. Cek Login: Kalau tidak ada token/user, tendang ke Login
   if (!token || !user) {
     return <Navigate to="/login" replace />;
   }
 
-  // 3. Cek Role: Kalau role user tidak ada di daftar yang diizinkan, tendang ke Home
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
+  if (allowedRoles && !allowedRoles.includes(user.role || "")) {
     return <Navigate to="/access-denied" replace />;
   }
 
-  // 4. Kalau aman, silakan masuk
+  if (user.role === "admin" && location.pathname.startsWith("/admin")) {
+    const permission = permissionForAdminPath(location.pathname);
+    if (!permission || !canAdmin(user, permission)) {
+      return <Navigate to="/access-denied" replace />;
+    }
+  }
+
   return <Outlet />;
 }

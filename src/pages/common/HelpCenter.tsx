@@ -212,10 +212,11 @@ export default function HelpCenter() {
                       </div>
                   ) : (
                       filteredTickets.map(t => (
-                        <div 
-                            key={t.id} 
-                            onClick={() => openChat(t.id)} 
-                            className="p-5 rounded-2xl border border-slate-100 bg-white hover:border-indigo-200 hover:shadow-md cursor-pointer transition group relative overflow-hidden"
+                        <button
+                            type="button"
+                            key={t.id}
+                            onClick={() => openChat(t.id)}
+                            className="group relative w-full overflow-hidden rounded-2xl border border-slate-100 bg-white p-5 text-left transition hover:border-indigo-200 hover:shadow-md"
                         >
                             <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500 opacity-0 group-hover:opacity-100 transition"></div>
                             <div className="flex justify-between items-start mb-2 pl-2">
@@ -224,13 +225,13 @@ export default function HelpCenter() {
                                     {t.status === 'open' ? 'Proses' : 'Selesai'}
                                 </span>
                             </div>
-                            <p className="text-slate-500 text-sm line-clamp-1 pl-2 font-medium">{t.replies?.[0]?.message || "Belum ada pesan..."}</p>
+                            <p className="text-slate-500 text-sm line-clamp-1 pl-2 font-medium">{t.latest_reply?.message || "Belum ada pesan..."}</p>
                             <div className="mt-3 flex justify-end pl-2">
                                 <span className="text-[11px] font-bold text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">
                                     {new Date(t.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
                                 </span>
                             </div>
-                        </div>
+                        </button>
                       ))
                   )}
               </div>
@@ -282,8 +283,8 @@ export default function HelpCenter() {
                                 </label>
                                 {imagePreview && (
                                     <div className="relative group/img">
-                                        <img src={imagePreview} className="h-12 w-12 object-cover rounded-lg border border-slate-200"/>
-                                        <button onClick={clearImage} type="button" aria-label="Hapus lampiran" className="absolute -top-2 -right-2 bg-red-500 text-white p-0.5 rounded-full opacity-0 group-hover/img:opacity-100 transition"><X size={10}/></button>
+                                        <img src={imagePreview} alt="Pratinjau lampiran" loading="lazy" decoding="async" className="h-12 w-12 object-cover rounded-lg border border-slate-200"/>
+                                        <button onClick={clearImage} type="button" aria-label="Hapus lampiran" className="absolute -right-2 -top-2 rounded-full bg-red-500 p-1 text-white opacity-100 transition sm:opacity-0 sm:group-hover/img:opacity-100"><X size={10}/></button>
                                     </div>
                                 )}
                              </div>
@@ -305,7 +306,7 @@ export default function HelpCenter() {
                 {/* Header Chat */}
                 <div className="z-10 flex shrink-0 items-center justify-between border-b border-slate-100 bg-white p-4 sm:p-6">
                     <div className="flex items-center gap-4">
-                        <button onClick={() => setView("list")} className="p-2 hover:bg-slate-100 rounded-full transition text-slate-500"><ChevronLeft size={24}/></button>
+                        <button type="button" aria-label="Kembali ke daftar tiket" onClick={() => setView("list")} className="p-2 hover:bg-slate-100 rounded-full transition text-slate-500"><ChevronLeft size={24}/></button>
                         <div>
                             <h3 className="font-black text-lg text-slate-900 line-clamp-1">{activeTicket.subject}</h3>
                             <div className="flex items-center gap-2">
@@ -376,7 +377,7 @@ export default function HelpCenter() {
                                     className="w-full bg-slate-50 border border-slate-200 outline-none px-5 py-3 rounded-2xl focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition resize-none h-[52px] max-h-32 py-3.5 text-sm"
                                 />
                             </div>
-                            <button disabled={isSending} className="bg-indigo-600 text-white p-3.5 rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:shadow-none mb-1">
+                            <button type="submit" aria-label="Kirim balasan bantuan" disabled={isSending} className="bg-indigo-600 text-white p-3.5 rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:shadow-none mb-1">
                                 {isSending ? <Loader2 className="animate-spin" size={20}/> : <Send size={20}/>}
                             </button>
                         </form>

@@ -30,9 +30,9 @@ class AuthController extends Controller
                 : null,
         ]);
         $validator = Validator::make($request->all(), [
-            'name'     => 'required|string|max:255',
+            'name'     => ['required', 'string', 'max:255', 'regex:/\pL/u', 'not_regex:/\d/u'],
             'email'    => 'required|string|email|max:255|unique:users',
-            'phone'    => ['required', 'string', 'max:30', 'regex:/^[0-9+() .-]+$/'],
+            'phone'    => ['required', 'string', 'max:16', 'regex:/^\+?[0-9]{8,15}$/'],
             'password' => 'required|string|min:8|confirmed',
             'role'     => 'required|in:student,teacher',
             'terms_accepted' => 'accepted',
@@ -40,8 +40,8 @@ class AuthController extends Controller
             'school_name' => 'nullable|string|max:255',
             'grade' => 'nullable|string|max:50',
             'date_of_birth' => 'required_if:role,student|nullable|date|before_or_equal:today',
-            'guardian_name' => 'nullable|string|max:255',
-            'guardian_phone' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+() .-]+$/'],
+            'guardian_name' => ['nullable', 'string', 'max:255', 'regex:/\pL/u', 'not_regex:/\d/u'],
+            'guardian_phone' => ['nullable', 'string', 'max:16', 'regex:/^\+?[0-9]{8,15}$/'],
             'guardian_relationship' => 'nullable|in:orang_tua,wali_keluarga,wali_resmi',
             'guardian_consent' => 'nullable',
             'address'  => 'nullable|string|max:1500',
@@ -56,6 +56,13 @@ class AuthController extends Controller
             'live_selfie' => 'required_if:role,teacher|nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
             'qualification_document' => 'required_if:role,teacher|nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:5120',
             'certification_document' => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:5120',
+        ], [
+            'name.regex' => 'Nama lengkap wajib mengandung huruf.',
+            'name.not_regex' => 'Nama lengkap tidak boleh memuat angka.',
+            'phone.regex' => 'Nomor WhatsApp/telepon harus berisi 8–15 angka.',
+            'guardian_name.regex' => 'Nama orang tua atau wali wajib mengandung huruf.',
+            'guardian_name.not_regex' => 'Nama orang tua atau wali tidak boleh memuat angka.',
+            'guardian_phone.regex' => 'Nomor orang tua atau wali harus berisi 8–15 angka.',
         ]);
 
         if ($validator->fails()) {
@@ -71,13 +78,16 @@ class AuthController extends Controller
 
         if ($isMinorStudent) {
             $guardianValidator = Validator::make($request->all(), [
-                'guardian_name' => 'required|string|max:255',
-                'guardian_phone' => ['required', 'string', 'max:30', 'regex:/^[0-9+() .-]+$/'],
+                'guardian_name' => ['required', 'string', 'max:255', 'regex:/\pL/u', 'not_regex:/\d/u'],
+                'guardian_phone' => ['required', 'string', 'max:16', 'regex:/^\+?[0-9]{8,15}$/'],
                 'guardian_relationship' => 'required|in:orang_tua,wali_keluarga,wali_resmi',
                 'guardian_consent' => 'accepted',
             ], [
                 'guardian_name.required' => 'Nama orang tua atau wali wajib diisi untuk murid di bawah 18 tahun.',
+                'guardian_name.regex' => 'Nama orang tua atau wali wajib mengandung huruf.',
+                'guardian_name.not_regex' => 'Nama orang tua atau wali tidak boleh memuat angka.',
                 'guardian_phone.required' => 'Nomor orang tua atau wali wajib diisi untuk murid di bawah 18 tahun.',
+                'guardian_phone.regex' => 'Nomor orang tua atau wali harus berisi 8–15 angka.',
                 'guardian_relationship.required' => 'Hubungan orang tua atau wali wajib dipilih.',
                 'guardian_consent.accepted' => 'Persetujuan orang tua atau wali wajib diberikan.',
             ]);
@@ -268,6 +278,14 @@ class AuthController extends Controller
         }
         if ($user->status !== 'active') {
             return response()->json(['message' => 'Akun Anda sedang tidak aktif.'], 403);
+        }
+
+        if ($user->role === 'admin' && !$user->isPrimaryAdmin()) {
+            $user->tokens()->delete();
+
+            return response()->json([
+                'message' => 'Project ini hanya menggunakan satu akun admin utama.',
+            ], 403);
         }
 
         $token = $user->createToken('auth_token')->plainTextToken;

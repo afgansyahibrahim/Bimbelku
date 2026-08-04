@@ -12,11 +12,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->append(\App\Http\Middleware\ApplySecurityHeaders::class);
+
         $middleware->alias([
+            'active.account' => \App\Http\Middleware\EnsureActiveAccount::class,
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
-            'finance.2fa' => \App\Http\Middleware\RequireFinanceAuthorization::class,
             'idempotency' => \App\Http\Middleware\EnforceIdempotency::class,
             'finance.audit' => \App\Http\Middleware\AuditFinancialAction::class,
+            'admin.permission' => \App\Http\Middleware\EnsureAdminPermission::class,
+            'admin.audit' => \App\Http\Middleware\AuditAdminAction::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

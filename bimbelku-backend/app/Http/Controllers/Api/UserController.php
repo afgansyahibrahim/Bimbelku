@@ -41,6 +41,10 @@ class UserController extends Controller
             'terms_accepted_at' => $user->terms_accepted_at?->toIso8601String(),
             'privacy_accepted_at' => $user->privacy_accepted_at?->toIso8601String(),
             'role' => $user->role,
+            'admin_type' => $user->role === 'admin' ? 'single_admin' : null,
+            'admin_permissions' => $user->role === 'admin'
+                ? \App\Support\AdminPermissionCatalog::allCodes()
+                : [],
             'student_birth_date' => $user->role === 'student'
                 ? $user->date_of_birth?->toDateString()
                 : null,
@@ -79,8 +83,8 @@ class UserController extends Controller
 
         // 1. Validasi Input
         $request->validate([
-            'name' => 'required|string|max:255',
-            'phone' => ['required', 'string', 'max:30', 'regex:/^[0-9+() .-]+$/'],
+            'name' => ['required', 'string', 'max:255', 'regex:/\pL/u', 'not_regex:/\d/u'],
+            'phone' => ['required', 'string', 'max:16', 'regex:/^\+?[0-9]{8,15}$/'],
             'avatar' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048', // Max 2MB
             'profile_cover' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:5120',
             'student_education_level' => ['nullable', Rule::in(EducationCatalog::LEVELS)],

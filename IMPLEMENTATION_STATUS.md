@@ -1,6 +1,6 @@
 # Status Implementasi BimbelKu
 
-Tanggal pemeriksaan: 30 Juli 2026
+Tanggal pemeriksaan: 3 Agustus 2026
 
 ## Selesai diimplementasikan
 
@@ -49,11 +49,15 @@ Tanggal pemeriksaan: 30 Juli 2026
 - Monitoring kelas.
 - Pusat kasus: laporan, sengketa, tinjau bukti, refund.
 - Pencairan pendapatan tutor.
-- Aktivasi dan otorisasi TOTP khusus tindakan keuangan.
-- Permintaan serta persetujuan admin kedua untuk pencairan besar.
+- Satu admin utama memproses keuangan tanpa halaman autentikator terpisah.
+- Pencairan besar tetap memakai bukti transfer, konfirmasi, idempotensi, dan audit tanpa admin kedua.
 - Log audit tindakan keuangan.
 - Moderasi rating, notifikasi, bantuan, footer, dan tampilan publik.
 - CRUD paket, slot jam, promo, banner, dan tutorial.
+- Kontrol pencarian tutor, perluasan radius, dan penetapan tutor manual.
+- Pemisahan dashboard pembayaran, pencairan, serta refund dan saldo.
+- Satu admin utama dengan seluruh akses; halaman serta endpoint pembuatan admin tambahan ditutup, sedangkan audit perubahan tetap aktif.
+- Regresi akhir lintas murid, tutor, dan admin.
 
 ### Keamanan
 
@@ -68,9 +72,9 @@ Tanggal pemeriksaan: 30 Juli 2026
 - Tidak ada endpoint publik untuk mengubah skema atau memperbaiki database.
 - Jurnal keuangan berpasangan dengan hash berantai dan baris yang tidak dapat diedit.
 - Kunci idempotensi untuk mutasi pembayaran, refund, pencairan, komisi, dan rekening tutor.
-- Tindakan keuangan admin memerlukan otorisasi TOTP sementara.
+- Seluruh tindakan keuangan memerlukan admin utama serta tetap melewati role, validasi server, idempotensi, dan audit.
 - Perubahan rekening tutor memerlukan kata sandi dan menahan pencairan selama 24 jam.
-- Pencairan mulai Rp5.000.000 memerlukan admin peminta dan admin penyetuju yang berbeda.
+- Pencairan bernilai besar memerlukan bukti transfer dan konfirmasi eksplisit admin utama.
 - Nominal keuangan dihitung serta divalidasi pada server.
 - Kontak pribadi serta tautan luar ditolak oleh chat kelas.
 - PIN sesi disimpan sebagai hash dan alamat IP kehadiran disimpan sebagai hash.
@@ -100,15 +104,18 @@ Tanggal pemeriksaan: 30 Juli 2026
 
 ## Pemeriksaan yang sudah dijalankan
 
+Pembaruan Tahap 6C menambahkan pemeriksaan kontrak 6C-A sampai 6C-final, tes admin tunggal, audit perubahan, pencarian tutor, refund/saldo, serta isolasi lintas peran. Tes Laravel final tetap harus dijalankan pada Laragon karena checkpoint penyusunan tidak mempunyai Composer/vendor.
+
+
 - `npm run lint`: selesai tanpa error.
 - `npm run typecheck`: lulus.
 - `npm run build`: lulus.
 - 1.812 modul frontend berhasil diproses pada build terakhir.
 - Pemeriksaan frontend Tahap 3: lint dan TypeScript lulus.
-- Kontrak keamanan Tahap 3 memeriksa kategori, jurnal, 2FA, idempotensi, audit,
-  penahanan rekening, serta persetujuan ganda.
-- 169 aksi rute API memiliki controller dan method yang sesuai.
-- 209 berkas PHP lulus pemeriksaan struktur, string, komentar, dan konflik merge.
+- Kontrak keamanan Tahap 3 memeriksa kategori, jurnal, idempotensi, audit,
+  penahanan rekening, serta pencairan admin tunggal.
+- 184 action rute API memiliki controller dan method yang sesuai.
+- 248 berkas PHP lulus pemeriksaan struktur dan sintaks pada Audit Checkpoint 1.
 - Kontrak Tahap 4 lulus sebanyak 24 pemeriksaan.
 - Kontrak pengalaman Tahap 5 lulus sebanyak 75 pemeriksaan.
 - Build produksi memproses sedikitnya 1.812 modul.
@@ -146,9 +153,9 @@ Kemudian uji alur berikut dengan tiga akun terpisah:
 6. Admin menerima pembayaran.
 7. Tutor mengirim bukti selesai.
 8. Murid menyetujui atau mengajukan keberatan.
-9. Admin mengaktifkan TOTP lalu membuka akses keuangan.
-10. Admin memproses pencairan atau refund.
-11. Uji pencairan besar memakai persetujuan admin kedua.
+9. Admin utama menguji pembayaran, pencairan, refund, idempotensi, dan audit.
+10. Admin memproses pencairan atau refund dengan bukti transfer.
+11. Uji pencairan besar menggunakan konfirmasi eksplisit admin utama.
 12. Ulangi untuk paket offline dan perpanjangan tutor lama.
 
 ## Batas integrasi
@@ -159,3 +166,29 @@ Kemudian uji alur berikut dengan tiga akun terpisah:
 - Jurnal internal tidak menggantikan rekonsiliasi harian dengan mutasi bank.
 - Daftar kurikulum lengkap perlu diisi admin sesuai sumber resmi.
 - Isi hukum final harus ditinjau pihak yang berwenang sebelum produksi.
+
+## Audit Checkpoint 2 — 3 Agustus 2026
+
+Pemeriksaan operasional kedua mencakup 22 halaman admin, 12 halaman tutor, 12 halaman murid, 20 controller terkait, serta route kelas, jadwal, pencarian tutor, pembayaran, dan pencairan.
+
+Perbaikan yang diterapkan:
+
+- jadwal tutor wajib memakai interval 10 menit pada frontend dan backend;
+- dashboard murid menghitung pesan belum dibaca dari database;
+- rekening penerimaan tidak dapat diganti ketika tagihan paket masih aktif;
+- pemblokiran murid tidak lagi menjalankan pelepasan penawaran tutor;
+- checker 6C-A disinkronkan dengan penghapusan halaman keamanan keuangan;
+- kontrak statis dan tes Laravel khusus Checkpoint 2 ditambahkan.
+
+Hasil di lingkungan penyusunan: 184 action API terpetakan, 60 route frontend dan 173 tautan internal terpetakan, 247 file PHP lulus `php -l`, dan 118 file TypeScript/TSX lulus pemeriksaan sintaks. Tes Laravel runtime, typecheck penuh, ESLint, build Vite, serta pengujian MySQL konkurensi wajib dijalankan di Laragon.
+
+
+## Audit Checkpoint 3 — Komunikasi dan file privat
+
+Checkpoint ketiga memperbaiki privasi laporan kelas kelompok, mengembalikan pesan sistem pesanan ke controller chat aktif, menandai seluruh pesan belum dibaca tanpa batas 100, mencegah laporan sesi ganda, membuat query tiket portabel, menambahkan notifikasi bantuan untuk pihak lawan, dan mengamankan nama unduhan file privat.
+
+Tes lokal utama: `php artisan test --filter=CheckpointThreeCommunicationAuditTest`.
+
+## Audit Checkpoint 4 — 3 Agustus 2026
+
+Responsif, keamanan, performa, dan aksesibilitas dasar telah diaudit. Ditambahkan header keamanan, masa aktif/pembersihan token Sanctum, skip link/fokus dialog, dynamic viewport, strategi gambar, optimasi sampul tutor, host Vite lokal yang lebih aman, serta cleanup source/build usang. Status runtime menunggu PHPUnit, typecheck, build, performance budget, dan matriks layar di Laragon.

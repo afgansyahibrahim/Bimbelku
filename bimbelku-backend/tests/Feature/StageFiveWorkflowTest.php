@@ -154,12 +154,12 @@ class StageFiveWorkflowTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonPath(
                 'message',
-                'Menit mulai harus memakai kelipatan 10: 00, 10, 20, 30, 40, atau 50.'
+                'Jam mulai hanya boleh menggunakan menit 00.'
             );
 
         $created = $this->postJson('/api/student/booking-requests', [
             ...$payload,
-            'start_time' => '10:10',
+            'start_time' => '11:00',
         ])
             ->assertCreated()
             ->assertJsonPath('data.class_type', 'private')
@@ -168,7 +168,7 @@ class StageFiveWorkflowTest extends TestCase
         $this->assertDatabaseHas('booking_requests', [
             'student_id' => $student->id,
             'subject_name' => 'Matematika',
-            'start_time' => '10:10:00',
+            'start_time' => '11:00:00',
             'class_type' => 'private',
             'group_pool_id' => null,
         ]);
@@ -199,7 +199,7 @@ class StageFiveWorkflowTest extends TestCase
             'education_level' => 'Umum',
             'grade' => 'Pemula',
             'chapter' => 'Dasar-Dasar',
-            'start_time' => '11:10',
+            'start_time' => '11:00',
         ])
             ->assertCreated()
             ->assertJsonPath('data.education_level', 'Umum')
@@ -216,7 +216,7 @@ class StageFiveWorkflowTest extends TestCase
             'education_level' => 'Perguruan Tinggi',
             'grade' => 'Semester 1',
             'chapter' => 'Konsep Dasar',
-            'start_time' => '12:10',
+            'start_time' => '12:00',
         ])
             ->assertUnprocessable()
             ->assertJsonValidationErrors('education_level');
@@ -280,7 +280,7 @@ class StageFiveWorkflowTest extends TestCase
             'learning_mode' => 'online',
             'class_type' => 'private',
             'scheduled_date' => '2026-07-28',
-            'start_time' => '10:10',
+            'start_time' => '11:00',
             'duration_hours' => 1,
         ])
             ->assertCreated()

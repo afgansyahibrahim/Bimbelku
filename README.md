@@ -4,8 +4,7 @@ BimbelKu adalah aplikasi pencocokan murid dan tutor berbasis jadwal, materi, mod
 
 Versi ini memuat Fondasi Tahap 1, Tampilan Mobile Tahap 2, Keamanan Keuangan
 Tahap 3, Pencocokan dan Sesi Tahap 4, serta Paket, Promo, Konten, dan Dashboard
-Tahap 5 per 30 Juli 2026. Tidak ada katalog tutor, pemilihan tutor manual,
-payment gateway, penumpukan voucher, cashback, referral, atau pencairan otomatis.
+Tahap 5, alur murid Tahap 6A, operasional tutor Tahap 6B, serta admin operasional dan regresi akhir Tahap 6C per 1 Agustus 2026. Tidak ada katalog tutor publik, payment gateway, cashback, referral, atau pencairan otomatis.
 
 ## Fitur utama
 
@@ -28,6 +27,9 @@ payment gateway, penumpukan voucher, cashback, referral, atau pencairan otomatis
 - Harga promo menampilkan harga normal dicoret, harga akhir, dan label diskon kecil.
 - Banner empat detik dan tutorial carousel dikelola admin melalui CRUD.
 - Dashboard murid adaptif menampilkan paket, sisa sesi, tutor, jadwal, progres, dan voucher.
+- Dashboard admin menampilkan antrean pembayaran, pencarian tutor, kasus, refund, pencairan, dan verifikasi.
+- Admin dapat memperluas radius 3/5/8/12 km dan menetapkan tutor yang lolos validasi secara manual.
+- Satu admin utama memiliki seluruh akses operasional; pembuatan admin tambahan ditutup dan seluruh mutasi admin tetap masuk audit berantai.
 - Radar pencarian visual dengan radius offline 3, 5, 8, sampai 12 km.
 - Formulir permintaan dibagi menjadi empat langkah pada ponsel dan desktop.
 - Pemeriksaan slot tutor dilakukan sebelum permintaan dikirim tanpa membuka identitas tutor.
@@ -41,9 +43,9 @@ payment gateway, penumpukan voucher, cashback, referral, atau pencairan otomatis
 - Komisi tersimpan sebagai snapshot transaksi; nilai awal 20%.
 - Jurnal dana berpasangan dan tidak dapat diedit langsung.
 - Kunci idempotensi mencegah pembayaran, refund, dan pencairan tercatat dua kali.
-- Admin keuangan memakai TOTP 2FA sebelum membuka data atau melakukan tindakan sensitif.
+- Modul keuangan hanya dapat diproses admin utama dan tidak lagi memakai halaman kode autentikator terpisah.
 - Rekening tutor yang baru diubah menahan pencairan selama 24 jam.
-- Pencairan mulai Rp5.000.000 memerlukan persetujuan admin kedua.
+- Pencairan bernilai besar tetap memerlukan bukti transfer, konfirmasi, idempotensi, dan audit, tetapi tidak memerlukan admin kedua.
 - Tindakan keuangan masuk ke rantai audit yang tidak dapat diubah.
 - Bukti pelaksanaan, persetujuan murid, keberatan 48 jam, dan pemeriksaan admin.
 - Chat kelas internal yang menolak kontak pribadi, akun media sosial, dan tautan luar.
@@ -92,10 +94,13 @@ Buat database MySQL bernama `bimbelku`, lalu sesuaikan bagian `DB_*` dalam `.env
 Sebelum seeding, isi akun admin awal dengan kata sandi minimal 12 karakter:
 
 ```dotenv
+PRIMARY_ADMIN_EMAIL=admin@domain-anda.id
 SEED_ADMIN_EMAIL=admin@domain-anda.id
 SEED_ADMIN_PASSWORD=kata-sandi-kuat-anda
 SEED_DEMO_USERS=false
 ```
+
+Project memakai satu admin utama. Halaman autentikator dan alur persetujuan admin kedua sudah dihentikan. Keamanan tindakan sensitif tetap menggunakan pembatasan role, validasi admin utama, idempotensi, bukti transfer, dan audit berantai. Pada produksi gunakan `APP_ENV=production`, `APP_DEBUG=false`, kata sandi admin kuat, HTTPS, serta konfigurasi email dan database produksi yang benar.
 
 Lanjutkan:
 
@@ -112,9 +117,10 @@ bertahap. Data akun lama tidak dihapus. Akun lama yang belum mempunyai tanggal
 lahir tetap dapat digunakan dan dapat dilengkapi melalui proses administrasi.
 
 Migration Tahap 3 menonaktifkan katalog Perguruan Tinggi dan Semester tanpa
-menghapus transaksi lama. Migration ini juga menambahkan jurnal keuangan,
-idempotensi, 2FA admin, penahanan rekening tutor, log audit, dan persetujuan
-pencairan besar.
+menghapus transaksi lama. Migration historis ini juga menambahkan jurnal keuangan,
+idempotensi, penahanan rekening tutor, dan log audit. Struktur lama untuk autentikator
+dan persetujuan admin kedua dipertahankan pada riwayat migration, tetapi tidak lagi
+dipakai oleh route atau halaman runtime.
 
 Migration Tahap 4 menambahkan chat kelas, PIN, kehadiran, rencana belajar, dan
 laporan progres. Migration ini tidak menghapus akun, kelas, atau transaksi lama.
@@ -160,6 +166,7 @@ Jangan mengaktifkan akun demo pada produksi.
 Frontend:
 
 ```bash
+npm run check:checkpoint1
 npm run check
 ```
 
@@ -201,6 +208,13 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\test-tahap5.ps1
 ```
 
+Pemeriksaan final Tahap 6C:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\test-stage6c-final.ps1 -SkipInstall
+```
+
 Backend, setelah Composer terpasang:
 
 ```bash
@@ -223,16 +237,13 @@ IMPLEMENTATION_STATUS.md     Cakupan implementasi dan verifikasi
 REVISION_NOTES.md            Ringkasan perubahan dari versi lama
 ```
 
-## Catatan pembayaran dan 2FA
+## Catatan pembayaran dan keamanan admin
 
 Sistem tidak memindahkan uang. Murid mentransfer ke rekening admin, admin memeriksa bukti terhadap mutasi rekening, lalu sistem mencatat statusnya. Bank dan nomor rekening/e-wallet asal ikut dicatat sebagai tujuan refund. Refund dan pendapatan tutor ditransfer manual oleh admin, disertai bukti transfer.
 
 Nominal, komisi, dan rekening pembayaran dapat diatur admin. Perubahan komisi hanya berlaku untuk transaksi baru karena setiap booking menyimpan snapshot persentasenya.
 
-Sebelum membuka menu keuangan, setiap admin harus mengaktifkan TOTP melalui
-aplikasi autentikator dan memasukkan kode enam digit. Otorisasi berlaku
-sementara pada sesi tersebut. Simpan rahasia TOTP di pengelola kata sandi yang
-terlindungi.
+Runtime terbaru memakai satu admin utama tanpa halaman kode autentikator dan tanpa admin kedua. Tindakan keuangan tetap dibatasi oleh role admin utama, validasi server, transaksi database, kunci idempotensi, bukti transfer privat, penahanan rekening tutor, dan audit berantai. Produksi wajib memakai kata sandi admin unik, HTTPS, `APP_DEBUG=false`, backup, serta pembatasan akses panel admin.
 
 ## Checklist produksi
 
@@ -245,3 +256,36 @@ terlindungi.
 - Jalankan `npm audit --omit=dev` dan `composer audit` kembali sebelum setiap rilis.
 - Jangan menyertakan `.env`, dump database, atau kredensial ke repositori/ZIP publik.
 - Tinjau Syarat & Ketentuan serta Kebijakan Privasi bersama pihak yang berwenang sebelum peluncuran.
+
+## Audit Checkpoint 2 — Operasional inti
+
+Audit kedua memeriksa halaman dan API admin, tutor, murid, kelas, jadwal, serta pembayaran. Perbaikan utama mencakup interval jadwal 10 menit pada UI dan backend, jumlah pesan dashboard murid dari database, penguncian perubahan rekening selama tagihan paket aktif, serta pembatasan pelepasan penawaran hanya ketika tutor diblokir.
+
+Pemeriksaan khusus:
+
+```powershell
+cd C:\laragon\www\Website_Bimbelku
+npm run check:checkpoint2
+
+cd bimbelku-backend
+php artisan test --filter=CheckpointTwoOperationsAuditTest
+```
+
+Laporan lengkap tersedia pada `AUDIT_CHECKPOINT_2_ADMIN_GURU_MURID_KELAS_JADWAL_PEMBAYARAN_2026-08-03.md`.
+
+
+## Audit Checkpoint 3 — Komunikasi dan file privat
+
+Checkpoint ketiga memperbaiki privasi laporan kelas kelompok, mengembalikan pesan sistem pesanan ke controller chat aktif, menandai seluruh pesan belum dibaca tanpa batas 100, mencegah laporan sesi ganda, membuat query tiket portabel, menambahkan notifikasi bantuan untuk pihak lawan, dan mengamankan nama unduhan file privat.
+
+Tes lokal utama: `php artisan test --filter=CheckpointThreeCommunicationAuditTest`.
+
+## Audit kualitas Checkpoint 4
+
+Pemeriksaan responsif, keamanan, performa, dan aksesibilitas tersedia melalui:
+
+```powershell
+npm run check:checkpoint4
+```
+
+Token API default berlaku 720 menit melalui `SANCTUM_TOKEN_EXPIRATION`. Vite hanya membuka `127.0.0.1` secara default; gunakan `npm run dev -- --host 0.0.0.0` hanya ketika perlu menguji dari HP pada jaringan lokal tepercaya.

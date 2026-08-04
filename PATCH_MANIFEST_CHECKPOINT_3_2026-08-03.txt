@@ -1,0 +1,6 @@
+PATCH AUDIT CHECKPOINT 3
+Basis: project terbaru + Checkpoint 1 + Checkpoint 2 + fix manual assignment.
+Isi: file yang berubah/ditambahkan saja.
+Penghapusan dilakukan oleh scripts/apply-checkpoint3-cleanup.ps1.
+Tidak ada migration baru.
+Tidak ada dependency npm/composer baru.

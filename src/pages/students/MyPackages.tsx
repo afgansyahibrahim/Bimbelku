@@ -217,7 +217,7 @@ export default function MyPackages() {
                                 <p className="mt-1 text-xs text-slate-500">{subject.allocated_sessions} sesi · {labels[subject.status] || subject.status}</p>
                               </div>
                               <div className="grid h-10 w-10 place-items-center overflow-hidden rounded-full bg-white text-indigo-600 shadow-sm">
-                                {subject.teacher?.avatar_url ? <img src={subject.teacher.avatar_url} alt="" className="h-full w-full object-cover" /> : <UserRound size={19} />}
+                                {subject.teacher?.avatar_url ? <img src={subject.teacher.avatar_url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <UserRound size={19} />}
                               </div>
                             </div>
                             <p className="mt-3 text-sm font-bold text-slate-700">{subject.teacher ? `Tutor ${subject.teacher.name}` : "Tutor sedang dicari"}</p>

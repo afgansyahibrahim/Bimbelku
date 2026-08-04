@@ -304,7 +304,7 @@ export default function MyClasses() {
                 <article key={item.id} className="flex flex-col rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
                   <div className="flex items-start justify-between gap-3"><div className="grid h-12 w-12 place-items-center rounded-2xl bg-indigo-50 text-indigo-600">{item.method === "online" ? <Monitor /> : <MapPin />}</div><span className={`rounded-full px-3 py-1.5 text-[11px] font-bold ${status.className}`}>{status.label}</span></div>
                   <p className="mt-5 text-xs font-bold uppercase tracking-widest text-indigo-500">{item.subject} · {item.type}</p><h2 className="mt-1 line-clamp-2 text-xl font-black text-slate-900">{item.title}</h2>
-                  <div className="mt-4 flex items-center gap-3"><div className="grid h-10 w-10 place-items-center overflow-hidden rounded-xl bg-slate-100 text-slate-500">{item.mentor_avatar ? <img src={item.mentor_avatar} alt="" className="h-full w-full object-cover" /> : <UserRound size={18} />}</div><div><p className="text-xs text-slate-400">Tutor</p><p className="text-sm font-bold text-slate-800">{item.mentor}</p></div></div>
+                  <div className="mt-4 flex items-center gap-3"><div className="grid h-10 w-10 place-items-center overflow-hidden rounded-xl bg-slate-100 text-slate-500">{item.mentor_avatar ? <img src={item.mentor_avatar} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <UserRound size={18} />}</div><div><p className="text-xs text-slate-400">Tutor</p><p className="text-sm font-bold text-slate-800">{item.mentor}</p></div></div>
                   <div className="mt-4 space-y-2 text-xs text-slate-600"><Info icon={CalendarDays} text={dateTime(item.start_at)} /><Info icon={Clock3} text={`${new Date(item.start_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}–${new Date(item.end_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`} /><Info icon={Users} text={rupiah(item.amount)} /></div>
                   <div className="mt-auto pt-5">
                     <Button onClick={() => setSelected(item)} variant="outline" className="w-full rounded-xl">Lihat detail</Button>
@@ -319,7 +319,7 @@ export default function MyClasses() {
       </div>
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-[2rem] sm:max-w-2xl">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto rounded-[2rem] sm:max-w-2xl">
           {selected && <>
             <DialogHeader><DialogTitle className="text-2xl">{selected.title}</DialogTitle><DialogDescription>{selected.mentor} · {dateTime(selected.start_at)}</DialogDescription></DialogHeader>
             <div className="grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm sm:grid-cols-2"><Info icon={GraduationCap} text={`${selected.education_level || ""} ${selected.grade || ""}`} /><Info icon={Users} text={`${selected.type} · ${rupiah(selected.amount)}`} /><Info icon={selected.method === "online" ? Monitor : MapPin} text={selected.method === "online" ? "Kelas online" : selected.address || "Alamat dibuka setelah pembayaran"} /><Info icon={Clock3} text={`${new Date(selected.start_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}–${new Date(selected.end_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`} /></div>

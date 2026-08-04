@@ -96,7 +96,7 @@ export default function ProtectedImage({
   }
 
   if (!previewable) {
-    return <img src={resolved} alt={alt} className={className} />;
+    return <img src={resolved} alt={alt} loading="lazy" decoding="async" className={className} />;
   }
 
   return (
@@ -110,7 +110,7 @@ export default function ProtectedImage({
       })}
       aria-label={`Perbesar ${alt}`}
     >
-      <img src={resolved} alt={alt} className="h-full w-full object-contain" />
+      <img src={resolved} alt={alt} loading="lazy" decoding="async" className="h-full w-full object-contain" />
       <span className="pointer-events-none absolute bottom-2 right-2 inline-flex items-center gap-1.5 rounded-lg bg-slate-950/75 px-2.5 py-1.5 text-[11px] font-bold text-white opacity-90 shadow-lg backdrop-blur transition group-hover:bg-indigo-700">
         <ScanSearch size={14} /> Perbesar
       </span>

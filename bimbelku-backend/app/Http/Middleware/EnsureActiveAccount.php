@@ -1,0 +1,35 @@
+<?php
+
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+
+class EnsureActiveAccount
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json([
+                'message' => 'Sesi tidak ditemukan. Silakan masuk kembali.',
+            ], 401);
+        }
+
+        if ($user->status !== 'active') {
+            return response()->json([
+                'message' => 'Sesi tidak berlaku karena akun sedang tidak aktif.',
+            ], 401);
+        }
+
+        if ($user->role === 'admin' && !$user->isPrimaryAdmin()) {
+            return response()->json([
+                'message' => 'Sesi admin tidak berlaku. Project ini hanya menggunakan satu admin utama.',
+            ], 401);
+        }
+
+        return $next($request);
+    }
+}

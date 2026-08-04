@@ -1,19 +1,17 @@
 import http, { getApiError } from "@/lib/http";
-import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
 import AdminLayout from "../../components/AdminLayout";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { 
   TrendingUp, Wallet, ArrowUpRight, CheckCircle2, 
-  Building, User, CreditCard, X, Calendar, Search, 
-  DollarSign, PieChart, Upload, Loader2, RefreshCw, FileText,
+  X, Calendar,
+  DollarSign, PieChart, Loader2, RefreshCw, FileText,
   Edit, Save
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import axios from "axios";
 import { openProtectedFile } from "@/components/ProtectedImage";
 import { validateUpload } from "@/lib/validation";
 
@@ -37,24 +35,21 @@ export default function FinanceReport() {
   
   // STATE STATISTIK
   const [stats, setStats] = useState({
-    revenue_7days: 0,
-    teacher_7days: 0,
-    admin_7days: 0,
+    ready_amount: 0,
+    requested_amount: 0,
+    paid_7days: 0,
+    paid_count_7days: 0,
     admin_fee_percent: 20
   });
 
   const [isLoading, setIsLoading] = useState(true);
-  const [securityLocked, setSecurityLocked] = useState(false);
-  const [security, setSecurity] = useState({
-    current_admin_id: 0,
-    high_value_threshold: 5000000,
-  });
 
   // Modal Payout State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPayout, setSelectedPayout] = useState<any>(null);
   const [proofFile, setProofFile] = useState<File | null>(null); 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null); 
+  const previewObjectUrlRef = useRef<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
   // [BARU] Modal Edit Fee
@@ -65,10 +60,16 @@ export default function FinanceReport() {
     fetchFinanceData();
   }, []);
 
+  useEffect(() => () => {
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current);
+      previewObjectUrlRef.current = null;
+    }
+  }, []);
+
   const fetchFinanceData = async () => {
     try {
       const response = await http.get("/admin/finance");
-      setSecurityLocked(false);
       
       setPayouts(response.data.pending || []);
       setHistory(response.data.history || []);
@@ -77,14 +78,9 @@ export default function FinanceReport() {
         setStats(response.data.stats);
         setNewFee(response.data.stats.admin_fee_percent.toString()); // Sync input dengan data
       }
-      if (response.data.security) setSecurity(response.data.security);
 
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 423) {
-        setSecurityLocked(true);
-      } else {
-        toast.error(getApiError(error, "Gagal mengambil data keuangan."));
-      }
+      toast.error(getApiError(error, "Gagal mengambil data keuangan."));
     } finally {
       setIsLoading(false);
     }
@@ -108,11 +104,25 @@ export default function FinanceReport() {
   };
 
   // Handler Payout Modal
-  const handleOpenTransfer = (payout: any) => {
-    setSelectedPayout(payout);
-    setProofFile(null);
+  const clearProofPreview = () => {
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current);
+      previewObjectUrlRef.current = null;
+    }
     setPreviewUrl(null);
+    setProofFile(null);
+  };
+
+  const handleOpenTransfer = (payout: any) => {
+    clearProofPreview();
+    setSelectedPayout(payout);
     setIsModalOpen(true);
+  };
+
+  const handleCloseTransfer = () => {
+    clearProofPreview();
+    setSelectedPayout(null);
+    setIsModalOpen(false);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -129,7 +139,10 @@ export default function FinanceReport() {
         return;
       }
       setProofFile(file);
-      setPreviewUrl(URL.createObjectURL(file));
+      if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current);
+      const objectUrl = URL.createObjectURL(file);
+      previewObjectUrlRef.current = objectUrl;
+      setPreviewUrl(objectUrl);
     }
   };
 
@@ -147,9 +160,6 @@ export default function FinanceReport() {
       const formData = new FormData();
       formData.append('teacher_id', selectedPayout.teacherId);
       selectedPayout.bookingIds.forEach((id: number, index: number) => formData.append(`booking_ids[${index}]`, String(id)));
-      if (selectedPayout.approval?.id) {
-        formData.append("approval_id", String(selectedPayout.approval.id));
-      }
       formData.append('proof_file', proofFile); 
 
       const response = await http.post("/admin/payout", formData);
@@ -164,9 +174,9 @@ export default function FinanceReport() {
         proof_url: response.data.data.proof_url
       };
       setHistory([newHistoryItem, ...history]);
-      setPayouts(payouts.filter(p => p.teacherId !== selectedPayout.teacherId));
+      setPayouts(payouts.filter(p => p.queueKey !== selectedPayout.queueKey));
       toast.success("Berhasil dicairkan!");
-      setIsModalOpen(false);
+      handleCloseTransfer();
     } catch (error) {
       toast.error(getApiError(error, "Gagal memproses pencairan."));
     } finally {
@@ -174,66 +184,10 @@ export default function FinanceReport() {
     }
   };
 
-  const handleRequestApproval = async (payout: any) => {
-    const approved = await confirm({
-      title: "Ajukan persetujuan admin kedua?",
-      description: `Pencairan ${formatRupiah(payout.netAmount)} belum boleh ditransfer sebelum diperiksa admin lain.`,
-      confirmText: "Ajukan persetujuan",
-      tone: "warning",
-    });
-    if (!approved) return;
-    setIsProcessing(true);
-    try {
-      await http.post("/admin/payout-approvals", {
-        teacher_id: payout.teacherId,
-        booking_ids: payout.bookingIds,
-      });
-      toast.success("Permintaan persetujuan telah dikirim.");
-      await fetchFinanceData();
-    } catch (error) {
-      toast.error(getApiError(error, "Persetujuan tidak dapat diajukan."));
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleApprovePayout = async (payout: any) => {
-    const approved = await confirm({
-      title: "Setujui pencairan bernilai besar?",
-      description: `Periksa tutor, sesi, nominal ${formatRupiah(payout.netAmount)}, serta tujuan rekening sebelum menyetujui.`,
-      confirmText: "Setujui pencairan",
-      tone: "warning",
-    });
-    if (!approved) return;
-    setIsProcessing(true);
-    try {
-      await http.post(`/admin/payout-approvals/${payout.approval.id}/approve`);
-      toast.success("Pencairan disetujui. Transfer dapat diselesaikan.");
-      await fetchFinanceData();
-    } catch (error) {
-      toast.error(getApiError(error, "Persetujuan tidak dapat diproses."));
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  if (isLoading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-orange-600" /></div>;
-
-  if (securityLocked) {
-    return (
-      <AdminLayout title="Laporan Keuangan">
-        <div className="mx-auto max-w-2xl rounded-[2rem] border border-amber-200 bg-white p-8 text-center shadow-sm">
-          <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-amber-50 text-amber-600"><CreditCard /></div>
-          <h1 className="mt-5 text-2xl font-black text-slate-900">Keuangan sedang terkunci</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-500">Aktifkan atau masukkan kode autentikator sebelum saldo, rekening tutor, dan tindakan pencairan dibuka.</p>
-          <Button asChild className="mt-6 rounded-xl bg-slate-950"><Link to="/admin/finance-security">Buka keamanan keuangan</Link></Button>
-        </div>
-      </AdminLayout>
-    );
-  }
+  if (isLoading) return <div className="h-dvh flex items-center justify-center"><Loader2 className="animate-spin text-orange-600" /></div>;
 
   return (
-    <AdminLayout title="Laporan Keuangan">
+    <AdminLayout title="Pencairan tutor" subtitle="Saldo tutor, persetujuan, transfer, dan bukti pencairan">
       
       {/* MODAL EDIT FEE */}
       {isFeeModalOpen && (
@@ -280,7 +234,7 @@ export default function FinanceReport() {
            <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl space-y-4">
               <div className="flex justify-between items-center pb-2 border-b">
                  <h3 className="font-bold text-lg">Konfirmasi Transfer</h3>
-                 <button onClick={() => setIsModalOpen(false)}><X size={20}/></button>
+                 <button type="button" aria-label="Tutup konfirmasi transfer" onClick={handleCloseTransfer}><X size={20}/></button>
               </div>
               <div className="bg-emerald-50 p-4 rounded-xl text-center border border-emerald-100">
                  <p className="text-xs font-bold text-emerald-600 uppercase">Nominal Transfer</p>
@@ -291,13 +245,8 @@ export default function FinanceReport() {
                  <p><strong>Rekening:</strong> {selectedPayout.bankDetails.number}</p>
                  <p><strong>Nama:</strong> {selectedPayout.bankDetails.name}</p>
               </div>
-              {selectedPayout.requiresSecondApproval && (
-                <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-xs leading-5 text-indigo-700">
-                  Persetujuan admin kedua telah tercatat. Unggah bukti hanya setelah transfer dilakukan ke rekening yang ditampilkan.
-                </div>
-              )}
               <input type="file" accept=".jpg,.jpeg,.png,.webp" onChange={handleFileChange} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"/>
-              {previewUrl && <img src={previewUrl} className="h-32 object-contain mx-auto rounded-lg border" />}
+              {previewUrl && <img src={previewUrl} alt="Pratinjau bukti pencairan" loading="lazy" decoding="async" className="h-32 object-contain mx-auto rounded-lg border" />}
               <Button onClick={handleConfirmTransfer} disabled={isProcessing} className="w-full bg-slate-900">{isProcessing ? "Memproses..." : "Konfirmasi"}</Button>
            </div>
         </div>
@@ -305,52 +254,31 @@ export default function FinanceReport() {
 
       <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20">
         
-        {/* --- 3 KARTU STATISTIK --- */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-           
-           {/* Card 1: Total Pendapatan */}
-           <div className="bg-slate-900 rounded-[2rem] p-6 text-white relative overflow-hidden shadow-xl shadow-slate-200">
-              <div className="absolute top-0 right-0 p-4 opacity-10"><DollarSign size={100} /></div>
-              <div className="relative z-10">
-                 <div className="flex items-center gap-2 mb-4 opacity-70">
-                    <Calendar size={16} />
-                    <p className="text-xs font-bold uppercase tracking-widest">Pendapatan 7 Hari Ini</p>
-                 </div>
-                 <h3 className="text-3xl lg:text-4xl font-black mb-2 tracking-tight">{formatRupiah(stats.revenue_7days)}</h3>
-                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/10 backdrop-blur-sm text-xs font-medium">
-                    <TrendingUp size={12}/> {getWeeklyLabel()}
-                 </div>
-              </div>
-           </div>
-
-           {/* Card 2: Total Hak Guru */}
-           <div className="bg-white rounded-[2rem] p-6 border border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
-              <div className="flex justify-between items-start mb-4">
-                  <div className="p-3 bg-orange-50 text-orange-600 rounded-2xl group-hover:scale-110 transition-transform"><Wallet size={24}/></div>
-                  <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-lg">
-                    {100 - stats.admin_fee_percent}% Share
-                  </span>
-              </div>
-              <p className="text-slate-500 text-sm font-bold uppercase tracking-wider mb-1">Hak Tutor (Minggu Ini)</p>
-              <h3 className="text-3xl font-bold text-slate-800">{formatRupiah(stats.teacher_7days)}</h3>
-           </div>
-
-           {/* Card 3: Total Profit Admin (EDITABLE) */}
-           <div className="bg-white rounded-[2rem] p-6 border border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
-              <div className="flex justify-between items-start mb-4">
-                  <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl group-hover:scale-110 transition-transform"><PieChart size={24}/></div>
-                  
-                  {/* TOMBOL EDIT PERSENTASE */}
-                  <button 
-                    onClick={() => setIsFeeModalOpen(true)}
-                    className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg hover:bg-emerald-100 transition-colors"
-                  >
-                    {stats.admin_fee_percent}% Profit <Edit size={12}/>
-                  </button>
-              </div>
-              <p className="text-slate-500 text-sm font-bold uppercase tracking-wider mb-1">Keuntungan (Minggu Ini)</p>
-              <h3 className="text-3xl font-bold text-slate-800">{formatRupiah(stats.admin_7days)}</h3>
-           </div>
+        {/* Ringkasan pencairan saja. Pembayaran murid dan refund memiliki halaman terpisah. */}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="relative overflow-hidden rounded-[2rem] bg-slate-950 p-6 text-white shadow-xl shadow-slate-200">
+            <DollarSign className="absolute right-4 top-4 opacity-10" size={88} />
+            <p className="text-xs font-black uppercase tracking-widest text-slate-300">Saldo siap dicairkan</p>
+            <p className="mt-3 text-3xl font-black">{formatRupiah(stats.ready_amount)}</p>
+            <p className="mt-2 text-xs text-slate-400">Sesi sah yang belum diajukan tutor.</p>
+          </div>
+          <div className="rounded-[2rem] border border-indigo-100 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between"><Wallet className="text-indigo-600" /><span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">Diajukan</span></div>
+            <p className="mt-4 text-xs font-black uppercase tracking-widest text-slate-400">Menunggu admin</p>
+            <p className="mt-2 text-3xl font-black text-slate-900">{formatRupiah(stats.requested_amount)}</p>
+          </div>
+          <div className="rounded-[2rem] border border-emerald-100 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between"><TrendingUp className="text-emerald-600" /><span className="text-xs font-black text-emerald-700">{stats.paid_count_7days} transfer</span></div>
+            <p className="mt-4 text-xs font-black uppercase tracking-widest text-slate-400">Dicairkan 7 hari</p>
+            <p className="mt-2 text-3xl font-black text-slate-900">{formatRupiah(stats.paid_7days)}</p>
+            <p className="mt-2 text-xs text-slate-400">{getWeeklyLabel()}</p>
+          </div>
+          <div className="rounded-[2rem] border border-orange-100 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between"><PieChart className="text-orange-600" /><button type="button" onClick={() => setIsFeeModalOpen(true)} className="flex items-center gap-1 rounded-lg bg-orange-50 px-2 py-1 text-xs font-black text-orange-700">Ubah <Edit size={12}/></button></div>
+            <p className="mt-4 text-xs font-black uppercase tracking-widest text-slate-400">Komisi transaksi baru</p>
+            <p className="mt-2 text-3xl font-black text-slate-900">{stats.admin_fee_percent}%</p>
+            <p className="mt-2 text-xs text-slate-400">Snapshot lama tidak berubah.</p>
+          </div>
         </div>
 
         {/* --- TABEL DATA --- */}
@@ -364,7 +292,7 @@ export default function FinanceReport() {
                    Riwayat
                  </button>
               </div>
-              <Button variant="outline" onClick={fetchFinanceData}><RefreshCw size={16}/></Button>
+              <Button aria-label="Muat ulang data pencairan" variant="outline" onClick={fetchFinanceData}><RefreshCw size={16}/></Button>
            </div>
 
            <div className="overflow-x-auto">
@@ -379,8 +307,8 @@ export default function FinanceReport() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                    {activeTab === "pending" ? (
-                      payouts.map((p, idx) => (
-                         <tr key={idx} className="group hover:bg-slate-50/80 transition-colors">
+                      payouts.map((p) => (
+                         <tr key={p.queueKey || `${p.teacherId}-${p.bookingIds.join("-")}`} className="group hover:bg-slate-50/80 transition-colors">
                             <td className="px-8 py-5 font-bold text-slate-800">{p.name}</td>
                             <td className="px-6 py-5">
                                 <span className="inline-flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-lg text-xs font-medium text-slate-600">
@@ -391,12 +319,6 @@ export default function FinanceReport() {
                             <td className="px-8 py-5 text-right">
                                {p.payoutBlocked ? (
                                  <div className="inline-flex flex-col items-end gap-1"><Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Ditahan setelah rekening berubah</Badge><span className="text-[11px] text-slate-400">{p.payoutHoldUntil ? new Date(p.payoutHoldUntil).toLocaleString("id-ID") : ""}</span></div>
-                               ) : p.requiresSecondApproval && !p.approval ? (
-                                 <Button disabled={isProcessing} onClick={() => handleRequestApproval(p)} className="rounded-xl bg-indigo-600 text-white hover:bg-indigo-700">Ajukan persetujuan</Button>
-                               ) : p.approval?.status === "pending" && p.approval.requestedBy === security.current_admin_id ? (
-                                 <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Menunggu admin lain</Badge>
-                               ) : p.approval?.status === "pending" ? (
-                                 <Button disabled={isProcessing} onClick={() => handleApprovePayout(p)} className="rounded-xl bg-indigo-600 text-white hover:bg-indigo-700">Periksa & setujui</Button>
                                ) : (
                                  <Button onClick={() => handleOpenTransfer(p)} className="rounded-xl bg-slate-900 hover:bg-orange-600 text-white shadow-sm">Transfer <ArrowUpRight size={16} className="ml-2"/></Button>
                                )}

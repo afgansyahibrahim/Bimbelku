@@ -133,7 +133,7 @@ export default function BookingGuru() {
     const approved = await confirm({
       title: "Terima permintaan ini?",
       description: packageSessions
-        ? `Pastikan Anda tersedia untuk seluruh ${packageSessions} jadwal paket. Semua slot akan ditahan selama proses pembayaran.`
+        ? `Pastikan Anda tersedia untuk seluruh ${packageSessions} jadwal paket. Paket sudah dibayar; setelah diterima, Anda langsung ditetapkan untuk sesi ini.`
         : `Pastikan Anda menguasai materi dan tersedia pada ${offer.booking_request.start_time.slice(0, 5)}–${offer.booking_request.end_time.slice(0, 5)} WIB. Slot akan ditahan untuk proses pembayaran.`,
       confirmText: "Terima permintaan",
       tone: "primary",
@@ -179,19 +179,19 @@ export default function BookingGuru() {
   return (
     <TeacherLayout title="Permintaan Bimbel">
       <div className="max-w-7xl mx-auto space-y-7 pb-12">
-        <section className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-indigo-950 via-violet-950 to-slate-950 px-7 py-8 text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-500">
+        <section className="relative overflow-hidden rounded-[1.7rem] bg-gradient-to-br from-indigo-950 via-violet-950 to-slate-950 p-5 text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-500 sm:rounded-[2rem] sm:px-7 sm:py-8">
           <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-violet-400/20 blur-3xl" />
           <div className="relative flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-indigo-100">
                 <TimerReset size={14} /> Persetujuan wajib
               </div>
-              <h1 className="mt-4 text-3xl font-black tracking-tight">Permintaan mengajar masuk</h1>
+              <h1 className="mt-4 text-2xl font-black tracking-tight sm:text-3xl">Permintaan mengajar masuk</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/80">
                 Jadwal baru dikunci setelah permintaan diterima. Penolakan karena jarak tidak mengurangi poin.
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="grid grid-cols-[auto_1fr] items-center gap-3 sm:flex">
               <div className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center backdrop-blur">
                 <p className="text-2xl font-black">{pendingCount}</p>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-100">Menunggu</p>

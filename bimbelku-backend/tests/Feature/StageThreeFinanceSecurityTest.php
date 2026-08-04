@@ -3,14 +3,16 @@
 namespace Tests\Feature;
 
 use App\Models\Booking;
-use App\Models\FinanceAuthorization;
+use App\Models\BookingRequest;
 use App\Models\FinancialJournal;
 use App\Models\Order;
 use App\Models\TeacherProfile;
 use App\Models\User;
 use App\Support\EducationCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -18,27 +20,37 @@ class StageThreeFinanceSecurityTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config()->set('bimbelku.primary_admin_email', '');
+    }
+
     public function test_higher_education_is_removed_from_supported_levels(): void
     {
         $this->assertSame(['SD', 'SMP', 'SMA', 'Umum'], EducationCatalog::LEVELS);
         $this->assertArrayNotHasKey('Perguruan Tinggi', EducationCatalog::GRADES_BY_LEVEL);
     }
 
-    public function test_sensitive_admin_finance_action_requires_two_factor_authorization(): void
+    public function test_single_admin_can_use_finance_without_authenticator(): void
     {
-        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
+        $admin = $this->activeAdmin();
         Sanctum::actingAs($admin);
 
         $this->postJson('/api/admin/commission-setting', [
             'admin_fee' => 18,
-        ], ['Idempotency-Key' => 'finance-locked-test'])
-            ->assertStatus(423)
-            ->assertJsonPath('code', 'FINANCE_2FA_SETUP_REQUIRED');
+        ], ['Idempotency-Key' => 'single-admin-finance-0001'])
+            ->assertOk();
+
+        $this->getJson('/api/admin/finance/payments')->assertOk();
+        $this->getJson('/api/admin/finance/refunds')->assertOk();
+        $this->getJson('/api/admin/finance')->assertOk();
+        $this->getJson('/api/admin/finance-security')->assertNotFound();
     }
 
     public function test_idempotency_key_replays_one_finance_mutation(): void
     {
-        $admin = $this->authorizedAdmin();
+        $admin = $this->activeAdmin();
         Sanctum::actingAs($admin);
         $headers = ['Idempotency-Key' => 'commission-change-0001'];
 
@@ -103,8 +115,9 @@ class StageThreeFinanceSecurityTest extends TestCase
         $this->assertNotNull($profile->bank_account_fingerprint);
     }
 
-    public function test_high_value_payout_needs_a_different_admin_approval(): void
+    public function test_single_admin_can_complete_high_value_payout_with_proof_and_database_locking(): void
     {
+        Storage::fake('local');
         $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
         $teacher = User::factory()->create(['role' => 'teacher', 'status' => 'active']);
         TeacherProfile::create([
@@ -113,11 +126,30 @@ class StageThreeFinanceSecurityTest extends TestCase
             'account_number' => '1234567890',
             'account_name' => 'Tutor Besar',
         ]);
+        $scheduledStart = now()->subHours(2);
+        $scheduledEnd = now()->subHour();
+        $bookingRequest = BookingRequest::create([
+            'student_id' => $student->id,
+            'matched_teacher_id' => $teacher->id,
+            'subject_name' => 'Matematika',
+            'education_level' => 'SMA',
+            'grade' => 'Kelas 12',
+            'learning_mode' => 'online',
+            'class_type' => 'private',
+            'scheduled_date' => $scheduledStart->toDateString(),
+            'start_time' => $scheduledStart->format('H:i:s'),
+            'end_time' => $scheduledEnd->format('H:i:s'),
+            'duration_hours' => 1,
+            'status' => 'confirmed',
+            'hourly_rate' => 7500000,
+            'total_amount' => 7500000,
+        ]);
         $booking = Booking::create([
+            'booking_request_id' => $bookingRequest->id,
             'student_id' => $student->id,
             'teacher_id' => $teacher->id,
-            'start_at' => now()->subHours(2),
-            'end_at' => now()->subHour(),
+            'start_at' => $scheduledStart,
+            'end_at' => $scheduledEnd,
             'duration_hours' => 1,
             'learning_mode' => 'online',
             'class_type' => 'private',
@@ -130,49 +162,37 @@ class StageThreeFinanceSecurityTest extends TestCase
             'completed_at' => now(),
             'payout_status' => 'ready',
         ]);
-        $adminOne = $this->authorizedAdmin();
-        $adminTwo = $this->authorizedAdmin();
 
-        Sanctum::actingAs($adminOne);
-        $approvalId = $this->postJson('/api/admin/payout-approvals', [
+        $bookingRequest->update(['booking_id' => $booking->id]);
+
+        Sanctum::actingAs($this->activeAdmin());
+        $this->post('/api/admin/payout', [
             'teacher_id' => $teacher->id,
             'booking_ids' => [$booking->id],
-        ], ['Idempotency-Key' => 'large-payout-request-0001'])
-            ->assertStatus(202)
-            ->json('data.id');
-
-        $this->postJson("/api/admin/payout-approvals/{$approvalId}/approve", [], [
-            'Idempotency-Key' => 'large-payout-self-approval-0001',
-        ])->assertUnprocessable();
-
-        Sanctum::actingAs($adminTwo);
-        $this->postJson("/api/admin/payout-approvals/{$approvalId}/approve", [], [
-            'Idempotency-Key' => 'large-payout-second-approval-0001',
+            'proof_file' => UploadedFile::fake()->image('transfer.jpg'),
+        ], [
+            'Accept' => 'application/json',
+            'Idempotency-Key' => 'single-admin-large-payout-0001',
         ])->assertOk();
 
-        $this->assertDatabaseHas('payout_approvals', [
-            'id' => $approvalId,
-            'requested_by' => $adminOne->id,
-            'approved_by' => $adminTwo->id,
-            'status' => 'approved',
+        $this->assertDatabaseHas('payouts', [
+            'user_id' => $teacher->id,
+            'amount' => 6000000,
+            'status' => 'completed',
+        ]);
+        $this->assertDatabaseHas('bookings', [
+            'id' => $booking->id,
+            'payout_status' => 'paid',
         ]);
     }
 
-    private function authorizedAdmin(): User
+    private function activeAdmin(): User
     {
-        $admin = User::factory()->create([
+        return User::factory()->create([
             'role' => 'admin',
             'status' => 'active',
-            'finance_totp_secret' => 'JBSWY3DPEHPK3PXP',
-            'finance_totp_confirmed_at' => now(),
+            'admin_type' => 'single_admin',
+            'admin_permissions' => null,
         ]);
-        FinanceAuthorization::create([
-            'user_id' => $admin->id,
-            'token_fingerprint' => hash('sha256', 'no-bearer-token'),
-            'verified_at' => now(),
-            'expires_at' => now()->addMinutes(10),
-        ]);
-
-        return $admin;
     }
 }

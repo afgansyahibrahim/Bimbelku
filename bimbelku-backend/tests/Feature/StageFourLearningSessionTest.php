@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Booking;
 use App\Models\BookingParticipant;
+use App\Models\BookingRequest;
 use App\Models\Order;
 use App\Models\User;
 use Carbon\Carbon;
@@ -66,6 +67,15 @@ class StageFourLearningSessionTest extends TestCase
             'pin' => $pin,
         ])->assertOk();
 
+        $participant = $booking->participants()->firstOrFail();
+        $this->putJson("/api/teacher/bookings/{$booking->id}/participant-attendance", [
+            'attendances' => [[
+                'participant_id' => $participant->id,
+                'status' => 'present',
+                'notes' => 'Murid hadir tepat waktu.',
+            ]],
+        ])->assertOk();
+
         $this->putJson("/api/teacher/bookings/{$booking->id}/learning-plan", [
             'initial_assessment' => 'Murid memahami operasi dasar tetapi belum stabil pada soal cerita.',
             'strengths' => 'Operasi bilangan dasar.',
@@ -120,11 +130,30 @@ class StageFourLearningSessionTest extends TestCase
     {
         $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
         $teacher = User::factory()->create(['role' => 'teacher', 'status' => 'active']);
+        $scheduledStart = Carbon::parse('2026-07-30 10:00:00', 'Asia/Jakarta');
+        $scheduledEnd = Carbon::parse('2026-07-30 11:00:00', 'Asia/Jakarta');
+        $bookingRequest = BookingRequest::create([
+            'student_id' => $student->id,
+            'matched_teacher_id' => $teacher->id,
+            'subject_name' => 'Matematika',
+            'education_level' => 'SMP',
+            'grade' => 'Kelas 7',
+            'learning_mode' => 'online',
+            'class_type' => 'private',
+            'scheduled_date' => $scheduledStart->toDateString(),
+            'start_time' => $scheduledStart->format('H:i:s'),
+            'end_time' => $scheduledEnd->format('H:i:s'),
+            'duration_hours' => 1,
+            'status' => 'confirmed',
+            'hourly_rate' => 50000,
+            'total_amount' => 50000,
+        ]);
         $booking = Booking::create([
+            'booking_request_id' => $bookingRequest->id,
             'student_id' => $student->id,
             'teacher_id' => $teacher->id,
-            'start_at' => Carbon::parse('2026-07-30 10:00:00', 'Asia/Jakarta'),
-            'end_at' => Carbon::parse('2026-07-30 11:00:00', 'Asia/Jakarta'),
+            'start_at' => $scheduledStart,
+            'end_at' => $scheduledEnd,
             'duration_hours' => 1,
             'learning_mode' => 'online',
             'class_type' => 'private',
@@ -145,12 +174,14 @@ class StageFourLearningSessionTest extends TestCase
         ]);
         BookingParticipant::create([
             'booking_id' => $booking->id,
+            'booking_request_id' => $bookingRequest->id,
             'student_id' => $student->id,
             'order_id' => $order->id,
             'amount' => 50000,
             'status' => $orderStatus === 'paid' ? 'paid' : 'awaiting_payment',
         ]);
         $booking->update(['order_id' => $order->id]);
+        $bookingRequest->update(['booking_id' => $booking->id]);
 
         return [$student, $teacher, $booking->fresh()];
     }

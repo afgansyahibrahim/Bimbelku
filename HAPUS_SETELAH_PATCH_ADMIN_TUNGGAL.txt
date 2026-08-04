@@ -1,0 +1,10 @@
+Setelah menimpa patch, jalankan dari folder utama project:
+
+powershell -ExecutionPolicy Bypass -File .\scripts\apply-single-admin-cleanup.ps1
+
+Script hanya menghapus dua halaman frontend yang sudah tidak dipakai:
+
+1. src\pages\admin\AdminAccessControl.tsx
+2. src\pages\admin\FinanceSecurity.tsx
+
+Jangan menghapus AdminAccessController.php karena method audit log masih digunakan.

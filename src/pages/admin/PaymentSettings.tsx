@@ -9,7 +9,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
-import { validateUpload } from "@/lib/validation";
+import {
+  containsLetter,
+  isValidAccountNumber,
+  isValidPersonName,
+  sanitizeDigits,
+  sanitizePersonName,
+  validateUpload,
+} from "@/lib/validation";
 
 export default function PaymentSettings() {
   const confirm = useConfirmDialog();
@@ -38,8 +45,8 @@ export default function PaymentSettings() {
       
       setMerchantName(data.merchant_name || "");
       setBankName(data.bank_name || "");
-      setAccountNumber(data.account_number || "");
-      setAccountName(data.account_name || "");
+      setAccountNumber(sanitizeDigits(data.account_number || "", 50));
+      setAccountName(sanitizePersonName(data.account_name || "", 150));
       setQrisImage(data.qris_url || null);
       
     } catch (error) {
@@ -77,8 +84,20 @@ export default function PaymentSettings() {
       return;
     }
 
-    if (!/^[0-9 .-]+$/.test(accountNumber)) {
-      toast.error("Nomor rekening hanya boleh berisi angka, spasi, titik, atau tanda hubung.");
+    if (!containsLetter(merchantName)) {
+      toast.error("Nama merchant wajib mengandung huruf.");
+      return;
+    }
+    if (!containsLetter(bankName)) {
+      toast.error("Nama bank atau e-wallet wajib mengandung huruf.");
+      return;
+    }
+    if (!isValidAccountNumber(accountNumber)) {
+      toast.error("Nomor rekening harus berisi 6–50 angka.");
+      return;
+    }
+    if (!isValidPersonName(accountName)) {
+      toast.error("Nama pemilik rekening harus berisi huruf dan tidak boleh memuat angka.");
       return;
     }
 
@@ -108,8 +127,8 @@ export default function PaymentSettings() {
       if (saved) {
         setMerchantName(saved.merchant_name || "");
         setBankName(saved.bank_name || "");
-        setAccountNumber(saved.account_number || "");
-        setAccountName(saved.account_name || "");
+        setAccountNumber(sanitizeDigits(saved.account_number || "", 50));
+        setAccountName(sanitizePersonName(saved.account_name || "", 150));
         setQrisImage(saved.qris_url || qrisImage);
       }
       setQrisFile(null);
@@ -180,7 +199,7 @@ export default function PaymentSettings() {
                    <div className="flex flex-col items-center justify-center bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200 p-8 mb-6 transition-colors hover:border-orange-300 hover:bg-orange-50/30">
                       {qrisImage ? (
                         <div className="relative group/img">
-                           <img src={qrisImage} alt="QRIS Preview" className="h-56 object-contain mix-blend-multiply rounded-lg shadow-sm" />
+                           <img src={qrisImage} alt="QRIS Preview" loading="lazy" decoding="async" className="h-56 object-contain mix-blend-multiply rounded-lg shadow-sm" />
                            <div className="absolute inset-0 bg-black/40 rounded-lg opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition-opacity backdrop-blur-sm">
                                 <label htmlFor="qris-upload" className="cursor-pointer text-white font-bold flex items-center gap-2 hover:scale-105 transition-transform">
                                     <ImagePlus size={20}/> Ganti Foto
@@ -246,7 +265,9 @@ export default function PaymentSettings() {
                         <CreditCard size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"/>
                         <Input 
                             value={accountNumber}
-                            onChange={(e) => setAccountNumber(e.target.value)}
+                            inputMode="numeric"
+                            maxLength={50}
+                            onChange={(e) => setAccountNumber(sanitizeDigits(e.target.value, 50))}
                             className="h-12 pl-12 rounded-xl border-slate-200 bg-slate-50/50 focus:bg-white focus:border-blue-500 transition font-mono text-lg tracking-wide text-slate-800"
                             placeholder="Contoh: 1234567890"
                         />
@@ -259,7 +280,7 @@ export default function PaymentSettings() {
                         <User size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"/>
                         <Input 
                             value={accountName}
-                            onChange={(e) => setAccountName(e.target.value)}
+                            onChange={(e) => setAccountName(sanitizePersonName(e.target.value, 150))}
                             className="h-12 pl-12 rounded-xl border-slate-200 bg-slate-50/50 focus:bg-white focus:border-blue-500 transition font-medium"
                             placeholder="Contoh: PT BimbelKu Edukasi"
                         />

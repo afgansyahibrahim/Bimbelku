@@ -1,4 +1,5 @@
-import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { CheckCircle2, ChevronLeft, ChevronRight, HelpCircle, X } from "lucide-react";
 import { useLocation } from "react-router-dom";
 
@@ -50,9 +51,10 @@ const fallback: Record<Role, Tutorial> = {
     title: "Panduan tutor",
     description: "Periksa seluruh jadwal sebelum menerima paket.",
     steps: [
-      { title: "Buka permintaan", body: "Periksa mapel, jenjang, mode, dan semua jadwal." },
-      { title: "Berikan keputusan", body: "Terima hanya saat seluruh sesi dapat dijalankan." },
-      { title: "Mulai kelas", body: "Jadwal aktif setelah semua tutor menerima paket yang sudah dibayar." },
+      { title: "Buka permintaan", body: "Periksa mapel, jenjang, mode, tarif bersih, dan semua jadwal sebelum menjawab.", target: '[href="/guru/permintaan"]' },
+      { title: "Kelola pelaksanaan", body: "Check-in, kehadiran murid, check-out, laporan perkembangan, dan bukti kamera berada di Kelas.", target: '[href="/guru/kelas"]' },
+      { title: "Gunakan Pesan kelas", body: "Chat hanya terbuka untuk kelas berbayar. Lampiran dan status baca tersimpan pada percakapan.", target: '[href="/guru/pesan"]' },
+      { title: "Periksa halaman Saya", body: "Pendapatan, rekening, performa, banding, notifikasi, profil, dan bantuan ada di halaman Saya.", target: '[href="/guru/saya"]' },
     ],
   },
 };
@@ -115,24 +117,31 @@ const selectorForStep = (activeStep: Step, role: Role) => {
   return null;
 };
 
-const visibleElement = (selector: string) => {
+const viewport = () => ({
+  width: window.visualViewport?.width ?? window.innerWidth,
+  height: window.visualViewport?.height ?? window.innerHeight,
+});
+
+const isRendered = (element: HTMLElement) => {
+  const rect = element.getBoundingClientRect();
+  const style = window.getComputedStyle(element);
+  return element.isConnected
+    && rect.width > 0
+    && rect.height > 0
+    && style.display !== "none"
+    && style.visibility !== "hidden";
+};
+
+const findTargetElement = (selector: string) => {
   try {
-    return Array.from(document.querySelectorAll<HTMLElement>(selector)).find((element) => {
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return rect.width > 0
-        && rect.height > 0
-        && rect.right > 0
-        && rect.bottom > 0
-        && rect.left < window.innerWidth
-        && rect.top < window.innerHeight
-        && style.display !== "none"
-        && style.visibility !== "hidden";
-    }) ?? null;
+    return Array.from(document.querySelectorAll<HTMLElement>(selector)).find(isRendered) ?? null;
   } catch {
     return null;
   }
 };
+
+const clamp = (value: number, minimum: number, maximum: number) =>
+  Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
 
 export default function RoleQuickGuide({ role }: { role: Role }) {
   const location = useLocation();
@@ -142,13 +151,37 @@ export default function RoleQuickGuide({ role }: { role: Role }) {
   const [step, setStep] = useState(0);
   const [spotlight, setSpotlight] = useState<Spotlight | null>(null);
   const touchStart = useRef<number | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
   const firstVisitKey = context === "package-builder"
     ? "bimbelku.tutorial.student.multi-subject.v1"
     : `bimbelku.tutorial.${role}.v5`;
   const dashboardPath = role === "student" ? "/student/dashboard" : "/guru";
   const activeStep = tutorial.steps[step] ?? fallback[role].steps[0];
   const selector = selectorForStep(activeStep, role);
-  const last = step === tutorial.steps.length - 1;
+  const last = step >= Math.max(0, tutorial.steps.length - 1);
+
+  const openGuide = useCallback(() => {
+    restoreFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    setStep(0);
+    setSpotlight(null);
+    setOpen(true);
+  }, []);
+
+  const closeGuide = useCallback(() => {
+    // Tutup portal lebih dahulu. Step baru direset saat tutorial dibuka kembali agar
+    // tidak ada pembaruan posisi yang beradu dengan proses unmount.
+    setOpen(false);
+    setSpotlight(null);
+    window.requestAnimationFrame(() => restoreFocusRef.current?.focus());
+    try {
+      localStorage.setItem(firstVisitKey, "seen");
+    } catch {
+      // Tutorial tetap dapat ditutup saat penyimpanan browser dibatasi.
+    }
+  }, [firstVisitKey]);
 
   useEffect(() => {
     let mounted = true;
@@ -172,214 +205,247 @@ export default function RoleQuickGuide({ role }: { role: Role }) {
   useEffect(() => {
     if (location.pathname !== dashboardPath) return;
     try {
-      if (!localStorage.getItem(firstVisitKey)) setOpen(true);
+      if (!localStorage.getItem(firstVisitKey)) openGuide();
     } catch {
-      setOpen(false);
+      // Jangan memaksa tutorial tampil bila storage browser tidak tersedia.
     }
-  }, [dashboardPath, firstVisitKey, location.pathname]);
+  }, [dashboardPath, firstVisitKey, location.pathname, openGuide]);
 
   useEffect(() => {
-    const openTutorial = () => {
-      setStep(0);
-      setOpen(true);
-    };
-    window.addEventListener("bimbelku:open-tutorial", openTutorial);
-    return () => window.removeEventListener("bimbelku:open-tutorial", openTutorial);
-  }, []);
+    window.addEventListener("bimbelku:open-tutorial", openGuide);
+    return () => window.removeEventListener("bimbelku:open-tutorial", openGuide);
+  }, [openGuide]);
 
   useEffect(() => {
     if (!open) return;
-    const previousOverflow = document.body.style.overflow;
-    const previousHtmlOverflow = document.documentElement.style.overflow;
-    const previousOverscroll = document.body.style.overscrollBehavior;
-    document.body.style.overflow = "hidden";
-    document.documentElement.style.overflow = "hidden";
-    document.body.style.overscrollBehavior = "none";
-    const closeOnKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+    const frame = window.requestAnimationFrame(() => dialogRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, step]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeGuide();
+      if (event.key === "Tab" && dialogRef.current) {
+        const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ));
+        if (focusable.length) {
+          const first = focusable[0];
+          const lastFocusable = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            lastFocusable.focus();
+          } else if (!event.shiftKey && document.activeElement === lastFocusable) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+      }
       if (event.key === "ArrowRight") setStep((value) => Math.min(tutorial.steps.length - 1, value + 1));
       if (event.key === "ArrowLeft") setStep((value) => Math.max(0, value - 1));
     };
-    window.addEventListener("keydown", closeOnKey);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.documentElement.style.overflow = previousHtmlOverflow;
-      document.body.style.overscrollBehavior = previousOverscroll;
-      window.removeEventListener("keydown", closeOnKey);
-    };
-  }, [open, tutorial.steps.length]);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [closeGuide, open, tutorial.steps.length]);
 
   useEffect(() => {
     if (!open || !selector) {
       setSpotlight(null);
       return;
     }
-    let settleTimer = 0;
-    const update = (scrollTarget = false) => {
-      const target = visibleElement(selector);
+
+    let cancelled = false;
+    const timers: number[] = [];
+
+    const measure = () => {
+      if (cancelled) return;
+      const target = findTargetElement(selector);
       if (!target) {
         setSpotlight(null);
         return;
       }
-      if (scrollTarget) {
-        target.scrollIntoView({
-          behavior: "smooth",
-          block: window.innerWidth < 640 ? "start" : "center",
-          inline: "nearest",
-        });
-      }
       const rect = target.getBoundingClientRect();
-      const padding = 8;
-      const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
-      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-      const top = Math.max(4, rect.top - padding);
-      const left = Math.max(4, rect.left - padding);
-      const right = Math.min(viewportWidth - 4, rect.right + padding);
-      const bottom = Math.min(viewportHeight - 4, rect.bottom + padding);
-      setSpotlight({
-        top,
-        left,
-        width: Math.max(0, right - left),
-        height: Math.max(0, bottom - top),
+      const currentViewport = viewport();
+      const padding = currentViewport.width < 640 ? 6 : 9;
+      const top = clamp(rect.top - padding, 4, currentViewport.height - 4);
+      const left = clamp(rect.left - padding, 4, currentViewport.width - 4);
+      const right = clamp(rect.right + padding, 4, currentViewport.width - 4);
+      const bottom = clamp(rect.bottom + padding, 4, currentViewport.height - 4);
+
+      if (right <= left || bottom <= top) {
+        setSpotlight(null);
+        return;
+      }
+
+      setSpotlight({ top, left, width: right - left, height: bottom - top });
+    };
+
+    const locateAndScroll = () => {
+      if (cancelled) return;
+      const target = findTargetElement(selector);
+      if (!target) {
+        setSpotlight(null);
+        return;
+      }
+      target.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      [0, 90, 220, 420, 700].forEach((delay) => {
+        timers.push(window.setTimeout(measure, delay));
       });
     };
-    const frame = window.requestAnimationFrame(() => {
-      update(true);
-      settleTimer = window.setTimeout(() => update(false), 320);
-    });
-    const updateWithoutScroll = () => update(false);
-    window.addEventListener("resize", updateWithoutScroll);
-    window.addEventListener("scroll", updateWithoutScroll, true);
+
+    const frame = window.requestAnimationFrame(locateAndScroll);
+    const retry = window.setInterval(() => {
+      if (findTargetElement(selector)) {
+        locateAndScroll();
+        window.clearInterval(retry);
+      }
+    }, 120);
+    const stopRetry = window.setTimeout(() => window.clearInterval(retry), 1_500);
+
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    window.visualViewport?.addEventListener("resize", measure);
+    window.visualViewport?.addEventListener("scroll", measure);
+
     return () => {
+      cancelled = true;
       window.cancelAnimationFrame(frame);
-      window.clearTimeout(settleTimer);
-      window.removeEventListener("resize", updateWithoutScroll);
-      window.removeEventListener("scroll", updateWithoutScroll, true);
+      window.clearInterval(retry);
+      window.clearTimeout(stopRetry);
+      timers.forEach((timer) => window.clearTimeout(timer));
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+      window.visualViewport?.removeEventListener("resize", measure);
+      window.visualViewport?.removeEventListener("scroll", measure);
     };
   }, [open, selector, step]);
 
-  const close = () => {
-    setOpen(false);
-    setStep(0);
-    try {
-      localStorage.setItem(firstVisitKey, "seen");
-    } catch {
-      // Tutorial tetap dapat ditutup saat penyimpanan browser dibatasi.
-    }
-  };
-
   const dialogStyle = useMemo<CSSProperties>(() => {
-    if (!spotlight || typeof window === "undefined") return {};
-    if (window.innerWidth < 640) {
+    if (typeof window === "undefined") return {};
+    const currentViewport = viewport();
+    const margin = 12;
+
+    if (!spotlight) {
+      return currentViewport.width < 768
+        ? { left: margin, right: margin, bottom: margin }
+        : { left: "50%", top: "50%", width: Math.min(440, currentViewport.width - 32), transform: "translate(-50%, -50%)" };
+    }
+
+    if (currentViewport.width < 768) {
       const targetCenter = spotlight.top + spotlight.height / 2;
-      return targetCenter > window.innerHeight * 0.58
-        ? { left: 12, right: 12, top: 12 }
-        : { left: 12, right: 12, bottom: 12 };
+      return targetCenter > currentViewport.height / 2
+        ? { left: margin, right: margin, top: margin }
+        : { left: margin, right: margin, bottom: margin };
     }
-    const width = Math.min(640, window.innerWidth - 32);
-    const left = Math.max(16, Math.min(window.innerWidth - width - 16, spotlight.left + spotlight.width / 2 - width / 2));
-    if (window.innerHeight - (spotlight.top + spotlight.height) >= 390) {
-      return { left, top: spotlight.top + spotlight.height + 16, width };
-    }
-    return { left, bottom: window.innerHeight - spotlight.top + 16, width };
+
+    const width = Math.min(440, currentViewport.width - 32);
+    const targetCenterX = spotlight.left + spotlight.width / 2;
+    const top = clamp(spotlight.top + spotlight.height / 2 - 210, margin, currentViewport.height - 440);
+    return targetCenterX > currentViewport.width / 2
+      ? { left: margin, top, width }
+      : { right: margin, top, width };
   }, [spotlight]);
+
+  const tutorialOverlay = open && typeof document !== "undefined" ? (
+    <div
+      className="fixed inset-0 z-[220] overflow-hidden overscroll-contain"
+      data-tutorial-portal
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) closeGuide();
+      }}
+    >
+      {!spotlight && <div className="pointer-events-none fixed inset-0 bg-slate-950/80" />}
+
+      {spotlight && (
+        <div
+          aria-hidden="true"
+          data-spotlight-ring
+          className="pointer-events-none fixed rounded-2xl ring-4 ring-amber-300 shadow-[0_0_0_9999px_rgba(2,6,23,0.82),0_0_0_6px_rgba(255,255,255,0.98),0_0_38px_rgba(251,191,36,0.95)] transition-[top,left,width,height] duration-200 ease-out"
+          style={spotlight}
+        />
+      )}
+
+      <section
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tutorial-title"
+        data-tutorial-context={context}
+        className="fixed z-[222] flex max-h-[calc(100dvh-1.5rem)] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-[1.5rem] bg-white shadow-2xl outline-none sm:rounded-[1.75rem]"
+        style={dialogStyle}
+        onMouseDown={(event) => event.stopPropagation()}
+        onTouchStart={(event) => {
+          touchStart.current = event.touches[0]?.clientX ?? null;
+        }}
+        onTouchEnd={(event) => {
+          const end = event.changedTouches[0]?.clientX;
+          if (touchStart.current !== null && end !== undefined && Math.abs(end - touchStart.current) > 45) {
+            setStep((value) => end > touchStart.current!
+              ? Math.max(0, value - 1)
+              : Math.min(tutorial.steps.length - 1, value + 1));
+          }
+          touchStart.current = null;
+        }}
+      >
+        <header className="relative min-h-24 shrink-0 overflow-hidden bg-gradient-to-br from-indigo-700 via-blue-700 to-cyan-600 sm:min-h-36">
+          {activeStep.image_url ? (
+            <img src={activeStep.image_url} alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-contain" />
+          ) : (
+            <div className="absolute -right-8 -top-12 h-48 w-48 rounded-full border-[24px] border-white/10" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 to-transparent" />
+          <button type="button" aria-label="Tutup tutorial" onClick={closeGuide} className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full bg-slate-950/35 text-white">
+            <X size={19} />
+          </button>
+          <div className="absolute bottom-4 left-5 right-16 text-white">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/70">Langkah {step + 1} dari {tutorial.steps.length}</p>
+            <h2 id="tutorial-title" className="mt-1 text-xl font-black sm:text-2xl">{activeStep.title}</h2>
+          </div>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6">
+          <div className="flex gap-1.5">
+            {tutorial.steps.map((item, index) => (
+              <button key={item.id ?? `${item.title}-${index}`} type="button" aria-label={`Buka langkah ${index + 1}`} onClick={() => setStep(index)} className={`h-2 rounded-full transition-all ${index === step ? "w-8 bg-indigo-600" : "w-2 bg-slate-200"}`} />
+            ))}
+          </div>
+          <h3 className="mt-4 text-lg font-black text-slate-900">{tutorial.title}</h3>
+          {step === 0 && tutorial.description && <p className="mt-1 text-sm text-slate-500">{tutorial.description}</p>}
+          <p className="mt-3 text-sm font-semibold leading-6 text-slate-700">{activeStep.body}</p>
+        </div>
+
+        <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-100 bg-white p-4 sm:px-6">
+          <button type="button" onClick={closeGuide} className="min-h-11 px-2 text-sm font-bold text-slate-400 hover:text-slate-700">Lewati</button>
+          <div className="flex gap-2">
+            {step > 0 && (
+              <button type="button" onClick={() => setStep((value) => value - 1)} className="grid h-12 w-12 place-items-center rounded-2xl border border-slate-200 text-slate-600" aria-label="Langkah sebelumnya">
+                <ChevronLeft size={20} />
+              </button>
+            )}
+            <button type="button" onClick={() => last ? closeGuide() : setStep((value) => value + 1)} className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 text-sm font-black text-white hover:bg-indigo-700">
+              {last ? <><CheckCircle2 size={18} /> Selesai</> : <>Selanjutnya <ChevronRight size={18} /></>}
+            </button>
+          </div>
+        </footer>
+      </section>
+    </div>
+  ) : null;
 
   return (
     <>
       <button
         type="button"
-        onClick={() => {
-          setStep(0);
-          setOpen(true);
-        }}
+        onClick={openGuide}
         aria-label="Buka tutorial"
         className="rounded-full p-2.5 text-slate-400 transition hover:bg-white hover:text-indigo-600 hover:shadow-md"
       >
         <HelpCircle size={20} />
       </button>
 
-      {open && (
-        <div className="fixed inset-0 z-[220] overflow-hidden overscroll-contain" aria-hidden={false}>
-          {spotlight ? (
-            <>
-              <div data-spotlight-shade="top" className="fixed left-0 right-0 top-0 bg-slate-950/70" style={{ height: spotlight.top }} />
-              <div data-spotlight-shade="left" className="fixed left-0 bg-slate-950/70" style={{ top: spotlight.top, width: spotlight.left, height: spotlight.height }} />
-              <div data-spotlight-shade="right" className="fixed right-0 bg-slate-950/70" style={{ top: spotlight.top, left: spotlight.left + spotlight.width, height: spotlight.height }} />
-              <div data-spotlight-shade="bottom" className="fixed bottom-0 left-0 right-0 bg-slate-950/70" style={{ top: spotlight.top + spotlight.height }} />
-              <div
-                aria-hidden="true"
-                data-spotlight-ring
-                className="pointer-events-none fixed z-[221] animate-pulse rounded-2xl ring-4 ring-amber-300 shadow-[0_0_0_5px_rgba(255,255,255,0.98),0_0_38px_rgba(251,191,36,1)] motion-reduce:animate-none"
-                style={spotlight}
-              />
-            </>
-          ) : (
-            <div className="fixed inset-0 bg-slate-950/70" onMouseDown={close} />
-          )}
-
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="tutorial-title"
-            data-tutorial-context={context}
-            className={`fixed z-[222] flex max-h-[min(20rem,calc(100dvh-1.5rem))] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-[1.5rem] bg-white shadow-2xl sm:max-h-[min(34rem,calc(100dvh-1.5rem))] sm:rounded-[1.75rem] ${spotlight ? "" : "inset-x-3 bottom-3 sm:inset-auto sm:left-1/2 sm:top-1/2 sm:w-[min(40rem,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2"}`}
-            style={dialogStyle}
-            onTouchStart={(event) => {
-              touchStart.current = event.touches[0]?.clientX ?? null;
-            }}
-            onTouchEnd={(event) => {
-              const end = event.changedTouches[0]?.clientX;
-              if (touchStart.current !== null && end !== undefined && Math.abs(end - touchStart.current) > 45) {
-                setStep((value) => end > touchStart.current!
-                  ? Math.max(0, value - 1)
-                  : Math.min(tutorial.steps.length - 1, value + 1));
-              }
-              touchStart.current = null;
-            }}
-          >
-            <div className="relative min-h-24 shrink-0 overflow-hidden bg-gradient-to-br from-indigo-700 via-blue-700 to-cyan-600 sm:min-h-36">
-              {activeStep.image_url ? (
-                <img src={activeStep.image_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
-              ) : (
-                <div className="absolute -right-8 -top-12 h-48 w-48 rounded-full border-[24px] border-white/10" />
-              )}
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 to-transparent" />
-              <button type="button" aria-label="Tutup tutorial" onClick={close} className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full bg-slate-950/35 text-white">
-                <X size={19} />
-              </button>
-              <div className="absolute bottom-4 left-5 right-16 text-white">
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/70">Langkah {step + 1} dari {tutorial.steps.length}</p>
-                <h2 id="tutorial-title" className="mt-1 text-xl font-black sm:text-2xl">{activeStep.title}</h2>
-              </div>
-            </div>
-
-            <div className="min-h-0 overflow-y-auto p-5 sm:p-6">
-              <div className="flex gap-1.5">
-                {tutorial.steps.map((item, index) => (
-                  <button key={item.id ?? `${item.title}-${index}`} type="button" aria-label={`Buka langkah ${index + 1}`} onClick={() => setStep(index)} className={`h-2 rounded-full transition-all ${index === step ? "w-8 bg-indigo-600" : "w-2 bg-slate-200"}`} />
-                ))}
-              </div>
-              <h3 className="mt-4 text-lg font-black text-slate-900">{tutorial.title}</h3>
-              {step === 0 && tutorial.description && <p className="mt-1 text-sm text-slate-500">{tutorial.description}</p>}
-              <p className="mt-3 text-sm font-semibold leading-6 text-slate-700">{activeStep.body}</p>
-            </div>
-
-            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-100 bg-white p-4 sm:px-6">
-              <button type="button" onClick={close} className="min-h-11 px-2 text-sm font-bold text-slate-400 hover:text-slate-700">Lewati</button>
-              <div className="flex gap-2">
-                {step > 0 && (
-                  <button type="button" onClick={() => setStep((value) => value - 1)} className="grid h-12 w-12 place-items-center rounded-2xl border border-slate-200 text-slate-600" aria-label="Langkah sebelumnya">
-                    <ChevronLeft size={20} />
-                  </button>
-                )}
-                <button type="button" onClick={() => last ? close() : setStep((value) => value + 1)} className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 text-sm font-black text-white hover:bg-indigo-700">
-                  {last ? <><CheckCircle2 size={18} /> Selesai</> : <>Selanjutnya <ChevronRight size={18} /></>}
-                </button>
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
+      {tutorialOverlay ? createPortal(tutorialOverlay, document.body) : null}
     </>
   );
 }

@@ -140,7 +140,7 @@ export default function ClassDetail() {
                     <h3 className="text-sm font-extrabold text-slate-400 uppercase tracking-widest mb-4">Pengajar</h3>
                     <div className="flex items-center gap-4">
                         {data.teacher.photo ? (
-                            <img src={data.teacher.photo} alt="" className="w-14 h-14 rounded-full object-cover shadow-md"/>
+                            <img src={data.teacher.photo} alt="" loading="lazy" decoding="async" className="w-14 h-14 rounded-full object-cover shadow-md"/>
                         ) : (
                             <div className="w-14 h-14 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-lg">
                                 {data.teacher.name.charAt(0)}

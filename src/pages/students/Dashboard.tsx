@@ -145,8 +145,8 @@ export default function Dashboard() {
 
   return (
     <StudentLayout title="Beranda">
-      <div className="space-y-6 pb-20">
-        <div className="flex items-end justify-between gap-4">
+      <div className="w-full min-w-0 space-y-5 overflow-hidden pb-20 sm:space-y-6">
+        <div className="flex min-w-0 items-end justify-between gap-4">
           <div>
             <p className="text-xs font-black uppercase tracking-[.18em] text-indigo-500">Beranda murid</p>
             <h1 className="mt-2 text-2xl font-black text-slate-900 sm:text-3xl">Halo, {loading ? "…" : name.split(" ")[0]}!</h1>
@@ -177,30 +177,30 @@ export default function Dashboard() {
             {data.unread_messages_count > 0 && (
               <Link
                 to="/student/my-classes"
-                className="group flex items-center justify-between gap-4 rounded-[2rem] border border-orange-100 bg-gradient-to-br from-white to-orange-50 p-5 shadow-sm hover:shadow-md transition-all"
+                className="group flex min-w-0 items-center justify-between gap-3 overflow-hidden rounded-[1.5rem] border border-orange-100 bg-gradient-to-br from-white to-orange-50 p-4 shadow-sm transition-all hover:shadow-md sm:gap-4 sm:rounded-[2rem] sm:p-5"
               >
-                <div className="flex items-center gap-4">
+                <div className="flex min-w-0 flex-1 items-center gap-4">
                   <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-orange-500 text-white shadow-md">
                     <MessageSquare size={21} />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[10px] font-black uppercase tracking-wider text-orange-500">Pesan baru</p>
-                    <p className="mt-1 text-xl font-black text-slate-900">{data.unread_messages_count} pesan belum dibaca</p>
+                    <p className="mt-1 break-words text-lg font-black text-slate-900 sm:text-xl">{data.unread_messages_count} pesan belum dibaca</p>
                     <p className="mt-1 text-sm text-slate-500">Buka percakapan untuk membalas.</p>
                   </div>
                 </div>
-                <ArrowRight size={20} className="text-slate-400 transition group-hover:translate-x-1" />
+                <ArrowRight size={20} className="shrink-0 text-slate-400 transition group-hover:translate-x-1" />
               </Link>
             )}
 
             {data.recent_notifications.length > 0 && (
-              <section className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-xl font-black text-slate-900">Notifikasi Terbaru</h2>
+              <section className="w-full min-w-0 overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-5">
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="break-words text-lg font-black text-slate-900 sm:text-xl">Notifikasi Terbaru</h2>
                     <p className="mt-1 text-sm text-slate-500">3 notifikasi terakhir.</p>
                   </div>
-                  <Link to="/student/account" className="text-sm font-black text-indigo-600">Semua</Link>
+                  <Link to="/student/account" className="shrink-0 text-xs font-black text-indigo-600 sm:text-sm">Semua</Link>
                 </div>
                 <div className="mt-4 space-y-3">
                   {data.recent_notifications.slice(0, 3).map((notif) => (
@@ -225,40 +225,40 @@ export default function Dashboard() {
             {data.active_disputes_count > 0 && (
               <Link
                 to="/student/help"
-                className="group flex items-center justify-between gap-4 rounded-[2rem] border border-rose-100 bg-gradient-to-br from-white to-rose-50 p-5 shadow-sm hover:shadow-md transition-all"
+                className="group flex min-w-0 items-center justify-between gap-3 overflow-hidden rounded-[1.5rem] border border-rose-100 bg-gradient-to-br from-white to-rose-50 p-4 shadow-sm transition-all hover:shadow-md sm:gap-4 sm:rounded-[2rem] sm:p-5"
               >
-                <div className="flex items-center gap-4">
+                <div className="flex min-w-0 flex-1 items-center gap-4">
                   <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-rose-500 text-white shadow-md animate-pulse">
                     <AlertCircle size={21} />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[10px] font-black uppercase tracking-wider text-rose-500">Memerlukan perhatian</p>
                     <p className="mt-1 text-xl font-black text-slate-900">{data.active_disputes_count} sengketa aktif</p>
                     <p className="mt-1 text-sm text-slate-500">Admin akan menyelesaikan dalam 7 hari.</p>
                   </div>
                 </div>
-                <ArrowRight size={20} className="text-slate-400 transition group-hover:translate-x-1" />
+                <ArrowRight size={20} className="shrink-0 text-slate-400 transition group-hover:translate-x-1" />
               </Link>
             )}
 
             {activePackage?.subjects.length ? (
-              <section className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-6">
-                <div className="flex items-center justify-between gap-3">
-                  <div><h2 className="text-xl font-black text-slate-900">Mata pelajaran saya</h2><p className="mt-1 text-sm text-slate-500">Tutor dan progres dipisahkan untuk setiap mapel.</p></div>
-                  <Link to="/student/packages" className="text-sm font-black text-indigo-600">Detail</Link>
+              <section className="w-full min-w-0 overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-6">
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0"><h2 className="break-words text-lg font-black text-slate-900 sm:text-xl">Mata pelajaran saya</h2><p className="mt-1 break-words text-xs leading-5 text-slate-500 sm:text-sm">Tutor dan progres dipisahkan untuk setiap mapel.</p></div>
+                  <Link to="/student/packages" className="shrink-0 pt-0.5 text-xs font-black text-indigo-600 sm:text-sm">Detail</Link>
                 </div>
                 <div className="mt-5 grid gap-3 lg:grid-cols-2">
                   {activePackage.subjects.map((subject) => {
                     const completed = subject.sessions.filter((session) => session.status === "completed").length;
                     const progress = Math.round(completed / Math.max(1, subject.allocated_sessions) * 100);
                     return (
-                      <div key={subject.id} className="rounded-3xl bg-slate-50 p-4">
+                      <div key={subject.id} className="w-full min-w-0 overflow-hidden rounded-2xl bg-slate-50 p-3.5 sm:rounded-3xl sm:p-4">
                         <div className="flex items-center gap-3">
-                          <div className="grid h-11 w-11 place-items-center overflow-hidden rounded-full bg-white text-indigo-600 shadow-sm">
-                            {subject.teacher?.avatar_url ? <img src={subject.teacher.avatar_url} alt="" className="h-full w-full object-cover" /> : <UserRound size={19} />}
+                          <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-white text-indigo-600 shadow-sm sm:h-11 sm:w-11">
+                            {subject.teacher?.avatar_url ? <img src={subject.teacher.avatar_url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <UserRound size={19} />}
                           </div>
                           <div className="min-w-0 flex-1"><h3 className="truncate font-black text-slate-900">{subject.name}</h3><p className="truncate text-xs text-slate-500">{subject.teacher ? `Tutor ${subject.teacher.name}` : "Tutor sedang dicari"}</p></div>
-                          <span className="text-sm font-black text-indigo-700">{progress}%</span>
+                          <span className="shrink-0 text-xs font-black text-indigo-700 sm:text-sm">{progress}%</span>
                         </div>
                         <div className="mt-4 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-gradient-to-r from-indigo-600 to-cyan-500" style={{ width: `${progress}%` }} /></div>
                         <p className="mt-2 text-[11px] font-bold text-slate-400">{completed} dari {subject.allocated_sessions} sesi selesai</p>
@@ -277,22 +277,22 @@ export default function Dashboard() {
             )}
 
             <section className="grid gap-5 lg:grid-cols-[1fr_330px]">
-              <div className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-6">
-                <div className="flex items-center justify-between">
-                  <div><h2 className="text-xl font-black text-slate-900">Jadwal minggu ini</h2><p className="mt-1 text-sm text-slate-500">Tiga sesi terdekat.</p></div>
-                  <Link to="/student/my-classes" className="text-sm font-black text-indigo-600">Semua</Link>
+              <div className="w-full min-w-0 overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-6">
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0"><h2 className="break-words text-lg font-black text-slate-900 sm:text-xl">Jadwal minggu ini</h2><p className="mt-1 text-xs text-slate-500 sm:text-sm">Tiga sesi terdekat.</p></div>
+                  <Link to="/student/my-classes" className="shrink-0 pt-0.5 text-xs font-black text-indigo-600 sm:text-sm">Semua</Link>
                 </div>
                 <div className="mt-4 space-y-3">
                   {nearestSubjectSessions.length ? nearestSubjectSessions.map((session) => (
-                    <div key={`${session.subject}-${session.start_at}`} className="flex items-center gap-3 rounded-2xl bg-slate-50 p-4">
-                      <div className="grid h-10 w-10 place-items-center rounded-xl bg-white text-indigo-600 shadow-sm"><Clock3 size={18} /></div>
-                      <div><p className="font-black text-slate-800">{session.subject}</p><p className="mt-1 text-xs text-slate-500">{new Date(session.start_at).toLocaleString("id-ID", { weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p></div>
+                    <div key={`${session.subject}-${session.start_at}`} className="flex min-w-0 items-center gap-3 rounded-2xl bg-slate-50 p-4">
+                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-indigo-600 shadow-sm"><Clock3 size={18} /></div>
+                      <div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-slate-800 sm:text-base">{session.subject}</p><p className="mt-1 truncate text-[11px] text-slate-500 sm:text-xs">{new Date(session.start_at).toLocaleString("id-ID", { weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p></div>
                     </div>
                   )) : <p className="rounded-2xl bg-slate-50 p-5 text-sm font-semibold text-slate-500">Belum ada jadwal aktif.</p>}
                 </div>
               </div>
 
-              <Link to="/student/vouchers" className="group relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-orange-500 to-rose-600 p-6 text-white shadow-lg">
+              <Link to="/student/vouchers" className="group relative w-full min-w-0 overflow-hidden rounded-[1.5rem] bg-gradient-to-br from-orange-500 to-rose-600 p-5 text-white shadow-lg sm:rounded-[2rem] sm:p-6">
                 <div className="absolute -right-10 -top-10 h-36 w-36 rounded-full border-[24px] border-white/10" />
                 <Tag className="relative" size={28} />
                 <p className="relative mt-7 text-4xl font-black">{data.voucher_count}</p>
@@ -336,7 +336,7 @@ function AdaptiveCard({ packageData, nextSession }: { packageData?: PackageData;
 }
 
 function ActionCard({ icon: Icon, eyebrow, title, description, to, action, pulse = false }: { icon: typeof Radar; eyebrow: string; title: string; description: string; to: string; action: string; pulse?: boolean }) {
-  return <section className="flex flex-col justify-between gap-5 rounded-[2rem] border border-indigo-100 bg-gradient-to-br from-white to-indigo-50 p-5 shadow-sm sm:flex-row sm:items-center sm:p-6"><div className="flex items-center gap-4"><div className={`grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-200 ${pulse ? "animate-pulse" : ""}`}><Icon size={24} /></div><div><p className="text-[10px] font-black uppercase tracking-[.18em] text-indigo-500">{eyebrow}</p><h2 className="mt-1 text-xl font-black text-slate-900">{title}</h2><p className="mt-1 text-sm text-slate-500">{description}</p></div></div><Link to={to} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white">{action} <ArrowRight size={16} /></Link></section>;
+  return <section className="max-w-full overflow-hidden rounded-[2rem] border border-indigo-100 bg-gradient-to-br from-white to-indigo-50 p-5 shadow-sm sm:p-6"><div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-4"><div className={`grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-200 ${pulse ? "animate-pulse" : ""}`}><Icon size={24} /></div><div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[.18em] text-indigo-500">{eyebrow}</p><h2 className="mt-1 break-words text-lg font-black text-slate-900 sm:text-xl">{title}</h2><p className="mt-1 break-words text-sm text-slate-500">{description}</p></div></div><Link to={to} className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white sm:w-auto">{action} <ArrowRight size={16} /></Link></div></section>;
 }
 
 function Summary({ icon: Icon, label, value, color }: { icon: typeof BookOpenCheck; label: string; value: string; color: string }) {

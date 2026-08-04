@@ -1,6 +1,6 @@
 import { Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/sonner";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router-dom";
 import { BookOpenCheck } from "lucide-react";
 
 // --- IMPORT KOMPONEN KEAMANAN & GLOBAL (Tetap Import Biasa) ---
@@ -33,8 +33,10 @@ const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 
 // 4. Halaman Admin
 const DashboardOverview = lazy(() => import("./pages/admin/DashboardOverview"));
+const TutorSearchMonitoring = lazy(() => import("./pages/admin/TutorSearchMonitoring"));
 const TeacherVerification = lazy(() => import("./pages/admin/TeacherVerification"));
 const PaymentVerification = lazy(() => import("./pages/admin/PaymentVerification"));
+const RefundManagement = lazy(() => import("./pages/admin/RefundManagement"));
 const UserManagement = lazy(() => import("./pages/admin/UserManagement"));
 const PaymentSettings = lazy(() => import("./pages/admin/PaymentSettings"));
 const FinanceReport = lazy(() => import("./pages/admin/FinanceReport"));
@@ -50,8 +52,8 @@ const HourlyRates = lazy(() => import("./pages/admin/HourlyRates"));
 const LearningTopics = lazy(() => import("./pages/admin/LearningTopics"));
 const SubjectManagement = lazy(() => import("./pages/admin/SubjectManagement"));
 const CaseCenter = lazy(() => import("./pages/admin/CaseCenter"));
-const FinanceSecurity = lazy(() => import("./pages/admin/FinanceSecurity"));
 const StageFiveManagement = lazy(() => import("./pages/admin/StageFiveManagement"));
+const AdminAuditLog = lazy(() => import("./pages/admin/AdminAuditLog"));
 
 // 5. Halaman Guru
 const TeacherDashboard = lazy(() => import("./pages/teacher/TeacherDashboard"));
@@ -61,6 +63,10 @@ const TeacherBankSettings = lazy(() => import("./pages/teacher/TeacherBankSettin
 const TeacherSalary = lazy(() => import("./pages/teacher/TeacherSalary")); 
 const ManageSchedule = lazy(() => import("./pages/teacher/ManageSchedule"));
 const BookingGuru = lazy(() => import("./pages/teacher/BookingGuru"));
+const TeacherMessages = lazy(() => import("./pages/teacher/TeacherMessages"));
+const TeacherAccount = lazy(() => import("./pages/teacher/TeacherAccount"));
+const TeacherPerformance = lazy(() => import("./pages/teacher/TeacherPerformance"));
+const TeacherNotifications = lazy(() => import("./pages/teacher/TeacherNotifications"));
 
 // 6. Halaman Murid 
 const Dashboard = lazy(() => import("./pages/students/Dashboard"));
@@ -106,7 +112,7 @@ const PageLoader = () => (
   <div
     role="status"
     aria-live="polite"
-    className="flex h-screen w-full flex-col items-center justify-center bg-gradient-to-br from-orange-50 via-white to-indigo-50"
+    className="flex h-dvh w-full flex-col items-center justify-center bg-gradient-to-br from-orange-50 via-white to-indigo-50"
   >
     <div className="relative grid h-20 w-20 place-items-center rounded-3xl bg-slate-950 text-white shadow-2xl shadow-indigo-200">
       <div className="absolute inset-0 animate-ping rounded-3xl border border-indigo-300/40 motion-reduce:animate-none" />
@@ -155,13 +161,15 @@ const App = () => (
                ========================================= */}
             <Route element={<PrivateRoute allowedRoles={['admin']} />}>
               <Route path="/admin" element={<DashboardOverview />} />
+              <Route path="/admin/tutor-searches" element={<TutorSearchMonitoring />} />
               <Route path="/admin/guru" element={<TeacherVerification />} />
               <Route path="/admin/pembayaran" element={<PaymentVerification />} />
               <Route path="/admin/users" element={<UserManagement />} />
               <Route path="/admin/settings-payment" element={<PaymentSettings />} />
               <Route path="/admin/settings-footer" element={<EditFooter />} />
               <Route path="/admin/finance" element={<FinanceReport />} />
-              <Route path="/admin/finance-security" element={<FinanceSecurity />} />
+              <Route path="/admin/refunds" element={<RefundManagement />} />
+              <Route path="/admin/finance-security" element={<Navigate to="/admin/pembayaran" replace />} />
               <Route path="/admin/pesan" element={<AdminMessages />} />
               <Route path="/admin/notifikasi" element={<SendMessage />} /> 
               <Route path="/admin/classes" element={<ClassMonitoring />} />
@@ -174,6 +182,8 @@ const App = () => (
               <Route path="/admin/subjects" element={<SubjectManagement />} />
               <Route path="/admin/cases" element={<CaseCenter />} />
               <Route path="/admin/stage-five" element={<StageFiveManagement />} />
+              <Route path="/admin/access-control" element={<Navigate to="/admin" replace />} />
+              <Route path="/admin/audit-log" element={<AdminAuditLog />} />
             </Route>
 
             {/* =========================================
@@ -187,6 +197,10 @@ const App = () => (
               <Route path="/guru/permintaan" element={<BookingGuru />} />
               <Route path="/guru/rekening" element={<TeacherBankSettings />} />
               <Route path="/guru/gaji" element={<TeacherSalary />} />
+              <Route path="/guru/pesan" element={<TeacherMessages />} />
+              <Route path="/guru/saya" element={<TeacherAccount />} />
+              <Route path="/guru/performa" element={<TeacherPerformance />} />
+              <Route path="/guru/notifikasi" element={<TeacherNotifications />} />
               
               <Route path="/guru/bantuan" element={<TeacherHelp />} />
             </Route>

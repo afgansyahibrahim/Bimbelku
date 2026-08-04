@@ -22,7 +22,7 @@ class TutorAvailabilityController extends Controller
             'class_type' => ['required', Rule::in(['private', 'group'])],
             'scheduled_date' => ['required', 'date_format:Y-m-d'],
             'start_time' => ['required', 'date_format:H:i'],
-            'duration_hours' => ['required', 'integer', 'between:1,4'],
+            'duration_hours' => ['required', 'integer', Rule::in([1])],
             'latitude' => ['nullable', 'required_if:learning_mode,offline', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'required_if:learning_mode,offline', 'numeric', 'between:-180,180'],
         ]);
@@ -41,9 +41,9 @@ class TutorAvailabilityController extends Controller
             $timezone
         );
 
-        if ((int) $startAt->format('i') % 10 !== 0) {
+        if ((int) $startAt->format('i') !== 0) {
             return response()->json([
-                'message' => 'Menit mulai harus memakai kelipatan 10.',
+                'message' => 'Jam mulai hanya boleh menggunakan menit 00.',
             ], 422);
         }
         if ($startAt->lessThanOrEqualTo(now($timezone))) {
@@ -52,7 +52,8 @@ class TutorAvailabilityController extends Controller
             ], 422);
         }
 
-        $endAt = $startAt->copy()->addHours((int) $validated['duration_hours']);
+        $validated['duration_hours'] = 1;
+        $endAt = $startAt->copy()->addHour();
         if ($endAt->toDateString() !== $startAt->toDateString()) {
             return response()->json([
                 'message' => 'Sesi harus selesai pada hari yang sama.',

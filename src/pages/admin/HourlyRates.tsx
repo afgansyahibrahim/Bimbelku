@@ -212,7 +212,7 @@ export default function HourlyRates() {
                 {rates.map((rate) => (
                   <div key={rate.id} className="flex items-center justify-between gap-4 rounded-2xl border border-slate-100 bg-slate-50/70 p-4 transition hover:bg-white hover:shadow-sm">
                     <div className="min-w-0"><p className="truncate font-black text-slate-900">{rate.subject_name}</p><p className="mt-1 text-xs text-slate-500">{rate.education_level || "Semua jenjang"} • {rate.class_type === "private" ? "Privat" : "Kelompok"} • {rate.learning_mode === "online" ? "Online" : "Offline"}</p></div>
-                    <div className="flex items-center gap-3"><p className="whitespace-nowrap font-black text-indigo-700">{formatCurrency(Number(rate.amount))}</p><Button variant="ghost" size="icon" onClick={() => deleteRate(rate.id)} className="rounded-xl text-rose-500 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={17} /></Button></div>
+                    <div className="flex items-center gap-3"><p className="whitespace-nowrap font-black text-indigo-700">{formatCurrency(Number(rate.amount))}</p><Button aria-label={`Hapus tarif ${rate.subject_name}`} variant="ghost" size="icon" onClick={() => deleteRate(rate.id)} className="rounded-xl text-rose-500 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={17} /></Button></div>
                   </div>
                 ))}
               </div>

@@ -196,11 +196,22 @@ export default function AdminNotes() {
                     return (
                         <div 
                             key={note.id} 
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Buka catatan ${note.title || "tanpa judul"}`}
                             onClick={() => openModal(note)}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    openModal(note);
+                                }
+                            }}
                             className={`group relative p-6 rounded-[2rem] border ${theme.border} ${theme.bg} shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer min-h-[180px] flex flex-col`}
                         >
                             {/* Pin Button */}
                             <button 
+                                type="button"
+                                aria-label={note.is_pinned ? "Lepas pin catatan" : "Pin catatan"}
                                 onClick={(e) => togglePin(note, e)}
                                 className={`absolute top-4 right-4 p-2 rounded-full transition ${note.is_pinned ? 'bg-slate-900 text-white' : 'bg-white/50 text-slate-400 hover:bg-white hover:text-slate-900'}`}
                             >
@@ -215,11 +226,13 @@ export default function AdminNotes() {
                                 {note.content}
                             </p>
 
-                            <div className="mt-4 pt-4 border-t border-black/5 flex justify-between items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="mt-4 flex items-center justify-between border-t border-black/5 pt-4 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
                                 <span className="text-[10px] text-slate-400 font-medium">
                                     {new Date(note.updated_at).toLocaleDateString('id-ID', {day:'numeric', month:'short'})}
                                 </span>
                                 <button 
+                                    type="button"
+                                    aria-label="Hapus catatan"
                                     onClick={(e) => handleDelete(note.id, e)}
                                     className="p-2 text-slate-400 hover:text-rose-500 bg-white/50 hover:bg-white rounded-lg transition"
                                 >
@@ -244,13 +257,15 @@ export default function AdminNotes() {
                         </div>
                         <div className="flex items-center gap-2">
                             <button 
+                                type="button"
+                                aria-label={isPinned ? "Lepas pin catatan" : "Pin catatan"}
                                 onClick={() => setIsPinned(!isPinned)}
                                 className={`p-2 rounded-full transition ${isPinned ? 'bg-slate-900 text-white' : 'bg-white/50 text-slate-400 hover:bg-white'}`}
                                 title="Pin Catatan"
                             >
                                 <Pin size={18} className={isPinned ? 'fill-current' : ''}/>
                             </button>
-                            <button onClick={() => setIsModalOpen(false)} className="p-2 bg-white/50 text-slate-500 rounded-full hover:bg-white transition">
+                            <button type="button" aria-label="Tutup formulir catatan" onClick={() => setIsModalOpen(false)} className="p-2 bg-white/50 text-slate-500 rounded-full hover:bg-white transition">
                                 <X size={20}/>
                             </button>
                         </div>

@@ -135,10 +135,10 @@ export default function AdminMessages() {
   return (
     <AdminLayout title="Inbox Bantuan">
       {/* LAYOUT FIXED HEIGHT: 
-          h-[calc(100vh-130px)] memastikan konten pas di layar tanpa scroll window utama.
+          h-[calc(100dvh-130px)] memastikan konten pas di layar tanpa scroll window utama.
           Ini kunci agar footer tidak terdorong ke bawah.
       */}
-      <div className="flex h-[calc(100dvh-12rem)] min-h-[560px] flex-col gap-4 animate-in fade-in zoom-in-95 duration-500 lg:h-[calc(100vh-14rem)] lg:flex-row lg:gap-6">
+      <div className="flex h-[calc(100dvh-12rem)] min-h-[560px] flex-col gap-4 animate-in fade-in zoom-in-95 duration-500 lg:h-[calc(100dvh-14rem)] lg:flex-row lg:gap-6">
         
         {/* === SIDEBAR LIST PESAN (Scroll Sendiri) === */}
         <div className={`${activeTicket ? "hidden lg:flex" : "flex"} min-h-0 w-full flex-col overflow-hidden rounded-[2rem] border border-slate-200/60 bg-white shadow-sm lg:w-1/3 lg:min-w-[320px]`}>
@@ -163,10 +163,11 @@ export default function AdminMessages() {
                 {isLoading ? <div className="p-8 text-center text-sm text-slate-400"><Loader2 className="animate-spin inline mr-2"/> Memuat...</div> : 
                  filteredTickets.length === 0 ? <div className="p-8 text-center text-sm text-slate-400 italic">Tidak ada pesan ditemukan.</div> :
                  filteredTickets.map(t => (
-                    <div 
-                        key={t.id} 
+                    <button
+                        type="button"
+                        key={t.id}
                         onClick={() => openTicket(t)}
-                        className={`p-4 rounded-2xl cursor-pointer transition border relative overflow-hidden group ${
+                        className={`relative w-full overflow-hidden rounded-2xl border p-4 text-left transition ${
                             activeTicket?.id === t.id 
                             ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 border-indigo-600' 
                             : 'bg-white border-slate-100 hover:border-indigo-200 hover:shadow-md text-slate-600'
@@ -180,13 +181,13 @@ export default function AdminMessages() {
                         </div>
                         <p className={`text-xs font-bold mb-1 truncate ${activeTicket?.id === t.id ? 'text-indigo-100' : 'text-indigo-600'}`}>{t.subject}</p>
                         <p className={`text-xs line-clamp-1 ${activeTicket?.id === t.id ? 'text-indigo-200' : 'text-slate-400'}`}>
-                            {t.replies?.[0]?.message || "..."}
+                            {t.latest_reply?.message || "..."}
                         </p>
                         
                         {t.status === 'open' && (
                             <div className="absolute top-4 right-2 w-2 h-2 bg-amber-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(251,191,36,0.8)]"></div>
                         )}
-                    </div>
+                    </button>
                  ))
                 }
             </div>
@@ -294,7 +295,7 @@ export default function AdminMessages() {
                                         className="w-full bg-slate-50 border border-slate-200 outline-none px-5 py-3 rounded-2xl focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition resize-none h-[52px] max-h-32 py-3.5 text-sm font-medium"
                                     />
                                 </div>
-                                <button disabled={isSending} className="bg-slate-900 text-white p-3.5 rounded-xl hover:bg-slate-800 transition shadow-lg shadow-slate-200 disabled:opacity-50 disabled:shadow-none mb-1">
+                                <button aria-label="Kirim balasan admin" disabled={isSending} className="bg-slate-900 text-white p-3.5 rounded-xl hover:bg-slate-800 transition shadow-lg shadow-slate-200 disabled:opacity-50 disabled:shadow-none mb-1">
                                     {isSending ? <Loader2 className="animate-spin" size={20}/> : <Send size={20}/>}
                                 </button>
                             </form>

@@ -97,6 +97,21 @@ class FinancialLedgerService
         );
     }
 
+    public function recordRefundCreditedToWallet(Refund $refund): FinancialJournal
+    {
+        return $this->record(
+            "refund:{$refund->id}:wallet_credited",
+            'refund_wallet_credited',
+            Refund::class,
+            $refund->id,
+            "Refund pesanan {$refund->order_id} masuk ke Saldo BimbelKu",
+            [
+                ['account' => 'refunds_payable', 'side' => 'debit', 'amount' => $refund->amount],
+                ['account' => 'customer_wallet_liability', 'side' => 'credit', 'amount' => $refund->amount],
+            ]
+        );
+    }
+
     public function record(
         string $eventKey,
         string $eventType,

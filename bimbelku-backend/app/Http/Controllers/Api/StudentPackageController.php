@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\BookingDispute;
 use App\Models\BookingRequest;
+use App\Models\ClassroomMessage;
 use App\Models\CurriculumSubject;
 use App\Models\LearningPackage;
 use App\Models\LearningTimeSlot;
+use App\Models\MatchingOperationLog;
 use App\Models\Notification;
 use App\Models\PackagePlan;
 use App\Models\PackageRenewal;
@@ -46,6 +48,9 @@ class StudentPackageController extends Controller
                 ->orderBy('sort_order')
                 ->orderBy('start_time')
                 ->get()
+                ->filter(fn (LearningTimeSlot $slot) => substr((string) $slot->start_time, 3, 2) === '00'
+                    && substr((string) $slot->start_time, 0, 5) < '23:00')
+                ->values()
         );
     }
 
@@ -121,6 +126,20 @@ class StudentPackageController extends Controller
             ->where('student_id', $studentId)
             ->whereNotIn('status', ['resolved', 'rejected', 'cancelled'])
             ->count();
+        $unreadMessages = ClassroomMessage::query()
+            ->where('sender_id', '!=', $studentId)
+            ->whereHas('booking', function ($bookings) use ($studentId) {
+                $bookings
+                    ->whereIn('status', [
+                        'confirmed', 'in_progress', 'awaiting_student_approval', 'disputed',
+                        'absence_review', 'admin_review_required', 'completed',
+                    ])
+                    ->whereHas('participants', fn ($participants) => $participants
+                        ->where('student_id', $studentId)
+                        ->whereHas('order', fn ($orders) => $orders->where('status', 'paid')));
+            })
+            ->whereDoesntHave('reads', fn ($reads) => $reads->where('user_id', $studentId))
+            ->count();
 
         return response()->json([
             'packages' => $packages,
@@ -135,7 +154,7 @@ class StudentPackageController extends Controller
                 'end_at' => $nextBooking->end_at,
             ] : null,
             'voucher_count' => $voucherCount,
-            'unread_messages_count' => 0,
+            'unread_messages_count' => $unreadMessages,
             'active_disputes_count' => $activeDisputes,
             'recent_notifications' => $notifications,
         ]);
@@ -163,7 +182,7 @@ class StudentPackageController extends Controller
             'education_level' => ['required', Rule::in(EducationCatalog::LEVELS)],
             'grade' => ['required', 'string', 'max:50'],
             'learning_mode' => ['required', Rule::in(['online', 'offline'])],
-            'duration_hours' => ['nullable', 'integer', Rule::in([1, 2, 3])],
+            'duration_hours' => ['nullable', 'integer', Rule::in([1])],
             'promotion_code' => ['nullable', 'string', 'max:60'],
             'promotion_claim_id' => ['nullable', 'integer', 'exists:promotion_claims,id'],
             'renewal_of_id' => ['nullable', 'integer', 'exists:learning_packages,id'],
@@ -173,6 +192,8 @@ class StudentPackageController extends Controller
             'subjects.*.subtopic' => ['nullable', 'string', 'max:220'],
             'subjects.*.learning_goal' => ['nullable', 'string', 'max:1500'],
             'subjects.*.preferred_teacher_id' => ['nullable', 'integer', 'exists:users,id'],
+            'subjects.*.weekdays' => ['required', 'array', 'min:1', 'max:7'],
+            'subjects.*.weekdays.*' => ['required', 'integer', 'distinct', 'between:1,7'],
             'subjects.*.schedules' => ['required', 'array', 'min:1'],
             'subjects.*.schedules.*' => ['required', 'date'],
         ]);
@@ -188,7 +209,7 @@ class StudentPackageController extends Controller
         );
 
         $student = $request->user();
-        $durationHours = (int) ($validated['duration_hours'] ?? 1);
+        $durationHours = 1;
         if ($validated['learning_mode'] === 'offline') {
             abort_if(
                 blank($student->address) || $student->latitude === null || $student->longitude === null,
@@ -203,6 +224,8 @@ class StudentPackageController extends Controller
             ->where('is_active', true)
             ->pluck('start_time')
             ->map(fn ($time) => substr((string) $time, 0, 5))
+            ->filter(fn (string $time) => substr($time, 3, 2) === '00' && $time < '23:00')
+            ->values()
             ->all();
         abort_if(empty($activeSlotTimes), 422, 'Admin belum mengaktifkan slot jadwal belajar.');
 
@@ -233,18 +256,35 @@ class StudentPackageController extends Controller
                 "{$subject->name} tidak tersedia pada kelas atau tingkat ini."
             );
 
-            $starts = collect($item['schedules'])->map(function (string $value) use ($student, $activeSlotTimes, $durationHours) {
+            $selectedWeekdays = collect($item['weekdays'])->map(fn ($day) => (int) $day)->unique()->values();
+            $starts = collect($item['schedules'])->map(function (string $value) use (
+                $student,
+                $activeSlotTimes,
+                $durationHours,
+                $selectedWeekdays
+            ) {
                 $start = Carbon::parse($value, config('app.timezone', 'Asia/Jakarta'))->seconds(0);
                 abort_if($start->lt(now()->addHours(72)), 422, 'Jadwal paket paling cepat dimulai 72 jam dari sekarang.');
+                abort_unless($start->format('i') === '00', 422, 'Semua jadwal hanya boleh memakai menit 00.');
                 abort_unless(
                     in_array($start->format('H:i'), $activeSlotTimes, true),
                     422,
-                    'Jam yang dipilih tidak termasuk slot aktif dari aplikasi.'
+                    'Jam yang dipilih tidak termasuk slot jam penuh yang aktif.'
+                );
+                abort_unless(
+                    $selectedWeekdays->contains($start->dayOfWeekIso),
+                    422,
+                    'Tanggal jadwal tidak sesuai dengan hari yang dipilih.'
                 );
                 $this->assertStudentHasNoConflict($student->id, $start, $start->copy()->addHours($durationHours));
                 return $start;
             });
             abort_if($starts->unique(fn (Carbon $date) => $date->timestamp)->count() !== $starts->count(), 422, 'Jadwal dalam satu mapel tidak boleh sama.');
+            abort_if(
+                $starts->map(fn (Carbon $date) => $date->format('H:i'))->unique()->count() !== 1,
+                422,
+                'Semua hari pada satu mata pelajaran harus memakai jam yang sama.'
+            );
             $allStarts = $allStarts->merge($starts);
 
             $unitPrice = $rateService->resolve(
@@ -518,7 +558,7 @@ class StudentPackageController extends Controller
         PackageCheckoutService $checkoutService
     ) {
         abort_unless($learningPackage->student_id === $request->user()->id, 403);
-        $subjectIds = DB::transaction(function () use ($learningPackage) {
+        $subjectIds = DB::transaction(function () use ($learningPackage, $request) {
             $package = LearningPackage::query()
                 ->with('subjects.bookingRequest')
                 ->lockForUpdate()
@@ -537,7 +577,8 @@ class StudentPackageController extends Controller
 
             foreach ($subjects as $subject) {
                 $bookingRequest = $subject->bookingRequest;
-                $nextRadius = match ((int) ($bookingRequest?->search_radius_km ?? 3)) {
+                $currentRadius = (int) ($bookingRequest?->search_radius_km ?? 3);
+                $nextRadius = match ($currentRadius) {
                     3 => 5,
                     5 => 8,
                     default => 12,
@@ -551,6 +592,27 @@ class StudentPackageController extends Controller
                     'search_expires_at' => now()->addHours(48),
                 ]);
                 $subject->update(['status' => 'matching']);
+                if ($bookingRequest && $nextRadius > $currentRadius) {
+                    MatchingOperationLog::create([
+                        'booking_request_id' => $bookingRequest->id,
+                        'actor_id' => $request->user()->id,
+                        'action' => 'radius_expanded',
+                        'reason' => 'Murid mengulang pencarian paket pada jangkauan yang lebih luas.',
+                        'before_state' => [
+                            'status' => 'no_teacher',
+                            'search_radius_km' => $currentRadius,
+                        ],
+                        'after_state' => [
+                            'status' => 'matching',
+                            'search_radius_km' => $nextRadius,
+                        ],
+                        'metadata' => [
+                            'source' => 'student_package',
+                            'package_id' => $package->id,
+                            'package_subject_id' => $subject->id,
+                        ],
+                    ]);
+                }
             }
             $package->update(['status' => 'matching']);
 
@@ -676,7 +738,7 @@ class StudentPackageController extends Controller
             'package_plan_id' => ['required', 'integer', 'exists:package_plans,id'],
             'education_level' => ['required', Rule::in(EducationCatalog::LEVELS)],
             'learning_mode' => ['required', Rule::in(['online', 'offline'])],
-            'duration_hours' => ['nullable', 'integer', Rule::in([1, 2, 3])],
+            'duration_hours' => ['nullable', 'integer', Rule::in([1])],
             'subjects' => ['required', 'array', 'min:1'],
             'subjects.*.curriculum_subject_id' => ['required', 'integer', 'exists:curriculum_subjects,id'],
             'subjects.*.session_count' => ['required', 'integer', 'min:1'],
@@ -687,7 +749,7 @@ class StudentPackageController extends Controller
             'promotion_code' => $validated['code'] ?? null,
             'promotion_claim_id' => $validated['promotion_claim_id'] ?? null,
         ]);
-        $durationHours = (int) ($validated['duration_hours'] ?? 1);
+        $durationHours = 1;
         $subjects = CurriculumSubject::query()
             ->whereIn('id', collect($validated['subjects'])->pluck('curriculum_subject_id'))
             ->get()

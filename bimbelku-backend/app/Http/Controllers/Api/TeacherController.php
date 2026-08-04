@@ -74,12 +74,12 @@ class TeacherController extends Controller
     )
     {
         $request->validate([
-            'name' => ['nullable', 'string', 'max:255'],
+            'name' => ['nullable', 'string', 'max:255', 'regex:/\pL/u', 'not_regex:/\d/u'],
             'title' => ['nullable', 'string', 'max:150'],
-            'location' => ['nullable', 'string', 'max:255'],
+            'location' => ['nullable', 'string', 'max:255', 'regex:/\pL/u'],
             'experience' => ['nullable', 'string', 'max:255'],
             'bio' => ['nullable', 'string', 'max:3000'],
-            'whatsapp_number' => ['required', 'string', 'max:30', 'regex:/^[0-9+() .-]+$/'],
+            'whatsapp_number' => ['required', 'string', 'max:16', 'regex:/^\+?[0-9]{8,15}$/'],
             'latitude' => ['nullable', 'required_with:longitude', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'required_with:latitude', 'numeric', 'between:-180,180'],
             'max_travel_km' => ['nullable', 'integer', 'min:1', 'max:12'],
@@ -91,6 +91,11 @@ class TeacherController extends Controller
             'live_selfie' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'qualification_document' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
             'certification_document' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
+        ], [
+            'name.regex' => 'Nama lengkap wajib mengandung huruf.',
+            'name.not_regex' => 'Nama lengkap tidak boleh memuat angka.',
+            'location.regex' => 'Kota atau wilayah wajib mengandung huruf.',
+            'whatsapp_number.regex' => 'Nomor WhatsApp/telepon harus berisi 8–15 angka.',
         ]);
 
         $user = Auth::user();
@@ -378,10 +383,15 @@ class TeacherController extends Controller
 
     public function updateBank(Request $request) {
         $validated = $request->validate([
-            'bank_name' => ['required', 'string', 'max:100'],
-            'account_number' => ['required', 'string', 'max:50', 'regex:/^[0-9 .-]+$/'],
-            'account_name' => ['required', 'string', 'max:150'],
+            'bank_name' => ['required', 'string', 'max:100', 'regex:/\pL/u'],
+            'account_number' => ['required', 'string', 'max:50', 'regex:/^[0-9]{6,50}$/'],
+            'account_name' => ['required', 'string', 'max:150', 'regex:/\pL/u', 'not_regex:/\d/u'],
             'current_password' => ['required', 'string', 'max:200'],
+        ], [
+            'bank_name.regex' => 'Nama bank atau e-wallet wajib mengandung huruf.',
+            'account_number.regex' => 'Nomor rekening atau e-wallet harus berisi 6–50 angka.',
+            'account_name.regex' => 'Nama pemilik rekening wajib mengandung huruf.',
+            'account_name.not_regex' => 'Nama pemilik rekening tidak boleh memuat angka.',
         ]);
 
         $user = Auth::user();
@@ -474,26 +484,42 @@ class TeacherController extends Controller
         $user = $request->user();
         Carbon::setLocale('id');
         $currentAdminFee = \App\Models\Setting::where('key', 'admin_fee')->value('value') ?? 20;
-
-        $readyBookingsQuery = Booking::query()
+        $profile = TeacherProfile::query()->where('user_id', $user->id)->first();
+        $completedBookings = Booking::query()
             ->where('teacher_id', $user->id)
-            ->where('payout_status', 'ready');
+            ->where('status', 'completed');
+        $balanceRows = (clone $completedBookings)
+            ->selectRaw("COALESCE(SUM(CASE WHEN payout_status = 'locked' THEN teacher_net_amount ELSE 0 END), 0) AS held")
+            ->selectRaw("COALESCE(SUM(CASE WHEN payout_status = 'ready' THEN teacher_net_amount ELSE 0 END), 0) AS available")
+            ->selectRaw("COALESCE(SUM(CASE WHEN payout_status = 'requested' THEN teacher_net_amount ELSE 0 END), 0) AS requested")
+            ->selectRaw("COALESCE(SUM(CASE WHEN payout_status = 'paid' THEN teacher_net_amount ELSE 0 END), 0) AS paid")
+            ->selectRaw("COALESCE(SUM(gross_amount), 0) AS total_gross")
+            ->selectRaw("COALESCE(SUM(gross_amount - teacher_net_amount), 0) AS total_commission")
+            ->first();
         $paidPayouts = Payout::query()
             ->where('user_id', $user->id)
             ->where('status', 'completed')
             ->latest()
             ->limit(100)
             ->get();
-        $totalIncomeNetto = Booking::query()
-            ->where('teacher_id', $user->id)
-            ->whereIn('payout_status', ['ready', 'paid'])
-            ->sum('teacher_net_amount');
         $totalWithdrawn = Payout::query()
             ->where('user_id', $user->id)
             ->where('status', 'completed')
             ->sum('amount');
-        $currentBalance = (clone $readyBookingsQuery)->sum('teacher_net_amount');
-        $readySessionCount = (clone $readyBookingsQuery)->count();
+        $readySessionCount = (clone $completedBookings)->where('payout_status', 'ready')->count();
+        $readyBookings = (clone $completedBookings)
+            ->where('payout_status', 'ready')
+            ->with('bookingRequest:id,subject_name')
+            ->oldest('completed_at')
+            ->get()
+            ->map(fn (Booking $booking) => [
+                'id' => $booking->id,
+                'subject' => $booking->bookingRequest?->subject_name ?? 'Bimbingan',
+                'completed_at' => $booking->completed_at,
+                'gross_amount' => (float) $booking->gross_amount,
+                'commission_amount' => max(0, (float) $booking->gross_amount - (float) $booking->teacher_net_amount),
+                'net_amount' => (float) $booking->teacher_net_amount,
+            ]);
         $newStudentsWeek = Booking::query()
             ->where('teacher_id', $user->id)
             ->where('start_at', '>=', now()->startOfWeek())
@@ -519,16 +545,55 @@ class TeacherController extends Controller
 
         return response()->json([
             'current_period' => Carbon::now()->translatedFormat('F Y'),
-            'balance' => round($currentBalance),          
-            'pending_amount' => round($currentBalance),
+            'balance' => round((float) ($balanceRows?->available ?? 0)),
+            'pending_amount' => round((float) ($balanceRows?->available ?? 0)),
+            'balances' => [
+                'held' => round((float) ($balanceRows?->held ?? 0)),
+                'available' => round((float) ($balanceRows?->available ?? 0)),
+                'requested' => round((float) ($balanceRows?->requested ?? 0)),
+                'paid' => round((float) ($balanceRows?->paid ?? 0)),
+            ],
+            'totals' => [
+                'gross' => round((float) ($balanceRows?->total_gross ?? 0)),
+                'commission' => round((float) ($balanceRows?->total_commission ?? 0)),
+                'net' => round((float) ($balanceRows?->total_gross ?? 0) - (float) ($balanceRows?->total_commission ?? 0)),
+            ],
             'new_students_week' => $newStudentsWeek,
             'student_count_week' => $newStudentsWeek, 
             'total_students' => $totalStudents,
-            'total_income' => round($totalIncomeNetto),
+            'total_income' => round((float) ($balanceRows?->total_gross ?? 0) - (float) ($balanceRows?->total_commission ?? 0)),
             'total_withdrawn' => round($totalWithdrawn),
             'history' => $formattedHistory,
             'share_percent' => 100 - $currentAdminFee,
             'ready_sessions' => $readySessionCount,
+            'ready_bookings' => $readyBookings,
+            'bank' => [
+                'is_complete' => filled($profile?->bank_name)
+                    && filled($profile?->account_number)
+                    && filled($profile?->account_name),
+                'bank_name' => $profile?->bank_name,
+                'account_name' => $profile?->account_name,
+                'account_number_masked' => $profile?->account_number
+                    ? str_repeat('•', max(0, strlen(preg_replace('/\D+/', '', $profile->account_number)) - 4))
+                        .substr(preg_replace('/\D+/', '', $profile->account_number), -4)
+                    : null,
+                'payout_hold_until' => $profile?->payout_hold_until,
+            ],
+            'payout_requests' => \App\Models\TeacherPayoutRequest::query()
+                ->where('teacher_id', $user->id)
+                ->latest('requested_at')
+                ->limit(50)
+                ->get()
+                ->map(fn ($item) => [
+                    'id' => $item->id,
+                    'net_amount' => (float) $item->net_amount,
+                    'gross_amount' => (float) $item->gross_amount,
+                    'commission_amount' => (float) $item->commission_amount,
+                    'status' => $item->status,
+                    'requested_at' => $item->requested_at,
+                    'processed_at' => $item->processed_at,
+                    'review_notes' => $item->review_notes,
+                ]),
         ]);
     }
 }

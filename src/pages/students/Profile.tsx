@@ -8,7 +8,13 @@ import {
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
 import { formatAccountDate, formatDateOnly } from "@/lib/date";
 import http, { getCached } from "@/lib/http";
-import { isValidPhone, validateUpload } from "@/lib/validation";
+import {
+  isValidPersonName,
+  isValidPhone,
+  sanitizePersonName,
+  sanitizePhoneInput,
+  validateUpload,
+} from "@/lib/validation";
 import axios from "axios";
 import { EDUCATION_LEVELS, GRADES_BY_EDUCATION_LEVEL } from "@/lib/educationCatalog";
 
@@ -62,9 +68,9 @@ export default function Profile() {
         // Jika backend mengirim 'photo' atau 'avatar', sesuaikan di sini
         const userData = response.data;
         setUser({
-            name: userData.name,
+            name: sanitizePersonName(userData.name || ""),
             email: userData.email,
-            phone: userData.phone || "",
+            phone: sanitizePhoneInput(userData.phone || ""),
             avatar_url: userData.avatar_url || userData.photo_url || null,
             profile_cover_url: userData.profile_cover_url || null,
             password_updated_at: userData.password_updated_at || null,
@@ -121,9 +127,9 @@ export default function Profile() {
         const response = await getCached("/user", { maxAgeMs: 60_000, force: true });
         const userData = response.data;
         setUser({
-            name: userData.name,
+            name: sanitizePersonName(userData.name || ""),
             email: userData.email,
-            phone: userData.phone || "",
+            phone: sanitizePhoneInput(userData.phone || ""),
             avatar_url: userData.avatar_url || userData.photo_url || null,
             profile_cover_url: userData.profile_cover_url || null,
             password_updated_at: userData.password_updated_at || null,
@@ -212,8 +218,12 @@ export default function Profile() {
   // 3. HANDLER SIMPAN PERUBAHAN
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isValidPersonName(user.name)) {
+      toast.error("Nama lengkap harus berisi huruf dan tidak boleh memuat angka.");
+      return;
+    }
     if (!isValidPhone(user.phone)) {
-      toast.error("Nomor WhatsApp/telepon belum valid.");
+      toast.error("Nomor WhatsApp/telepon harus berisi 8–15 angka.");
       return;
     }
 
@@ -340,7 +350,7 @@ export default function Profile() {
                         <div className="h-28 w-28 rounded-full bg-white p-1.5 shadow-2xl ring-4 ring-blue-50/50 sm:h-36 sm:w-36">
                             <div className="w-full h-full rounded-full bg-slate-100 overflow-hidden relative">
                                 {user.avatar_url ? (
-                                    <img src={user.avatar_url} alt="Profile" className="w-full h-full object-cover"/>
+                                    <img src={user.avatar_url} alt="Foto profil murid" loading="lazy" decoding="async" className="w-full h-full object-cover"/>
                                 ) : (
                                     <div className="w-full h-full flex items-center justify-center text-slate-300 bg-slate-50">
                                         <User size={64} />
@@ -348,13 +358,15 @@ export default function Profile() {
                                 )}
                                 
                                 {/* Overlay Upload */}
-                                <div 
-                                    className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all cursor-pointer backdrop-blur-[2px]"
+                                <button
+                                    type="button"
+                                    aria-label="Ubah foto profil"
+                                    className="absolute inset-0 hidden flex-col items-center justify-center bg-black/40 text-white opacity-0 backdrop-blur-[2px] transition-all md:flex md:group-hover:opacity-100 md:focus:opacity-100"
                                     onClick={() => fileInputRef.current?.click()}
                                 >
                                     <Camera size={24} className="mb-1"/>
                                     <span className="text-[10px] font-bold uppercase tracking-widest">Ubah Foto</span>
-                                </div>
+                                </button>
                             </div>
                         </div>
                         {/* Hidden Input File */}
@@ -421,7 +433,7 @@ export default function Profile() {
                             <input 
                                 type="text" 
                                 value={user.name}
-                                onChange={(e) => setUser({...user, name: e.target.value})}
+                                onChange={(e) => setUser({...user, name: sanitizePersonName(e.target.value)})}
                                 className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none focus:bg-white focus:ring-4 focus:ring-blue-50 border border-transparent focus:border-blue-200 transition-all placeholder:text-slate-300"
                                 placeholder="Masukkan nama lengkap"
                             />
@@ -431,8 +443,11 @@ export default function Profile() {
                             <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Nomor WhatsApp/telepon</label>
                             <input
                                 type="tel"
+                                inputMode="tel"
+                                autoComplete="tel"
+                                maxLength={16}
                                 value={user.phone}
-                                onChange={(e) => setUser({...user, phone: e.target.value})}
+                                onChange={(e) => setUser({...user, phone: sanitizePhoneInput(e.target.value)})}
                                 className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none focus:bg-white focus:ring-4 focus:ring-blue-50 border border-transparent focus:border-blue-200 transition-all placeholder:text-slate-300"
                                 placeholder="Nomor yang dapat dihubungi saat kelas offline"
                             />

@@ -33,7 +33,7 @@ class TeacherDocumentController extends Controller
         $headers = [
             'Cache-Control' => 'private, no-store, max-age=0',
             'X-Content-Type-Options' => 'nosniff',
-            'Content-Disposition' => 'inline; filename="'.basename($path).'"',
+            'Content-Disposition' => 'inline; filename="'.$this->safeFilename($path).'"',
         ];
 
         if (Storage::disk('local')->exists($path)) {
@@ -41,5 +41,12 @@ class TeacherDocumentController extends Controller
         }
 
         abort(404);
+    }
+
+    private function safeFilename(string $name): string
+    {
+        $filename = basename(str_replace(['\\', "\r", "\n", '"'], ['', '', '', ''], $name));
+
+        return $filename !== '' ? $filename : 'file';
     }
 }

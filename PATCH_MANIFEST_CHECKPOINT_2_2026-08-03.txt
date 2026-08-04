@@ -1,0 +1,26 @@
+PATCH AUDIT CHECKPOINT 2
+Tanggal: 2026-08-03
+Jenis: changed-files-only
+Migration baru: tidak ada
+Dependency baru: tidak ada
+File yang dihapus: tidak ada
+
+FILE RUNTIME DIUBAH
+- bimbelku-backend/app/Http/Controllers/Api/AdminController.php
+- bimbelku-backend/app/Http/Controllers/Api/StudentPackageController.php
+- bimbelku-backend/app/Http/Controllers/Api/TeacherScheduleController.php
+- src/pages/teacher/ManageSchedule.tsx
+- scripts/check-stage6c-a.mjs
+- package.json
+
+FILE PENGUJIAN DITAMBAHKAN
+- scripts/check-checkpoint2.mjs
+- bimbelku-backend/tests/Feature/CheckpointTwoOperationsAuditTest.php
+
+DOKUMENTASI
+- AUDIT_CHECKPOINT_2_ADMIN_GURU_MURID_KELAS_JADWAL_PEMBAYARAN_2026-08-03.md
+- CHECKPOINT_2_PASANG_DAN_UJI_2026-08-03.md
+- PATCH_MANIFEST_CHECKPOINT_2_2026-08-03.txt
+- README.md
+- NEXT.md
+- IMPLEMENTATION_STATUS.md

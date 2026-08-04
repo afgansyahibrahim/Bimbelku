@@ -35,6 +35,11 @@ class Refund extends Model
         return $this->belongsTo(User::class, 'processed_by');
     }
 
+    public function walletTransaction()
+    {
+        return $this->hasOne(CustomerWalletTransaction::class, 'refund_id');
+    }
+
     public function getProofUrlAttribute(): ?string
     {
         return $this->proof ? "refunds/{$this->id}/proof" : null;

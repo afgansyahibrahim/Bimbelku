@@ -1,0 +1,32 @@
+PATCH AUDIT CHECKPOINT 1 — 3 AGUSTUS 2026
+
+Basis:
+- Website_Bimbelku(1).zip
+- PATCH_Hapus_Kode_Authenticator_Admin_2026-08-03.zip
+- PATCH_FIX_Tutorial_Blank_Setelah_Selesai_2026-08-03.zip
+- PATCH_Koreksi_Admin_Tunggal_dan_Sinkron_Revisi_Terbaru_2026-08-03.zip
+- Dua halaman admin telah dihapus pengguna secara manual.
+
+Cakupan:
+- struktur proyek;
+- route frontend dan API;
+- login/registrasi/reset password;
+- isolasi role;
+- middleware akun aktif/admin utama;
+- sinkronisasi admin tunggal;
+- pemeriksaan migration dan database secara statis;
+- pembersihan runtime autentikator/admin kedua yang tidak dipakai.
+
+File yang harus dihapus oleh scripts/apply-checkpoint1-cleanup.ps1:
+- src/pages/admin/AdminAccessControl.tsx
+- src/pages/admin/FinanceSecurity.tsx
+- bimbelku-backend/app/Http/Controllers/Api/FinanceApprovalController.php
+- bimbelku-backend/app/Http/Controllers/Api/FinanceSecurityController.php
+- bimbelku-backend/app/Http/Middleware/RequireFinanceAuthorization.php
+- bimbelku-backend/app/Models/FinanceAuthorization.php
+- bimbelku-backend/app/Services/FinanceAuthorizationService.php
+- bimbelku-backend/app/Services/FinanceTotpService.php
+- scripts/apply-single-admin-cleanup.ps1
+
+Tidak ada migration baru dan tidak ada dependency baru.
+Jangan menghapus atau mengganti nama migration lama.

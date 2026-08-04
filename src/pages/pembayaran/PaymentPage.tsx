@@ -26,7 +26,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import http, { getApiError } from "@/lib/http";
-import { validateUpload } from "@/lib/validation";
+import {
+  containsLetter,
+  isValidAccountNumber,
+  isValidPersonName,
+  sanitizeDigits,
+  sanitizePersonName,
+  validateUpload,
+} from "@/lib/validation";
 
 interface PaymentSettings {
   merchant_name: string;
@@ -181,8 +188,16 @@ export default function PaymentPage() {
   const upload = async (event: FormEvent) => {
     event.preventDefault();
     if (!order || !proof) return;
-    if (!/^[0-9 .+-]{6,80}$/.test(senderAccountNumber.trim())) {
-      toast.error("Nomor rekening atau e-wallet asal belum valid.");
+    if (!isValidPersonName(senderName)) {
+      toast.error("Nama pemilik rekening harus berisi huruf dan tidak boleh memuat angka.");
+      return;
+    }
+    if (!containsLetter(bankName)) {
+      toast.error("Nama bank atau e-wallet wajib mengandung huruf.");
+      return;
+    }
+    if (!isValidAccountNumber(senderAccountNumber)) {
+      toast.error("Nomor rekening atau e-wallet harus berisi 6–50 angka.");
       return;
     }
     if (!paymentAccountReady) {
@@ -300,8 +315,8 @@ export default function PaymentPage() {
                 </div>
               </div>
               {order.paymentDueAt && <div className="flex items-center justify-between rounded-2xl border border-amber-100 bg-amber-50 p-4 text-amber-800"><span className="flex items-center gap-2 text-sm font-bold"><Clock3 size={17} />Sisa waktu</span><span className="font-mono text-lg font-black">{timeText}</span></div>}
-              <div className="rounded-2xl border border-slate-100 p-4"><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Rekening admin</p><div className="mt-4 space-y-3 text-sm"><Row icon={Building2} label="Bank" value={settings.bank_name} /><Row icon={UserRound} label="Atas nama" value={settings.account_name} /><div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3"><div><p className="text-xs text-slate-400">Nomor rekening</p><p className="mt-1 font-mono font-black text-slate-900">{settings.account_number}</p></div><Button type="button" variant="ghost" size="icon" onClick={() => copy(settings.account_number, "Nomor rekening")}><Copy size={17} /></Button></div></div></div>
-              {settings.qris_url && <div className="rounded-2xl border border-slate-100 p-4 text-center"><p className="text-xs font-bold uppercase tracking-widest text-slate-400">QRIS admin</p><img src={settings.qris_url} alt="QRIS pembayaran" className="mx-auto mt-3 max-h-60 rounded-xl object-contain" /></div>}
+              <div className="rounded-2xl border border-slate-100 p-4"><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Rekening admin</p><div className="mt-4 space-y-3 text-sm"><Row icon={Building2} label="Bank" value={settings.bank_name} /><Row icon={UserRound} label="Atas nama" value={settings.account_name} /><div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3"><div><p className="text-xs text-slate-400">Nomor rekening</p><p className="mt-1 font-mono font-black text-slate-900">{settings.account_number}</p></div><Button type="button" aria-label="Salin nomor rekening" variant="ghost" size="icon" onClick={() => copy(settings.account_number, "Nomor rekening")}><Copy size={17} /></Button></div></div></div>
+              {settings.qris_url && <div className="rounded-2xl border border-slate-100 p-4 text-center"><p className="text-xs font-bold uppercase tracking-widest text-slate-400">QRIS admin</p><img src={settings.qris_url} alt="QRIS pembayaran" loading="lazy" decoding="async" className="mx-auto mt-3 max-h-60 rounded-xl object-contain" /></div>}
               <p className="flex gap-2 text-xs leading-5 text-slate-500"><ShieldCheck className="shrink-0 text-emerald-600" size={17} />Dana dicatat oleh admin. Sistem tidak menjalankan payment gateway atau transfer otomatis.</p>
             </div>
           </section>
@@ -309,9 +324,9 @@ export default function PaymentPage() {
           <form onSubmit={upload} className="rounded-[1.75rem] border border-slate-100 bg-white p-5 shadow-sm sm:rounded-[2rem] md:p-8">
             <p className="text-xs font-black uppercase tracking-[.2em] text-indigo-500">Konfirmasi transfer</p><h2 className="mt-2 text-2xl font-black text-slate-900">{reason ? "Unggah bukti pengganti" : "Kirim bukti pembayaran"}</h2><p className="mt-2 text-sm leading-6 text-slate-500">Pastikan nama pengirim, tujuan rekening, waktu, dan nominal terlihat jelas.</p>
             <div className="mt-7 space-y-5">
-              <div><Label className="flex items-center gap-2 font-bold"><UserRound size={16} />Nama pemilik rekening</Label><Input required className="mt-2 h-12 rounded-xl" value={senderName} onChange={(event) => setSenderName(event.target.value)} /></div>
+              <div><Label className="flex items-center gap-2 font-bold"><UserRound size={16} />Nama pemilik rekening</Label><Input required className="mt-2 h-12 rounded-xl" value={senderName} onChange={(event) => setSenderName(sanitizePersonName(event.target.value, 150))} /></div>
               <div><Label className="flex items-center gap-2 font-bold"><WalletCards size={16} />Bank/e-wallet asal</Label><Input required className="mt-2 h-12 rounded-xl" value={bankName} onChange={(event) => setBankName(event.target.value)} /></div>
-              <div><Label className="flex items-center gap-2 font-bold"><CreditCard size={16} />Nomor rekening/e-wallet asal</Label><Input required inputMode="numeric" className="mt-2 h-12 rounded-xl" value={senderAccountNumber} onChange={(event) => setSenderAccountNumber(event.target.value)} /><p className="mt-2 text-xs leading-5 text-slate-500">Disimpan sebagai tujuan pengembalian dana jika refund disetujui.</p></div>
+              <div><Label className="flex items-center gap-2 font-bold"><CreditCard size={16} />Nomor rekening/e-wallet asal</Label><Input required inputMode="numeric" className="mt-2 h-12 rounded-xl" value={senderAccountNumber} maxLength={50} onChange={(event) => setSenderAccountNumber(sanitizeDigits(event.target.value, 50))} /><p className="mt-2 text-xs leading-5 text-slate-500">Disimpan sebagai tujuan pengembalian dana jika refund disetujui.</p></div>
               <label className={`block cursor-pointer rounded-2xl border-2 border-dashed p-6 text-center transition ${proof ? "border-emerald-300 bg-emerald-50" : "border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40"}`}><Input required type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={(event) => selectProof(event.target.files?.[0])} />{proof ? <><FileImage className="mx-auto text-emerald-600" /><p className="mt-3 truncate text-sm font-black text-emerald-800">{proof.name}</p><p className="mt-1 text-xs text-emerald-600">Klik untuk mengganti</p></> : <><Upload className="mx-auto text-indigo-500" /><p className="mt-3 text-sm font-black text-slate-800">Pilih foto bukti transfer</p><p className="mt-1 text-xs text-slate-400">JPG, PNG, atau WebP · maks. 5 MB</p></>}</label>
             </div>
             <Button disabled={submitting || paymentExpired || !proof || !paymentAccountReady} className="mt-7 h-12 w-full rounded-xl bg-indigo-600 font-black hover:bg-indigo-700">{submitting ? <Loader2 size={18} className="mr-2 animate-spin" /> : <CreditCard size={18} className="mr-2" />}Kirim untuk diperiksa</Button>

@@ -10,6 +10,7 @@ import {
   Receipt,
   RefreshCw,
   RotateCcw,
+  WalletCards,
   WifiOff,
   XCircle,
 } from "lucide-react";
@@ -38,7 +39,20 @@ interface OrderItem {
   payment_due_at?: string;
   duration_hours?: number;
   total_learning_hours?: number;
-  refund?: { status: string; amount: number; reason: string; proof_url?: string; processed_at?: string };
+  refund?: { status: string; amount: number; reason: string; proof_url?: string; processed_at?: string; destination_method?: string | null };
+}
+
+
+interface WalletData {
+  balance: number;
+  currency: string;
+  transactions: Array<{
+    id: number;
+    amount: number;
+    balance_after: number;
+    description: string;
+    created_at: string;
+  }>;
 }
 
 const statusInfo: Record<string, { label: string; className: string; icon: typeof Clock3 }> = {
@@ -57,6 +71,7 @@ const rupiah = (value: number) => new Intl.NumberFormat("id-ID", { style: "curre
 export default function TransactionHistory() {
   const navigate = useNavigate();
   const [orders, setOrders] = useState<OrderItem[]>([]);
+  const [wallet, setWallet] = useState<WalletData>({ balance: 0, currency: "IDR", transactions: [] });
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [proof, setProof] = useState<string | null>(null);
@@ -68,8 +83,12 @@ export default function TransactionHistory() {
     setLoading(true);
     setError(null);
     try {
-      const response = await http.get("/orders");
-      setOrders(response.data.data || []);
+      const [ordersResponse, walletResponse] = await Promise.all([
+        http.get("/orders"),
+        http.get("/student/wallet"),
+      ]);
+      setOrders(ordersResponse.data.data || []);
+      setWallet(walletResponse.data || { balance: 0, currency: "IDR", transactions: [] });
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
         if (!err.response) setError("network");
@@ -95,9 +114,32 @@ export default function TransactionHistory() {
   return (
     <StudentLayout title="Riwayat Transaksi">
       <div className="mx-auto max-w-6xl space-y-6 pb-12">
-        <section className="flex flex-col justify-between gap-5 rounded-[1.75rem] bg-gradient-to-br from-slate-950 to-indigo-950 p-5 text-white sm:rounded-[2rem] sm:p-7 md:flex-row md:items-end">
-          <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Keuangan murid</p><h1 className="mt-3 text-2xl font-black sm:text-3xl">Tagihan, transfer, dan refund</h1><p className="mt-2 text-sm text-indigo-100/70">Semua nominal dan status keputusan admin tercatat di sini.</p></div><Button onClick={load} variant="outline" className="w-full rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white md:w-auto"><RefreshCw size={16} className="mr-2" />Muat ulang</Button>
+        <section className="grid gap-4 rounded-[1.75rem] bg-gradient-to-br from-slate-950 to-indigo-950 p-5 text-white sm:rounded-[2rem] sm:p-7 lg:grid-cols-[1fr_20rem] lg:items-end">
+          <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Keuangan murid</p><h1 className="mt-3 text-2xl font-black sm:text-3xl">Tagihan, transfer, refund, dan saldo</h1><p className="mt-2 text-sm text-indigo-100/70">Semua nominal dan status keputusan admin tercatat di sini.</p><Button onClick={load} variant="outline" className="mt-5 w-full rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white sm:w-auto"><RefreshCw size={16} className="mr-2" />Muat ulang</Button></div>
+          <div className="rounded-2xl border border-white/15 bg-white/10 p-5 backdrop-blur-sm"><div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/10 text-indigo-200"><WalletCards size={20} /></span><div><p className="text-xs font-black uppercase tracking-wide text-indigo-200">Saldo BimbelKu</p><p className="mt-1 text-2xl font-black">{rupiah(wallet.balance)}</p></div></div><p className="mt-3 text-xs leading-5 text-indigo-100/70">Saldo hanya berubah melalui mutasi sistem. Refund ke saldo akan muncul pada riwayat di bawah.</p></div>
         </section>
+        {wallet.transactions.length > 0 && (
+          <section className="overflow-hidden rounded-[1.5rem] border border-indigo-100 bg-white">
+            <div className="border-b border-indigo-100 bg-indigo-50/70 px-4 py-3 sm:px-5">
+              <p className="text-sm font-black text-indigo-950">Riwayat mutasi Saldo BimbelKu</p>
+              <p className="mt-1 text-xs text-indigo-700">Setiap perubahan saldo dibuat oleh sistem dan tidak dapat diedit.</p>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {wallet.transactions.slice(0, 20).map((transaction) => (
+                <div key={transaction.id} className="flex flex-col justify-between gap-3 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
+                  <div>
+                    <p className="text-sm font-black text-slate-800">{transaction.description}</p>
+                    <p className="mt-1 text-xs text-slate-400">{new Date(transaction.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}</p>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <p className="font-black text-indigo-700">+{rupiah(transaction.amount)}</p>
+                    <p className="mt-1 text-[11px] text-slate-500">Saldo setelah transaksi {rupiah(transaction.balance_after)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
         <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-100 bg-white p-2">
           {[["all", "Semua"], ["pending", "Belum dibayar"], ["submitted", "Diperiksa"], ["paid", "Diterima"], ["rejected", "Ditolak"], ["refund", "Refund"]].map(([value, label]) => <button key={value} onClick={() => setFilter(value)} className={`whitespace-nowrap rounded-xl px-4 py-2 text-xs font-black ${filter === value ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>{label}</button>)}
         </div>
@@ -118,7 +160,7 @@ export default function TransactionHistory() {
                   <div className="flex flex-wrap items-center justify-between gap-3 md:justify-end"><div><p className="text-left text-xl font-black text-slate-900 md:text-right">{rupiah(order.amount)}</p><p className="mt-1 flex items-center gap-1 text-[11px] text-slate-400 md:justify-end"><CalendarDays size={12} />{new Date(order.created_at).toLocaleDateString("id-ID")}</p></div><span className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-bold ${status.className}`}><Icon size={14} />{status.label}</span></div>
                 </div>
                 {order.payment_rejection_reason && <div className="mt-4 rounded-xl border border-rose-100 bg-rose-50 p-3 text-xs leading-5 text-rose-700">Alasan admin: {order.payment_rejection_reason}</div>}
-                {order.refund && <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50 p-3 text-sm text-violet-800"><p className="font-black">Refund {order.refund.status} · {rupiah(order.refund.amount)}</p><p className="mt-1 text-xs">{order.refund.reason}</p></div>}
+                {order.refund && <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50 p-3 text-sm text-violet-800"><p className="font-black">Refund {order.refund.status} · {rupiah(order.refund.amount)}</p><p className="mt-1 text-xs">{order.refund.reason}</p>{order.refund.status === "paid" && <p className="mt-2 text-xs font-black">Tujuan: {order.refund.destination_method === "bimbelku_balance" ? "Saldo BimbelKu" : "Rekening/e-wallet asal"}</p>}</div>}
                 <div className="mt-4 flex flex-wrap gap-2">
                   {["pending", "rejected"].includes(order.status) && (
                     <Button
@@ -167,7 +209,7 @@ export default function TransactionHistory() {
           </div>
         )}
       </div>
-      {proof && <div className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/75 p-4 backdrop-blur-sm" onClick={() => setProof(null)}><div className="max-w-xl rounded-[2rem] bg-white p-3 shadow-2xl" onClick={(event) => event.stopPropagation()}><ProtectedImage source={proof} alt="Bukti transaksi" className="max-h-[78vh] w-full rounded-2xl object-contain" /><Button variant="ghost" className="mt-2 w-full rounded-xl" onClick={() => setProof(null)}>Tutup</Button></div></div>}
+      {proof && <div role="presentation" className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/75 p-4 backdrop-blur-sm" onClick={() => setProof(null)}><div role="dialog" aria-modal="true" aria-label="Detail transaksi" className="max-w-xl rounded-[2rem] bg-white p-3 shadow-2xl" onClick={(event) => event.stopPropagation()}><ProtectedImage source={proof} alt="Bukti transaksi" className="max-h-[78dvh] w-full rounded-2xl object-contain" /><Button variant="ghost" className="mt-2 w-full rounded-xl" onClick={() => setProof(null)}>Tutup</Button></div></div>}
     </StudentLayout>
   );
 }

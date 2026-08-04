@@ -79,6 +79,8 @@ const Navbar = () => {
             <img 
               src="/bimbel_cerdas.png" 
               alt="Logo BimbelKu" 
+              loading="eager"
+              decoding="async"
               className="h-10 w-auto object-contain" 
             />
             <span className="text-xl font-bold text-foreground"></span>

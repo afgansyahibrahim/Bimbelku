@@ -14,10 +14,14 @@ export default function SettingsDisplay() {
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewObjectUrlRef = useRef<string | null>(null);
 
   // Ambil gambar saat ini
   useEffect(() => {
     fetchCurrentCover();
+    return () => {
+      if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current);
+    };
   }, []);
 
   const fetchCurrentCover = async () => {
@@ -31,24 +35,71 @@ export default function SettingsDisplay() {
     }
   };
 
-  // Handle pilih file
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const selected = e.target.files[0];
-      const error = validateUpload(selected, {
-        label: "Sampul tutor",
-        maxSizeMb: 2,
-        extensions: ["jpg", "jpeg", "png", "webp"],
+  const optimizeCoverImage = async (selected: File): Promise<File> => {
+    const sourceUrl = URL.createObjectURL(selected);
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const element = new window.Image();
+        element.onload = () => resolve(element);
+        element.onerror = () => reject(new Error("Gambar tidak dapat dibaca."));
+        element.src = sourceUrl;
       });
-      if (error) {
-        toast.error(error);
-        e.target.value = "";
-        return;
-      }
-      setFile(selected);
-      // Buat preview lokal
-      const objectUrl = URL.createObjectURL(selected);
+
+      const maxWidth = 1600;
+      const maxHeight = 900;
+      const ratio = Math.min(1, maxWidth / image.naturalWidth, maxHeight / image.naturalHeight);
+      const width = Math.max(1, Math.round(image.naturalWidth * ratio));
+      const height = Math.max(1, Math.round(image.naturalHeight * ratio));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) return selected;
+      context.drawImage(image, 0, 0, width, height);
+
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, "image/webp", 0.82);
+      });
+      if (!blob || blob.size >= selected.size) return selected;
+
+      return new File([blob], "sampul-tutor.webp", {
+        type: "image/webp",
+        lastModified: Date.now(),
+      });
+    } finally {
+      URL.revokeObjectURL(sourceUrl);
+    }
+  };
+
+  // Handle pilih file dan kecilkan gambar sebelum dikirim.
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = event.target.files?.[0];
+    if (!selected) return;
+
+    const error = validateUpload(selected, {
+      label: "Sampul tutor",
+      maxSizeMb: 2,
+      extensions: ["jpg", "jpeg", "png", "webp"],
+    });
+    if (error) {
+      toast.error(error);
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      const optimized = await optimizeCoverImage(selected);
+      setFile(optimized);
+      if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current);
+      const objectUrl = URL.createObjectURL(optimized);
+      previewObjectUrlRef.current = objectUrl;
       setPreview(objectUrl);
+      if (optimized.size < selected.size) {
+        toast.success("Gambar diperkecil agar halaman tutor lebih ringan.");
+      }
+    } catch {
+      toast.error("Gambar tidak dapat diproses. Pilih file lain.");
+      event.target.value = "";
     }
   };
 
@@ -77,8 +128,13 @@ export default function SettingsDisplay() {
         }
       });
       toast.success("Sampul tutor berhasil diperbarui.");
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+        previewObjectUrlRef.current = null;
+      }
       setPreview(res.data.url); // Update preview dari server
       setFile(null); // Reset file input
+      if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (error) {
       toast.error("Gagal mengupload gambar.");
     } finally {
@@ -112,7 +168,7 @@ export default function SettingsDisplay() {
                         <Loader2 className="animate-spin" />
                     </div>
                 ) : preview ? (
-                    <img src={preview} alt="Cover Preview" className="w-full h-full object-cover" />
+                    <img src={preview} alt="Pratinjau sampul tutor" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                 ) : (
                     <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
                         <Image size={48} className="mb-2 opacity-50"/>
@@ -121,16 +177,16 @@ export default function SettingsDisplay() {
                 )}
 
                 {/* Overlay Hover */}
-                <div className="absolute inset-0 bg-slate-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
+                <button type="button" aria-label="Pilih gambar sampul tutor" className="absolute inset-0 flex items-center justify-center bg-slate-900/50 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
                      onClick={() => fileInputRef.current?.click()}>
                     <div className="bg-white/20 backdrop-blur-md text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 border border-white/30">
                         <Upload size={18}/> Ganti Gambar
                     </div>
-                </div>
+                </button>
             </div>
 
             {/* Actions */}
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-2 text-xs text-slate-400 font-medium bg-slate-50 px-3 py-2 rounded-lg">
                     <Info size={14}/> Rekomendasi: 1200 x 400 pixel (JPG/PNG)
                 </div>
@@ -146,6 +202,7 @@ export default function SettingsDisplay() {
                     
                     {file && (
                          <button 
+                            type="button"
                             onClick={handleSave} 
                             disabled={isLoading}
                             className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-800 transition shadow-lg shadow-slate-200 disabled:opacity-50 flex items-center gap-2"

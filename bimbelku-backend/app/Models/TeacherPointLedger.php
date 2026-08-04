@@ -27,4 +27,9 @@ class TeacherPointLedger extends Model
     {
         return $this->belongsTo(User::class, 'actor_id');
     }
+
+    public function appeal()
+    {
+        return $this->hasOne(TeacherAppeal::class);
+    }
 }

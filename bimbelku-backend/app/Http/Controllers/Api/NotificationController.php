@@ -3,66 +3,72 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
 use App\Models\Notification;
-use App\Models\User;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Http\Request;
 
 class NotificationController extends Controller
 {
-    // [ADMIN] Kirim Notifikasi
     public function send(Request $request)
     {
-        $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'title' => 'required|string|max:180',
-            'message' => 'required|string|max:2000',
-            'type' => 'nullable|in:info,success,warning,error'
+        $validated = $request->validate([
+            'user_id' => ['required', 'exists:users,id'],
+            'title' => ['required', 'string', 'max:180'],
+            'message' => ['required', 'string', 'max:2000'],
+            'type' => ['nullable', 'in:info,success,warning,error'],
+            'target_url' => ['nullable', 'string', 'max:500', 'regex:/^\/(?!\/)[A-Za-z0-9_\-\/?=&.]*$/'],
         ]);
 
-        $notif = Notification::create([
-            'user_id' => $request->user_id,
-            'title'   => $request->title,
-            'message' => $request->message,
-            'type'    => $request->type ?? 'info',
-            'is_read' => false
+        $notification = Notification::create([
+            ...$validated,
+            'type' => $validated['type'] ?? 'info',
+            'is_read' => false,
         ]);
 
-        return response()->json(['message' => 'Notifikasi berhasil dikirim!', 'data' => $notif]);
+        return response()->json(['message' => 'Notifikasi berhasil dikirim!', 'data' => $notification]);
     }
 
-    // [USER] Ambil Notifikasi Saya
-    public function index()
+    public function index(Request $request)
     {
-        $user = Auth::user();
-        $notifications = Notification::where('user_id', $user->id)
-                            ->orderBy('created_at', 'desc')
-                            ->take(20) // Ambil 20 terakhir
-                            ->get();
-        
-        $unreadCount = Notification::where('user_id', $user->id)->where('is_read', false)->count();
+        $validated = $request->validate([
+            'status' => ['nullable', 'in:all,read,unread'],
+            'type' => ['nullable', 'in:info,success,warning,error'],
+            'per_page' => ['nullable', 'integer', 'between:1,100'],
+        ]);
+        $query = Notification::query()
+            ->where('user_id', $request->user()->id)
+            ->when(($validated['status'] ?? 'all') === 'unread', fn ($item) => $item->where('is_read', false))
+            ->when(($validated['status'] ?? 'all') === 'read', fn ($item) => $item->where('is_read', true))
+            ->when(!empty($validated['type']), fn ($item) => $item->where('type', $validated['type']))
+            ->latest();
 
         return response()->json([
-            'notifications' => $notifications,
-            'unread_count' => $unreadCount
+            'notifications' => $query->limit((int) ($validated['per_page'] ?? 20))->get(),
+            'unread_count' => Notification::query()
+                ->where('user_id', $request->user()->id)
+                ->where('is_read', false)
+                ->count(),
         ]);
     }
 
-    // [USER] Tandai Sudah Dibaca
-    public function markAsRead($id)
+    public function markAsRead(Request $request, int $id)
     {
-        $notif = Notification::where('user_id', Auth::id())->find($id);
-        if ($notif) {
-            $notif->is_read = true;
-            $notif->save();
+        $notification = Notification::query()
+            ->where('user_id', $request->user()->id)
+            ->findOrFail($id);
+        if (!$notification->is_read) {
+            $notification->update(['is_read' => true]);
         }
-        return response()->json(['success' => true]);
+
+        return response()->json(['success' => true, 'data' => $notification->fresh()]);
     }
-    
-    // [USER] Tandai Semua Dibaca
-    public function markAllRead()
+
+    public function markAllRead(Request $request)
     {
-        Notification::where('user_id', Auth::id())->update(['is_read' => true]);
+        Notification::query()
+            ->where('user_id', $request->user()->id)
+            ->where('is_read', false)
+            ->update(['is_read' => true]);
+
         return response()->json(['success' => true]);
     }
 }

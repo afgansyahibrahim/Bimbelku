@@ -1,5 +1,7 @@
 # Tahap 3 — Pasang dan Uji
 
+> **Dokumen historis:** langkah TOTP dan admin kedua sudah tidak berlaku setelah Audit Checkpoint 1 tanggal 3 Agustus 2026.
+
 ## 1. Cadangkan instalasi lama
 
 Cadangkan:
@@ -59,7 +61,7 @@ tenggat sistem lainnya.
 ### Admin keuangan
 
 - Buka menu Keamanan Keuangan.
-- Aktifkan TOTP memakai aplikasi autentikator.
+- Langkah autentikator sudah tidak digunakan pada runtime terbaru.
 - Masukkan kode enam digit untuk membuka akses.
 - Pastikan halaman keuangan terkunci kembali setelah masa otorisasi habis.
 
@@ -80,7 +82,7 @@ tenggat sistem lainnya.
 - Buat pencairan minimal Rp5.000.000.
 - Minta persetujuan sebagai admin pertama.
 - Pastikan admin pertama tidak dapat menyetujui sendiri.
-- Setujui memakai admin kedua, lalu proses pencairan.
+- Proses pencairan menggunakan admin utama, bukti transfer, konfirmasi, idempotensi, dan audit.
 
 ## Larangan
 

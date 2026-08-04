@@ -88,7 +88,7 @@ export default function Account() {
             <>
               <div className="flex items-center gap-4 sm:gap-5">
                 <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white/15 text-xl font-black ring-4 ring-white/10 sm:h-20 sm:w-20 sm:rounded-3xl sm:text-2xl">
-                  {student?.avatar_url || student?.avatar ? <img src={student.avatar_url || student.avatar || ""} alt="Foto profil" className="h-full w-full object-cover" /> : student?.name?.charAt(0) || "M"}
+                  {student?.avatar_url || student?.avatar ? <img src={student.avatar_url || student.avatar || ""} alt="Foto profil" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : student?.name?.charAt(0) || "M"}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-200">Akun murid</p>

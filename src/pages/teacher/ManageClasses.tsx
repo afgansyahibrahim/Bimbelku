@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import TeacherLayout from "@/components/TeacherLayout";
+import CameraCapture from "@/components/CameraCapture";
 import LearningSessionHub from "@/components/LearningSessionHub";
 import ProtectedImage, { openProtectedFile } from "@/components/ProtectedImage";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
@@ -111,6 +112,7 @@ export default function ManageClasses() {
   const [processing, setProcessing] = useState(false);
   const [meetingLink, setMeetingLink] = useState("");
   const [evidence, setEvidence] = useState<File | null>(null);
+  const [evidenceCapturedAt, setEvidenceCapturedAt] = useState("");
   const [notes, setNotes] = useState("");
   const [studentId, setStudentId] = useState("");
   const [incidentType, setIncidentType] = useState("");
@@ -154,6 +156,7 @@ export default function ManageClasses() {
   const openAction = (type: Action, item: TeacherClass) => {
     setAction({ type, item });
     setEvidence(null);
+    setEvidenceCapturedAt("");
     setNotes("");
     setStudentId(item.type === "private" ? String(item.participants[0]?.student_id || "") : "");
     setIncidentType("");
@@ -186,6 +189,8 @@ export default function ManageClasses() {
     if (action.type === "complete") {
       endpoint = "complete";
       payload.append("notes", notes);
+      payload.append("capture_source", "camera");
+      payload.append("captured_at", evidenceCapturedAt);
     } else if (action.type === "absence") {
       endpoint = "absence";
       payload.append("chronology", notes);
@@ -237,9 +242,13 @@ export default function ManageClasses() {
   return (
     <TeacherLayout title="Kelas Saya">
       <div className="mx-auto max-w-7xl space-y-7 pb-12">
-        <section className="flex flex-col justify-between gap-5 rounded-[2rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-7 text-white shadow-xl md:flex-row md:items-end">
-          <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Pelaksanaan sesi</p><h1 className="mt-3 text-3xl font-black">Kelas yang sudah dipesan</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Kelola tautan, lihat lokasi, kirim bukti selesai, atau laporkan ketidakhadiran dan keadaan darurat.</p></div>
+        <section className="flex flex-col justify-between gap-5 rounded-[1.7rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-5 text-white shadow-xl sm:rounded-[2rem] sm:p-7 md:flex-row md:items-end">
+          <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Pelaksanaan sesi</p><h1 className="mt-3 text-2xl font-black sm:text-3xl">Kelas yang sudah dipesan</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Kelola tautan, lihat lokasi, kirim bukti selesai, atau laporkan ketidakhadiran dan keadaan darurat.</p></div>
           <Button onClick={loadClasses} variant="outline" className="rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"><RefreshCw size={16} className="mr-2" />Muat ulang</Button>
+        </section>
+
+        <section className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {["Check-in PIN", "Catat kehadiran", "Check-out & laporan", "Foto bukti selesai"].map((label, index) => <div key={label} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm"><span className="grid h-7 w-7 place-items-center rounded-lg bg-indigo-50 text-xs font-black text-indigo-700">{index + 1}</span><p className="mt-2 text-xs font-black leading-5 text-slate-700">{label}</p></div>)}
         </section>
 
         {classes.length === 0 ? (
@@ -259,7 +268,7 @@ export default function ManageClasses() {
       </div>
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[2rem] sm:max-w-2xl">
+        <DialogContent className="max-h-[92dvh] overflow-y-auto rounded-[2rem] sm:max-w-2xl">
           {selected && <>
             <DialogHeader><DialogTitle className="text-2xl">{selected.subject} · {selected.chapter || selected.topic || "Sesi belajar"}</DialogTitle><DialogDescription>{dateTime(selected.start_at)} · {selected.type === "group" ? "Kelompok" : "Privat"}</DialogDescription></DialogHeader>
             <div className="grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm sm:grid-cols-2"><Info icon={GraduationCap} text={`${selected.education_level || ""} ${selected.grade || ""}`} /><Info icon={Clock3} text={`${new Date(selected.start_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}–${new Date(selected.end_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`} /><Info icon={selected.method === "online" ? Monitor : MapPin} text={selected.method === "online" ? "Online" : selected.address || "Alamat murid"} /><Info icon={WalletCards} text={`Komisi admin ${selected.commission_percent}%`} /></div>
@@ -278,14 +287,14 @@ export default function ManageClasses() {
       </Dialog>
 
       <Dialog open={Boolean(action)} onOpenChange={(open) => !open && setAction(null)}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[2rem] sm:max-w-lg">
+        <DialogContent className="max-h-[92dvh] overflow-y-auto rounded-[2rem] sm:max-w-lg">
           {action && <>
             <DialogHeader><DialogTitle>{action.type === "complete" ? "Kirim bukti penyelesaian" : action.type === "absence" ? "Laporkan murid tidak hadir" : "Laporkan keadaan darurat"}</DialogTitle><DialogDescription>{action.type === "complete" ? "Murid memiliki 48 jam untuk menyetujui atau mengajukan keberatan." : action.type === "absence" ? "Laporan dapat diajukan setelah keterlambatan lebih dari 15 menit dan akan diperiksa admin." : "Refund penuh langsung masuk antrean. Bukti dan kronologi akan diperiksa admin."}</DialogDescription></DialogHeader>
             <form onSubmit={submitAction} className="space-y-4">
               {action.type === "absence" && action.item.type === "group" && <div><Label>Pilih murid</Label><Select value={studentId} onValueChange={setStudentId}><SelectTrigger className="mt-2 h-11 rounded-xl"><SelectValue placeholder="Murid yang tidak hadir" /></SelectTrigger><SelectContent>{action.item.participants.filter((item) => item.status === "paid").map((item) => <SelectItem key={item.student_id} value={String(item.student_id)}>{item.name}</SelectItem>)}</SelectContent></Select></div>}
               {action.type === "emergency" && <><div><Label>Jenis keadaan</Label><Input required maxLength={120} className="mt-2 rounded-xl" value={incidentType} onChange={(event) => setIncidentType(event.target.value)} placeholder="Contoh: kecelakaan dalam perjalanan" /></div><div><Label>Waktu kejadian</Label><Input required type="datetime-local" className="mt-2 rounded-xl" value={incidentAt} onChange={(event) => setIncidentAt(event.target.value)} /></div><div><Label>Lokasi kejadian</Label><Input required maxLength={500} className="mt-2 rounded-xl" value={incidentLocation} onChange={(event) => setIncidentLocation(event.target.value)} /></div><div><Label>Dampak terhadap sesi</Label><Textarea required minLength={20} maxLength={1500} className="mt-2 min-h-24 rounded-xl" value={impact} onChange={(event) => setImpact(event.target.value)} /></div></>}
               <div><Label>{action.type === "complete" ? "Catatan pelaksanaan" : "Kronologi lengkap"}</Label><Textarea required minLength={action.type === "complete" ? 20 : action.type === "absence" ? 30 : 50} maxLength={action.type === "emergency" ? 3000 : action.type === "absence" ? 2500 : 2000} className="mt-2 min-h-36 rounded-xl" value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Tuliskan kejadian dengan jelas dan masuk akal" /></div>
-              <div><Label>Bukti {action.type === "complete" ? "foto pelaksanaan" : "yang dapat dipercaya"}</Label><Input required className="mt-2" type="file" accept={action.type === "complete" ? ".jpg,.jpeg,.png,.webp" : ".jpg,.jpeg,.png,.webp,.pdf"} onChange={(event) => selectEvidence(event.target.files?.[0])} /></div>
+              {action.type === "complete" ? <div><Label>Bukti pelaksanaan dari kamera</Label><div className="mt-2"><CameraCapture file={evidence} required onCapture={(file) => { selectEvidence(file); setEvidenceCapturedAt(new Date().toISOString()); }} label="Ambil foto pelaksanaan sekarang" dialogTitle="Foto bukti pelaksanaan" dialogDescription="Ambil foto kondisi kelas saat ini. Galeri tidak digunakan agar waktu pengambilan dapat diverifikasi." captureButtonLabel="Ambil bukti" facingMode="environment" guideShape="frame" /></div><p className="mt-2 text-xs leading-5 text-slate-500">Foto harus diambil langsung dan dikirim dalam 20 menit.</p></div> : <div><Label>Bukti yang dapat dipercaya</Label><Input required className="mt-2" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(event) => selectEvidence(event.target.files?.[0])} /></div>}
               <Button className={`w-full rounded-xl ${action.type === "emergency" ? "bg-rose-600 hover:bg-rose-700" : "bg-indigo-600 hover:bg-indigo-700"}`} disabled={processing}>{processing && <Loader2 size={16} className="mr-2 animate-spin" />}Kirim</Button>
             </form>
           </>}

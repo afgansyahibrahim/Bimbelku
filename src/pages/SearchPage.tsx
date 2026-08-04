@@ -35,7 +35,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import http, { getApiError, getCached, STORAGE_BASE_URL } from "@/lib/http";
-import { isValidHttpUrl, isValidPhone, validateUpload } from "@/lib/validation";
+import { isValidHttpUrl, isValidPhone, sanitizePhoneInput, validateUpload } from "@/lib/validation";
 import { educationDetailLabel } from "@/lib/educationCatalog";
 
 interface Topic {
@@ -235,11 +235,14 @@ const today = () => {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 };
 
-const nextTenMinuteTime = () => {
-  const date = new Date();
-  date.setSeconds(0, 0);
-  date.setMinutes(Math.ceil((date.getMinutes() + 0.01) / 10) * 10);
-  return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+const FULL_HOUR_OPTIONS = Array.from({ length: 23 }, (_, hour) => `${String(hour).padStart(2, "0")}:00`);
+
+const nextFullHourTime = () => {
+  const now = new Date();
+  const candidate = new Date(now);
+  candidate.setHours(now.getHours() + 1, 0, 0, 0);
+  if (candidate.toDateString() !== now.toDateString() || candidate.getHours() >= 23) return "";
+  return `${String(candidate.getHours()).padStart(2, "0")}:00`;
 };
 
 const radarLabel = (item: BookingRequestItem) => {
@@ -305,30 +308,28 @@ export default function SearchPage() {
   const subtopics = filteredTopics.filter((topic) => topic.chapter === form.chapter);
   const estimatedEnd = useMemo(() => {
     if (!form.start_time) return "--:--";
-    const [hours, minutes] = form.start_time.split(":").map(Number);
-    const date = new Date(2000, 0, 1, hours, minutes);
-    date.setHours(date.getHours() + Number(form.duration_hours));
-    return date.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", hour12: false });
-  }, [form.start_time, form.duration_hours]);
+    const [hours] = form.start_time.split(":").map(Number);
+    return `${String(hours + 1).padStart(2, "0")}:00`;
+  }, [form.start_time]);
   const scheduleIssue = useMemo(() => {
     if (!form.scheduled_date || !form.start_time) return null;
 
     const [hours, minutes] = form.start_time.split(":").map(Number);
-    const durationMinutes = Number(form.duration_hours) * 60;
+    const durationMinutes = 60;
     if ((hours * 60) + minutes + durationMinutes >= 24 * 60) {
-      return "Sesi harus selesai pada hari yang sama. Pilih jam mulai lebih awal atau kurangi durasi.";
+      return "Sesi harus selesai pada hari yang sama. Pilih jam mulai paling lambat 22.00.";
     }
 
     const startAt = new Date(`${form.scheduled_date}T${form.start_time}:00`);
-    if (minutes % 10 !== 0) {
-      return "Gunakan menit kelipatan 10: 00, 10, 20, 30, 40, atau 50.";
+    if (minutes !== 0) {
+      return "Jam mulai hanya boleh menggunakan menit 00.";
     }
     if (startAt.getTime() <= Date.now()) {
       return "Pilih waktu mulai terdekat yang belum berlalu.";
     }
 
     return null;
-  }, [form.duration_hours, form.scheduled_date, form.start_time]);
+  }, [form.scheduled_date, form.start_time]);
 
   useEffect(() => {
     const ready = currentStep >= 3
@@ -467,7 +468,7 @@ export default function SearchPage() {
       }
       setForm((current) => ({
         ...current,
-        contact_number: profileResponse.data?.phone || current.contact_number,
+        contact_number: sanitizePhoneInput(profileResponse.data?.phone || current.contact_number),
         address: profileResponse.data?.address || current.address,
         maps_link: profileResponse.data?.maps_link || current.maps_link,
         latitude: profileResponse.data?.latitude?.toString() || current.latitude,
@@ -933,7 +934,7 @@ export default function SearchPage() {
                   <div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-5">
                     <Label className="font-bold text-emerald-950">Alamat pertemuan</Label>
                     <Textarea className="mt-2 min-h-24 rounded-xl bg-white" value={form.address} onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))} placeholder="Alamat lengkap rumah murid" />
-                    <Input inputMode="tel" className="mt-3 h-11 rounded-xl bg-white" value={form.contact_number} onChange={(event) => setForm((current) => ({ ...current, contact_number: event.target.value }))} placeholder="Nomor WhatsApp atau telepon" />
+                    <Input inputMode="tel" className="mt-3 h-11 rounded-xl bg-white" value={form.contact_number} maxLength={16} onChange={(event) => setForm((current) => ({ ...current, contact_number: sanitizePhoneInput(event.target.value) }))} placeholder="Nomor WhatsApp atau telepon" />
                     <Input className="mt-3 h-11 rounded-xl bg-white" value={form.maps_link} onChange={(event) => setForm((current) => ({ ...current, maps_link: event.target.value }))} placeholder="Tautan Google Maps, opsional" />
                     <Button type="button" variant="outline" onClick={detectLocation} disabled={locating} className="mt-3 w-full rounded-xl border-emerald-200 bg-white text-emerald-700 sm:w-auto">
                       <LocateFixed size={16} className={locating ? "mr-2 animate-pulse" : "mr-2"} />
@@ -956,21 +957,21 @@ export default function SearchPage() {
               <div className="mt-7 animate-in fade-in slide-in-from-right-3 duration-300">
                 <div className="grid gap-5 md:grid-cols-2">
                   <Field label="Tanggal" icon={CalendarDays}>
-                    <Input type="date" min={today()} className="h-12 rounded-xl" value={form.scheduled_date} onChange={(event) => setForm((current) => ({ ...current, scheduled_date: event.target.value, start_time: event.target.value === today() && !current.start_time ? nextTenMinuteTime() : current.start_time }))} />
+                    <Input type="date" min={today()} className="h-12 rounded-xl" value={form.scheduled_date} onChange={(event) => setForm((current) => ({ ...current, scheduled_date: event.target.value, start_time: event.target.value === today() && !current.start_time ? nextFullHourTime() : current.start_time }))} />
                   </Field>
                   <Field label="Jam mulai" icon={Clock3}>
-                    <Input type="time" step={600} className="h-12 rounded-xl" value={form.start_time} onChange={(event) => setForm((current) => ({ ...current, start_time: event.target.value }))} />
+                    <Select value={form.start_time} onValueChange={(value) => setForm((current) => ({ ...current, start_time: value }))}>
+                      <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="Pilih jam" /></SelectTrigger>
+                      <SelectContent>{FULL_HOUR_OPTIONS.map((time) => <SelectItem key={time} value={time}>{time.replace(":", ".")}</SelectItem>)}</SelectContent>
+                    </Select>
                   </Field>
                   <Field label="Durasi sesi" icon={Clock3}>
-                    <Select value={form.duration_hours} onValueChange={(value) => setForm((current) => ({ ...current, duration_hours: value }))}>
-                      <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
-                      <SelectContent>{[1, 2, 3, 4].map((hour) => <SelectItem key={hour} value={String(hour)}>{hour} jam</SelectItem>)}</SelectContent>
-                    </Select>
+                    <div className="flex h-12 items-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-black text-slate-700">1 jam</div>
                   </Field>
                   <div className="rounded-2xl border border-indigo-100 bg-indigo-50 px-5 py-4">
                     <p className="text-xs font-bold uppercase tracking-widest text-indigo-500">Rentang sesi</p>
                     <p className="mt-1 font-black text-indigo-950">{form.start_time || "--:--"}–{estimatedEnd} WIB</p>
-                    <p className="mt-1 text-xs leading-5 text-indigo-700">Pilihan menit tersedia setiap 10 menit.</p>
+                    <p className="mt-1 text-xs leading-5 text-indigo-700">Semua pilihan waktu menggunakan menit 00.</p>
                   </div>
                 </div>
                 {scheduleIssue && form.scheduled_date && form.start_time && (
@@ -1173,7 +1174,7 @@ function RequestCard({
         {teacher && ["teacher_selected", "teacher_accepted_waiting_group", "awaiting_payment", "payment_submitted", "payment_rejected", "confirmed", "in_progress", "awaiting_student_approval"].includes(item.status) && (
           <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
             <div className="flex gap-3">
-              <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white text-emerald-700">{photo ? <img src={photo} alt="" className="h-full w-full object-cover" /> : <UserRoundCheck />}</div>
+              <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white text-emerald-700">{photo ? <img src={photo} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <UserRoundCheck />}</div>
               <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate font-black text-emerald-950">{teacher.name}</p><ShieldCheck size={16} className="text-emerald-600" /></div><p className="mt-0.5 text-xs text-emerald-700">{teacher.teacher_profile?.expertise || item.subject_name}{rating ? ` · ${rating.toFixed(1)} ★` : " · Tutor terverifikasi"}</p><p className="mt-2 line-clamp-2 text-xs leading-5 text-emerald-800">{teacher.teacher_profile?.bio || "Identitas dan kualifikasi tutor telah diperiksa admin."}</p></div>
             </div>
             {item.status === "teacher_selected" && (

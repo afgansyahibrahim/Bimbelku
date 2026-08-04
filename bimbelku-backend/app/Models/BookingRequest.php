@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 class BookingRequest extends Model
@@ -33,6 +34,22 @@ class BookingRequest extends Model
         'latitude' => 'float',
         'longitude' => 'float',
     ];
+
+    public function scopeMatchingAnchors(Builder $query): Builder
+    {
+        return $query->where(function (Builder $unique) {
+            $unique
+                ->whereNull('group_pool_id')
+                ->orWhereRaw(
+                    "booking_requests.id = (
+                        SELECT MIN(grouped_requests.id)
+                        FROM booking_requests AS grouped_requests
+                        WHERE grouped_requests.group_pool_id = booking_requests.group_pool_id
+                          AND grouped_requests.status IN ('matching', 'teacher_pending', 'no_teacher', 'expired')
+                    )"
+                );
+        });
+    }
 
     public function student()
     {
@@ -82,5 +99,10 @@ class BookingRequest extends Model
     public function packageSubject()
     {
         return $this->belongsTo(PackageSubject::class);
+    }
+
+    public function matchingOperationLogs()
+    {
+        return $this->hasMany(MatchingOperationLog::class);
     }
 }

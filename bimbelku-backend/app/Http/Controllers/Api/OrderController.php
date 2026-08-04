@@ -33,9 +33,14 @@ class OrderController extends Controller
 
         $validated = $request->validate([
             'file' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
-            'sender_name' => ['required', 'string', 'max:150'],
-            'bank_name' => ['required', 'string', 'max:100'],
-            'sender_account_number' => ['required', 'string', 'max:80', 'regex:/^[0-9 .+-]+$/'],
+            'sender_name' => ['required', 'string', 'max:150', 'regex:/\pL/u', 'not_regex:/\d/u'],
+            'bank_name' => ['required', 'string', 'max:100', 'regex:/\pL/u'],
+            'sender_account_number' => ['required', 'string', 'max:50', 'regex:/^[0-9]{6,50}$/'],
+        ], [
+            'sender_name.regex' => 'Nama pemilik rekening wajib mengandung huruf.',
+            'sender_name.not_regex' => 'Nama pemilik rekening tidak boleh memuat angka.',
+            'bank_name.regex' => 'Nama bank atau e-wallet wajib mengandung huruf.',
+            'sender_account_number.regex' => 'Nomor rekening atau e-wallet harus berisi 6–50 angka.',
         ]);
 
         $order = Order::query()

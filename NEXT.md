@@ -1,3 +1,11 @@
+# STATUS TERBARU — 3 AGUSTUS 2026
+
+Audit Checkpoint 1 telah menyinkronkan struktur, route, login, role, middleware, database, dan keputusan satu admin utama. Runtime tidak lagi memakai halaman autentikator atau persetujuan admin kedua; role, idempotensi, bukti transfer, dan audit tetap aktif. Acuan terbaru adalah `AUDIT_CHECKPOINT_1_STRUKTUR_ROUTE_LOGIN_ROLE_DATABASE_2026-08-03.md`.
+
+Pekerjaan berikutnya adalah Audit Checkpoint 2 setelah tes runtime Checkpoint 1 dijalankan di Laragon. Jangan mengulang patch lama setelah patch Checkpoint 1.
+
+---
+
 PEDOMAN PENGEMBANGAN LANJUTAN WEBSITE BIMBELKU
 
 Nama proyek: Website BimbelkuJenis dokumen: Aturan produk, daftar revisi, standar pengerjaan, dan standar pengujianSasaran pembaca: AI pengembang, programmer baru, reviewer, dan pemilik proyekStatus dokumen: Acuan utama setelah kode proyek dipahamiBahasa teknis: Ikuti istilah yang sudah digunakan pada kode
@@ -2719,3 +2727,18 @@ Setiap pengembang harus menandatangani pemahaman melalui ringkasan tertulis.
 Pengerjaan harus berhenti ketika aturan belum jelas.
 
 Persetujuan pemilik proyek diperlukan untuk perubahan tujuan produk.
+
+## Status Audit Lima Checkpoint — 3 Agustus 2026
+
+- Checkpoint 1: struktur, route, login, role, middleware, dan database — selesai secara statis; tes runtime lokal wajib dijalankan.
+- Checkpoint 2: admin, tutor, murid, kelas, jadwal, dan pembayaran — selesai secara statis; tes runtime lokal wajib dijalankan.
+- Checkpoint 3: chat, notifikasi, laporan, perkembangan, upload, dan fitur pendukung — selesai secara statis; tes runtime lokal wajib dijalankan.
+- Checkpoint 4 berikutnya: responsif, keamanan, performa, dan aksesibilitas.
+- Checkpoint 5: regresi akhir, skenario lengkap, dan dokumentasi penutupan.
+
+## Setelah Audit Checkpoint 4
+
+1. Jalankan `CheckpointFourQualityAuditTest`, typecheck, lint, build, dan performance budget di Laragon.
+2. Uji matriks desktop/tablet/HP serta keyboard.
+3. Kirim output `FAIL` sebelum masuk Checkpoint 5.
+4. Checkpoint 5 menjalankan regresi akhir dan skenario lengkap murid–tutor–admin.

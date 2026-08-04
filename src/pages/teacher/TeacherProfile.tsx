@@ -31,7 +31,14 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import http, { getApiError, getCached, STORAGE_BASE_URL } from "@/lib/http";
-import { isValidPhone, validateUpload } from "@/lib/validation";
+import {
+  isValidPersonName,
+  isValidPhone,
+  isValidRegionName,
+  sanitizePersonName,
+  sanitizePhoneInput,
+  validateUpload,
+} from "@/lib/validation";
 import { EDUCATION_LEVELS } from "@/lib/educationCatalog";
 
 const levels = [...EDUCATION_LEVELS];
@@ -123,13 +130,13 @@ export default function TeacherProfile() {
       const { user, profile: teacherProfile } = response.data;
       const subject = teacherProfile.subjects?.[0];
       setProfile({
-        name: user.name || "",
+        name: sanitizePersonName(user.name || ""),
         email: user.email || "",
         title: teacherProfile.title || "",
         location: teacherProfile.location || "",
         experience: teacherProfile.experience || "",
         bio: teacherProfile.bio || "",
-        whatsapp_number: teacherProfile.whatsapp_number || user.phone || "",
+        whatsapp_number: sanitizePhoneInput(teacherProfile.whatsapp_number || user.phone || ""),
         latitude: teacherProfile.latitude?.toString() || "",
         longitude: teacherProfile.longitude?.toString() || "",
         max_travel_km: teacherProfile.max_travel_km?.toString() || "12",
@@ -219,8 +226,16 @@ export default function TeacherProfile() {
 
   const saveProfile = async (event: FormEvent) => {
     event.preventDefault();
+    if (!isValidPersonName(profile.name)) {
+      toast.error("Nama lengkap harus berisi huruf dan tidak boleh memuat angka.");
+      return;
+    }
     if (!isValidPhone(profile.whatsapp_number)) {
-      toast.error("Nomor WhatsApp/telepon belum valid.");
+      toast.error("Nomor WhatsApp/telepon harus berisi 8–15 angka.");
+      return;
+    }
+    if (!isValidRegionName(profile.location)) {
+      toast.error("Kota atau wilayah wajib mengandung huruf dan tidak boleh hanya berisi angka atau simbol.");
       return;
     }
     setSavingProfile(true);
@@ -359,7 +374,7 @@ export default function TeacherProfile() {
     <TeacherLayout title="Profil Tutor">
       <div className="max-w-7xl mx-auto space-y-7 pb-12">
         <section
-          className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 bg-cover bg-center px-7 py-8 text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-500"
+          className="relative overflow-hidden rounded-[1.7rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 bg-cover bg-center p-5 text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-500 sm:rounded-[2rem] sm:px-7 sm:py-8"
           style={profile.profileCover ? {
             backgroundImage: `linear-gradient(120deg, rgba(2,6,23,.88), rgba(49,46,129,.78), rgba(76,29,149,.68)), url("${profile.profileCover}")`,
           } : undefined}
@@ -377,13 +392,13 @@ export default function TeacherProfile() {
           </label>
           <div className="relative flex flex-col gap-6 md:flex-row md:items-center">
             <label className="group relative h-28 w-28 shrink-0 cursor-pointer overflow-hidden rounded-[2rem] border-4 border-white/15 bg-white/10 shadow-xl">
-              {profile.photo ? <img src={profile.photo} alt={profile.name} className="h-full w-full object-cover" /> : <div className="h-full w-full flex items-center justify-center"><User size={38} className="text-indigo-200" /></div>}
+              {profile.photo ? <img src={profile.photo} alt={profile.name} loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <div className="h-full w-full flex items-center justify-center"><User size={38} className="text-indigo-200" /></div>}
               <div className="absolute inset-0 flex items-center justify-center bg-slate-950/60 opacity-0 transition group-hover:opacity-100"><Camera size={24} /></div>
               <input type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={(event) => handlePhoto(event.target.files?.[0])} />
             </label>
             <div className="min-w-0 flex-1">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-indigo-100"><Sparkles size={14} /> Profil pencocokan</div>
-              <h1 className="mt-4 truncate text-3xl font-black">{profile.name || "Profil Tutor"}</h1>
+              <h1 className="mt-4 truncate text-2xl font-black sm:text-3xl">{profile.name || "Profil Tutor"}</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/80">Data ini dipakai sistem untuk menilai kecocokan mata pelajaran, jenjang, mode, dan jarak kelas offline.</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 backdrop-blur">
@@ -397,11 +412,11 @@ export default function TeacherProfile() {
             <div className="flex items-start justify-between gap-4"><div><h2 className="text-2xl font-black text-slate-900">Identitas dan wilayah</h2><p className="mt-1 text-sm text-slate-500">Alamat lengkap murid hanya muncul setelah pembayaran dikonfirmasi.</p></div><div className="h-11 w-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center"><User size={20} /></div></div>
 
             <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-5">
-              <Field label="Nama lengkap"><Input value={profile.name} onChange={(event) => setProfile((current) => ({ ...current, name: event.target.value }))} className="h-12 rounded-xl" required /></Field>
+              <Field label="Nama lengkap"><Input value={profile.name} onChange={(event) => setProfile((current) => ({ ...current, name: sanitizePersonName(event.target.value) }))} className="h-12 rounded-xl" required /></Field>
               <Field label="Email"><Input value={profile.email} className="h-12 rounded-xl bg-slate-50" disabled /></Field>
               <Field label="Judul profil"><Input value={profile.title} onChange={(event) => setProfile((current) => ({ ...current, title: event.target.value }))} className="h-12 rounded-xl" placeholder="Contoh: Tutor Matematika" /></Field>
               <Field label="Pengalaman"><Input value={profile.experience} onChange={(event) => setProfile((current) => ({ ...current, experience: event.target.value }))} className="h-12 rounded-xl" placeholder="Contoh: 4 tahun" /></Field>
-              <div className="md:col-span-2"><Field label="Nomor WhatsApp/telepon"><Input required inputMode="tel" value={profile.whatsapp_number} onChange={(event) => setProfile((current) => ({ ...current, whatsapp_number: event.target.value }))} className="h-12 rounded-xl" placeholder="Contoh: 0812 3456 7890" /></Field></div>
+              <div className="md:col-span-2"><Field label="Nomor WhatsApp/telepon"><Input required inputMode="tel" autoComplete="tel" maxLength={16} value={profile.whatsapp_number} onChange={(event) => setProfile((current) => ({ ...current, whatsapp_number: sanitizePhoneInput(event.target.value) }))} className="h-12 rounded-xl" placeholder="Contoh: 0812 3456 7890" /></Field></div>
               <div className="md:col-span-2"><Field label="Kota atau wilayah tinggal"><Input value={profile.location} onChange={(event) => setProfile((current) => ({ ...current, location: event.target.value }))} className="h-12 rounded-xl" placeholder="Contoh: Jakarta Selatan" /></Field></div>
               <Field label="Latitude, opsional"><Input type="number" step="any" value={profile.latitude} onChange={(event) => setProfile((current) => ({ ...current, latitude: event.target.value }))} className="h-12 rounded-xl" placeholder="-6.200000" /></Field>
               <Field label="Longitude, opsional"><Input type="number" step="any" value={profile.longitude} onChange={(event) => setProfile((current) => ({ ...current, longitude: event.target.value }))} className="h-12 rounded-xl" placeholder="106.816666" /></Field>

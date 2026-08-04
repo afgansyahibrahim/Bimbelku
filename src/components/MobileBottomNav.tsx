@@ -1,7 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import {
   BookOpen,
-  CalendarClock,
   ClipboardCheck,
   Home,
   MessageSquare,
@@ -30,7 +29,8 @@ const teacherItems: NavItem[] = [
   { key: "home", to: "/guru", label: "Beranda", icon: Home },
   { key: "offers", to: "/guru/permintaan", label: "Permintaan", icon: ClipboardCheck },
   { key: "classes", to: "/guru/kelas", label: "Kelas", icon: BookOpen },
-  { key: "schedule", to: "/guru/jadwal", label: "Jadwal", icon: CalendarClock },
+  { key: "messages", to: "/guru/pesan", label: "Pesan", icon: MessageSquare },
+  { key: "account", to: "/guru/saya", label: "Saya", icon: User },
 ];
 
 export default function MobileBottomNav({ role }: { role: Role }) {
@@ -47,17 +47,26 @@ export default function MobileBottomNav({ role }: { role: Role }) {
     if (["/student/account", "/student/profile", "/student/history", "/student/vouchers", "/student/help"].some((route) => path === route || path.startsWith(`${route}/`))) return "account";
     return "";
   })();
+  const teacherActive = (() => {
+    const path = location.pathname;
+    if (path === "/guru") return "home";
+    if (path === "/guru/permintaan" || path.startsWith("/guru/permintaan/")) return "offers";
+    if (path === "/guru/kelas" || path.startsWith("/guru/kelas/") || path === "/guru/jadwal") return "classes";
+    if (path === "/guru/pesan" || path.startsWith("/guru/pesan/")) return "messages";
+    if (["/guru/saya", "/guru/profil", "/guru/rekening", "/guru/gaji", "/guru/performa", "/guru/notifikasi", "/guru/bantuan"].some((route) => path === route || path.startsWith(`${route}/`))) return "account";
+    return "";
+  })();
 
   return (
     <nav
       aria-label={`Navigasi utama ${role === "student" ? "murid" : "tutor"}`}
       className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200/80 bg-white/95 px-2 pb-[max(env(safe-area-inset-bottom),0.45rem)] pt-1.5 shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur-xl xl:hidden"
     >
-      <div className={`mx-auto grid max-w-lg gap-1 ${role === "student" ? "grid-cols-5" : "grid-cols-4"}`}>
+      <div className="mx-auto grid max-w-lg grid-cols-5 gap-1">
         {items.map((item, index) => {
           const active = role === "student"
             ? studentActive === item.key
-            : location.pathname === item.to || (item.to !== "/guru" && location.pathname.startsWith(`${item.to}/`));
+            : teacherActive === item.key;
           const Icon = item.icon;
 
           return (

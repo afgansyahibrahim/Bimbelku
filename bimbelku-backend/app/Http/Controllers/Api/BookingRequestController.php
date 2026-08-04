@@ -106,12 +106,12 @@ class BookingRequestController extends Controller
             'class_type' => ['required', Rule::in(['private', 'group'])],
             'scheduled_date' => ['required', 'date', 'after_or_equal:today'],
             'start_time' => ['required', 'date_format:H:i'],
-            'duration_hours' => ['required', 'integer', 'min:1', 'max:4'],
+            'duration_hours' => ['required', 'integer', Rule::in([1])],
             'address' => ['nullable', 'required_if:learning_mode,offline', 'string', 'max:1500'],
             'maps_link' => ['nullable', 'url:http,https', 'max:500'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-            'contact_number' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+() .-]+$/'],
+            'contact_number' => ['nullable', 'string', 'max:16', 'regex:/^\+?[0-9]{8,15}$/'],
         ]);
         if (!EducationCatalog::supports($validated['education_level'], $validated['grade'])) {
             return response()->json([
@@ -132,11 +132,12 @@ class BookingRequestController extends Controller
 
         $timezone = config('app.timezone', 'Asia/Jakarta');
         $startAt = Carbon::parse($validated['scheduled_date'].' '.$validated['start_time'], $timezone);
-        $endAt = $startAt->copy()->addHours((int) $validated['duration_hours']);
+        $validated['duration_hours'] = 1;
+        $endAt = $startAt->copy()->addHour();
 
-        if (((int) $startAt->format('i')) % 10 !== 0) {
+        if ((int) $startAt->format('i') !== 0) {
             return response()->json([
-                'message' => 'Menit mulai harus memakai kelipatan 10: 00, 10, 20, 30, 40, atau 50.',
+                'message' => 'Jam mulai hanya boleh menggunakan menit 00.',
             ], 422);
         }
         if ($startAt->lessThanOrEqualTo(now())) {
@@ -349,36 +350,13 @@ class BookingRequestController extends Controller
         TeacherMatchingService $matchingService
     ) {
         abort_unless($bookingRequest->student_id === $request->user()->id, 403);
-        $nextRadius = DB::transaction(function () use (
-            $request,
+
+        $nextRadius = $matchingService->expandRadius(
             $bookingRequest,
-            $matchingService
-        ) {
-            $lockedRequest = BookingRequest::query()
-                ->lockForUpdate()
-                ->findOrFail($bookingRequest->id);
-            abort_unless((int) $lockedRequest->student_id === (int) $request->user()->id, 403);
-            if ($lockedRequest->learning_mode !== 'offline' || $lockedRequest->status !== 'no_teacher') {
-                abort(422, 'Radius permintaan ini belum dapat diperluas.');
-            }
-
-            $radius = $matchingService->nextRadius((int) $lockedRequest->search_radius_km);
-            if ($radius === null) {
-                abort(422, 'Radius maksimum 12 km sudah digunakan.');
-            }
-
-            $requestIds = $this->activeRequestIds($lockedRequest);
-            BookingRequest::query()
-                ->whereIn('id', $requestIds)
-                ->where('status', 'no_teacher')
-                ->update([
-                    'search_radius_km' => $radius,
-                    'status' => 'matching',
-                ]);
-
-            return $radius;
-        }, 3);
-
+            $request->user(),
+            'Murid memilih melanjutkan pencarian pada jangkauan yang lebih luas.',
+            'student'
+        );
         $matchingService->dispatchNextOffer($bookingRequest->fresh());
 
         return response()->json([

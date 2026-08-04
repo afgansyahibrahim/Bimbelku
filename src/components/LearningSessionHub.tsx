@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import {
   BarChart3,
+  CalendarClock,
   CheckCircle2,
   ClipboardCheck,
   KeyRound,
@@ -11,6 +12,8 @@ import {
   RefreshCw,
   Send,
   Target,
+  UserCheck,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -27,7 +30,9 @@ interface HubMessage {
   id: number;
   body: string;
   sender_name: string;
-  sender_role: "student" | "teacher";
+  sender_role: "student" | "teacher" | "system";
+  message_type?: "user" | "system";
+  metadata?: { title?: string; action_label?: string; action_url?: string; [key: string]: unknown };
   is_mine: boolean;
   created_at: string;
 }
@@ -48,6 +53,8 @@ interface LearningPlan {
 
 interface ProgressReport {
   id: number;
+  student_id?: number;
+  student_name?: string;
   session_number: number;
   material_covered: string;
   mastered_skills: string;
@@ -65,6 +72,29 @@ interface Attendance {
   check_in_at: string;
   check_out_at?: string;
   pin_verified_at: string;
+}
+
+interface ParticipantItem {
+  participant_id: number;
+  student_id: number;
+  name: string;
+  attendance?: { status: string; notes?: string; marked_at?: string } | null;
+}
+
+interface ScheduleChange {
+  id: number;
+  requester_name: string;
+  requester_role: string;
+  original_start_at: string;
+  original_end_at: string;
+  proposed_start_at: string;
+  proposed_end_at: string;
+  reason: string;
+  status: string;
+  expires_at?: string | null;
+  my_decision?: string | null;
+  can_respond: boolean;
+  responses: Array<{ user_name: string; role: string; decision: string; responded_at?: string | null }>;
 }
 
 interface HubData {
@@ -91,6 +121,8 @@ interface HubData {
   learning_plan?: LearningPlan;
   progress_reports: ProgressReport[];
   attendance?: Attendance;
+  participants: ParticipantItem[];
+  schedule_changes: ScheduleChange[];
   permissions: {
     can_chat: boolean;
     can_generate_pin: boolean;
@@ -99,6 +131,8 @@ interface HubData {
     can_manage_plan: boolean;
     can_acknowledge_plan: boolean;
     can_report_progress: boolean;
+    can_mark_attendance: boolean;
+    can_request_schedule_change: boolean;
   };
 }
 
@@ -132,6 +166,10 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
   const [sessionPin, setSessionPin] = useState("");
   const [pinExpiresAt, setPinExpiresAt] = useState("");
   const [teacherPin, setTeacherPin] = useState("");
+  const [participantAttendance, setParticipantAttendance] = useState<Record<number, { status: string; notes: string }>>({});
+  const [proposedStartAt, setProposedStartAt] = useState("");
+  const [scheduleReason, setScheduleReason] = useState("");
+  const [scheduleResponseNotes, setScheduleResponseNotes] = useState<Record<number, string>>({});
   const [planForm, setPlanForm] = useState(emptyPlan);
   const [reportForm, setReportForm] = useState({
     material_covered: "",
@@ -141,6 +179,7 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
     attendance: "present",
     progress_percent: "0",
     notes: "",
+    student_id: "",
   });
 
   const load = useCallback(async (quiet = false) => {
@@ -149,6 +188,10 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
     try {
       const response = await http.get<HubData>(`/bookings/${bookingId}/learning-session`);
       setHub(response.data);
+      setParticipantAttendance(Object.fromEntries((response.data.participants || []).map((item) => [item.participant_id, {
+        status: item.attendance?.status || "present",
+        notes: item.attendance?.notes || "",
+      }])));
       const plan = response.data.learning_plan;
       if (plan) {
         setPlanForm({
@@ -280,6 +323,68 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
     }
   };
 
+  const saveParticipantAttendance = async () => {
+    if (!bookingId || !hub) return;
+    const attendances = hub.participants.map((item) => ({
+      participant_id: item.participant_id,
+      status: participantAttendance[item.participant_id]?.status || "present",
+      notes: participantAttendance[item.participant_id]?.notes?.trim() || null,
+    }));
+    if (!attendances.length) return;
+    setProcessing(true);
+    try {
+      const response = await http.put(`/teacher/bookings/${bookingId}/participant-attendance`, { attendances });
+      toast.success(response.data.message);
+      await load();
+    } catch (error) {
+      toast.error(getApiError(error, "Kehadiran murid gagal disimpan."));
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const requestScheduleChange = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!bookingId) return;
+    const proposedMinute = proposedStartAt.split("T")[1]?.slice(3, 5);
+    if (proposedMinute !== "00") {
+      toast.error("Jam mulai hanya boleh menggunakan menit 00.");
+      return;
+    }
+    setProcessing(true);
+    try {
+      const response = await http.post(`/bookings/${bookingId}/schedule-changes`, {
+        proposed_start_at: proposedStartAt,
+        reason: scheduleReason.trim(),
+      });
+      toast.success(response.data.message);
+      setProposedStartAt("");
+      setScheduleReason("");
+      await load();
+    } catch (error) {
+      toast.error(getApiError(error, "Perubahan jadwal gagal diajukan."));
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const respondScheduleChange = async (changeId: number, decision: "approved" | "rejected") => {
+    if (!bookingId) return;
+    setProcessing(true);
+    try {
+      const response = await http.post(`/bookings/${bookingId}/schedule-changes/${changeId}/respond`, {
+        decision,
+        notes: decision === "rejected" ? scheduleResponseNotes[changeId]?.trim() : null,
+      });
+      toast.success(response.data.message);
+      await load();
+    } catch (error) {
+      toast.error(getApiError(error, "Jawaban perubahan jadwal gagal disimpan."));
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const savePlan = async (event: FormEvent) => {
     event.preventDefault();
     if (!bookingId) return;
@@ -320,6 +425,7 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
     try {
       const response = await http.post(`/teacher/bookings/${bookingId}/progress-reports`, {
         ...reportForm,
+        student_id: reportForm.student_id ? Number(reportForm.student_id) : null,
         progress_percent: Number(reportForm.progress_percent),
       });
       toast.success(response.data.message);
@@ -330,6 +436,7 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
         difficulties: "",
         next_exercise: "",
         notes: "",
+        student_id: current.student_id,
       }));
       await load();
     } catch (error) {
@@ -341,7 +448,7 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[94vh] overflow-y-auto rounded-[2rem] sm:max-w-4xl">
+      <DialogContent className="max-h-[94dvh] overflow-y-auto rounded-[2rem] sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle className="text-2xl">Ruang belajar {hub?.booking.subject || ""}</DialogTitle>
           <DialogDescription>
@@ -368,12 +475,6 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
                   <Info label="Tutor" value={hub.booking.teacher_name} />
                   <Info label="Murid" value={hub.booking.student_name} />
                 </div>
-
-                {hub.booking.class_type === "group" && (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                    PIN dan laporan perkembangan individual akan diaktifkan setelah layanan privat stabil.
-                  </div>
-                )}
 
                 {hub.role === "student" && hub.permissions.can_generate_pin && (
                   <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
@@ -417,11 +518,30 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
                     <div className="flex items-center gap-2 font-black"><CheckCircle2 size={18} />Kehadiran terverifikasi PIN</div>
                     <p className="mt-2">Check-in: {dateTime(hub.attendance.check_in_at)}</p>
                     <p>Check-out: {dateTime(hub.attendance.check_out_at)}</p>
+                    {hub.role === "teacher" && hub.participants.length > 0 && (
+                      <div className="mt-4 space-y-3 rounded-2xl bg-white/75 p-3">
+                        <p className="flex items-center gap-2 font-black text-slate-900"><Users size={17} />Kehadiran murid</p>
+                        {hub.participants.map((participant) => {
+                          const value = participantAttendance[participant.participant_id] || { status: "present", notes: "" };
+                          return <div key={participant.participant_id} className="rounded-xl border border-emerald-100 bg-white p-3"><div className="flex min-w-0 items-center justify-between gap-2"><span className="min-w-0 truncate font-bold text-slate-800">{participant.name}</span>{participant.attendance?.marked_at && <span className="shrink-0 text-[10px] text-emerald-700">Tersimpan</span>}</div><div className="mt-2 grid gap-2 sm:grid-cols-[11rem_1fr]"><Select disabled={!hub.permissions.can_mark_attendance} value={value.status} onValueChange={(status) => setParticipantAttendance((current) => ({ ...current, [participant.participant_id]: { ...value, status } }))}><SelectTrigger className="h-10 rounded-xl bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="present">Hadir</SelectItem><SelectItem value="late">Terlambat</SelectItem><SelectItem value="partial">Hadir sebagian</SelectItem><SelectItem value="absent">Tidak hadir</SelectItem><SelectItem value="excused">Izin</SelectItem></SelectContent></Select><Input disabled={!hub.permissions.can_mark_attendance} value={value.notes} onChange={(event) => setParticipantAttendance((current) => ({ ...current, [participant.participant_id]: { ...value, notes: event.target.value } }))} maxLength={1000} className="h-10 rounded-xl bg-white" placeholder="Catatan kehadiran (opsional)" /></div></div>;
+                        })}
+                        {hub.permissions.can_mark_attendance && <Button type="button" onClick={() => void saveParticipantAttendance()} disabled={processing} className="w-full rounded-xl bg-indigo-600"><UserCheck size={16} className="mr-2" />Simpan kehadiran semua murid</Button>}
+                      </div>
+                    )}
                     {hub.permissions.can_check_out && (
                       <Button onClick={checkOut} disabled={processing} className="mt-4 rounded-xl bg-emerald-700 hover:bg-emerald-800">
                         <LogOut size={16} className="mr-2" />Check-out
                       </Button>
                     )}
+                  </div>
+                )}
+
+                {(hub.permissions.can_request_schedule_change || hub.schedule_changes.length > 0) && (
+                  <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4 sm:p-5">
+                    <p className="flex items-center gap-2 font-black text-violet-950"><CalendarClock size={18} />Perubahan jadwal</p>
+                    <p className="mt-1 text-xs leading-5 text-violet-700">Jadwal lama tetap berlaku sampai seluruh pihak yang terdampak menyetujui usulan.</p>
+                    {hub.permissions.can_request_schedule_change && <form onSubmit={requestScheduleChange} className="mt-4 grid gap-3 rounded-2xl bg-white p-3 sm:grid-cols-2"><div><Label>Usulan waktu mulai</Label><Input required type="datetime-local" step={3600} value={proposedStartAt} onChange={(event) => setProposedStartAt(event.target.value)} className="mt-2 h-11 rounded-xl" /><p className="mt-1 text-[11px] font-medium text-violet-700">Gunakan jam penuh dengan menit 00.</p></div><div className="sm:row-span-2"><Label>Alasan perubahan</Label><Textarea required minLength={20} maxLength={1500} value={scheduleReason} onChange={(event) => setScheduleReason(event.target.value)} className="mt-2 min-h-24 rounded-xl" placeholder="Jelaskan alasan dan beri waktu pihak lain untuk menilai" /></div><Button disabled={processing} className="h-11 rounded-xl bg-violet-600 hover:bg-violet-700">Ajukan perubahan</Button></form>}
+                    <div className="mt-3 space-y-3">{hub.schedule_changes.map((change) => <article key={change.id} className="rounded-2xl border border-violet-100 bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-black text-slate-900">Usulan {change.requester_name}</p><p className="mt-1 text-xs text-slate-500">Dari {dateTime(change.original_start_at)} menjadi {dateTime(change.proposed_start_at)}</p></div><span className={`rounded-full px-3 py-1 text-[10px] font-black ${change.status === "approved" ? "bg-emerald-50 text-emerald-700" : change.status === "rejected" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700"}`}>{change.status === "pending" ? "Menunggu persetujuan" : change.status === "approved" ? "Disetujui" : "Ditolak"}</span></div><p className="mt-3 break-words text-xs leading-5 text-slate-600">{change.reason}</p>{change.responses.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{change.responses.map((response, index) => <span key={`${response.user_name}-${index}`} className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">{response.user_name}: {response.decision === "pending" ? "menunggu" : response.decision === "approved" ? "setuju" : "menolak"}</span>)}</div>}{change.can_respond && <div className="mt-4"><Input value={scheduleResponseNotes[change.id] || ""} onChange={(event) => setScheduleResponseNotes((current) => ({ ...current, [change.id]: event.target.value }))} maxLength={1000} className="h-10 rounded-xl" placeholder="Alasan bila menolak (minimal 10 karakter)" /><div className="mt-2 grid grid-cols-2 gap-2"><Button type="button" variant="outline" disabled={processing || (scheduleResponseNotes[change.id] || "").trim().length < 10} onClick={() => void respondScheduleChange(change.id, "rejected")} className="rounded-xl border-rose-200 text-rose-700">Tolak</Button><Button type="button" disabled={processing} onClick={() => void respondScheduleChange(change.id, "approved")} className="rounded-xl bg-emerald-600 hover:bg-emerald-700">Setujui</Button></div></div>}</article>)}</div>
                   </div>
                 )}
               </div>
@@ -432,7 +552,15 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
                 <div className="max-h-80 space-y-3 overflow-y-auto rounded-2xl bg-slate-50 p-4">
                   {hub.messages.length === 0 ? (
                     <p className="py-12 text-center text-sm text-slate-500">Belum ada pesan pada sesi ini.</p>
-                  ) : hub.messages.map((item) => (
+                  ) : hub.messages.map((item) => item.message_type === "system" ? (
+                    <div key={item.id} className="flex justify-center">
+                      <div className="w-full max-w-xl rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-center">
+                        <p className="text-[10px] font-black uppercase tracking-[.15em] text-indigo-500">{item.metadata?.title || "Informasi BimbelKu"}</p>
+                        <p className="mt-1 text-xs leading-5 text-indigo-950">{item.body}</p>
+                        {item.metadata?.action_url && <a href={String(item.metadata.action_url)} className="mt-2 inline-flex text-xs font-black text-indigo-700 underline underline-offset-4">{item.metadata.action_label || "Lihat detail"}</a>}
+                      </div>
+                    </div>
+                  ) : (
                     <div key={item.id} className={`flex ${item.is_mine ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${item.is_mine ? "bg-indigo-600 text-white" : "border border-slate-200 bg-white text-slate-800"}`}>
                         <p className={`mb-1 text-[11px] font-black ${item.is_mine ? "text-indigo-100" : "text-slate-400"}`}>{item.sender_name}</p>
@@ -497,11 +625,12 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
                 )}
                 {hub.role === "teacher" && hub.permissions.can_report_progress && (
                   <form onSubmit={saveProgress} className="grid gap-4 rounded-2xl border border-slate-200 p-5 sm:grid-cols-2">
+                    {hub.booking.class_type === "group" && <div className="sm:col-span-2"><Label>Murid yang dilaporkan</Label><Select value={reportForm.student_id} onValueChange={(student_id) => setReportForm({ ...reportForm, student_id })}><SelectTrigger className="mt-2 h-11 rounded-xl"><SelectValue placeholder="Pilih satu murid" /></SelectTrigger><SelectContent>{hub.participants.filter((item) => item.attendance?.status !== "absent").map((item) => <SelectItem key={item.student_id} value={String(item.student_id)}>{item.name} · {item.attendance?.status || "kehadiran belum dicatat"}</SelectItem>)}</SelectContent></Select></div>}
                     <FieldArea label="Materi yang dipelajari" value={reportForm.material_covered} onChange={(value) => setReportForm({ ...reportForm, material_covered: value })} required />
                     <FieldArea label="Kemampuan yang dikuasai" value={reportForm.mastered_skills} onChange={(value) => setReportForm({ ...reportForm, mastered_skills: value })} required />
                     <FieldArea label="Kesulitan murid" value={reportForm.difficulties} onChange={(value) => setReportForm({ ...reportForm, difficulties: value })} />
                     <FieldArea label="Latihan berikutnya" value={reportForm.next_exercise} onChange={(value) => setReportForm({ ...reportForm, next_exercise: value })} required />
-                    <div><Label>Kehadiran</Label><Select value={reportForm.attendance} onValueChange={(value) => setReportForm({ ...reportForm, attendance: value })}><SelectTrigger className="mt-2 rounded-xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="present">Hadir penuh</SelectItem><SelectItem value="late">Terlambat</SelectItem><SelectItem value="partial">Hadir sebagian</SelectItem></SelectContent></Select></div>
+                    <div className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600"><b>Kehadiran tidak diisi ulang.</b><br />Status diambil dari catatan kehadiran pada tab Sesi.</div>
                     <div><Label>Progres target (%)</Label><Input required type="number" min={0} max={100} value={reportForm.progress_percent} onChange={(event) => setReportForm({ ...reportForm, progress_percent: event.target.value })} className="mt-2 rounded-xl" /></div>
                     <FieldArea label="Catatan tambahan" value={reportForm.notes} onChange={(value) => setReportForm({ ...reportForm, notes: value })} className="sm:col-span-2" />
                     <Button disabled={processing} className="rounded-xl bg-indigo-600 sm:col-span-2">Terbitkan laporan sesi</Button>
@@ -512,7 +641,7 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
                     <p className="rounded-2xl bg-slate-50 py-14 text-center text-sm text-slate-500">Laporan perkembangan belum tersedia.</p>
                   ) : hub.progress_reports.map((report) => (
                     <article key={report.id} className="rounded-2xl border border-slate-200 p-5">
-                      <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-black text-slate-900">Laporan sesi {report.session_number}</p><span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">{report.progress_percent}%</span></div>
+                      <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-black text-slate-900">Laporan sesi {report.session_number}{report.student_name ? ` · ${report.student_name}` : ""}</p><span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">{report.progress_percent}%</span></div>
                       <p className="mt-1 text-xs text-slate-400">{dateTime(report.published_at)} · {report.actual_duration_minutes} menit</p>
                       <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                         <Info label="Materi" value={report.material_covered} />

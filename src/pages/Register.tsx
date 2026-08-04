@@ -32,7 +32,14 @@ import DateOfBirthInput from "@/components/DateOfBirthInput";
 import SubjectCombobox, { SubjectOption } from "@/components/SubjectCombobox";
 import { EDUCATION_LEVELS } from "@/lib/educationCatalog";
 import http, { getApiError, getCached } from "@/lib/http";
-import { isValidHttpUrl, isValidPhone, validateUpload } from "@/lib/validation";
+import {
+  isValidHttpUrl,
+  isValidPersonName,
+  isValidPhone,
+  sanitizePersonName,
+  sanitizePhoneInput,
+  validateUpload,
+} from "@/lib/validation";
 
 type Role = "student" | "teacher";
 type FileKey = "identity_document" | "live_selfie" | "qualification_document" | "certification_document";
@@ -124,12 +131,14 @@ export default function Register() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!isValidPhone(form.phone)) return toast.error("Nomor WhatsApp/telepon belum valid.");
+    if (!isValidPersonName(form.name)) return toast.error("Nama lengkap harus berisi huruf dan tidak boleh memuat angka.");
+    if (!isValidPhone(form.phone)) return toast.error("Nomor WhatsApp/telepon harus berisi 8–15 angka.");
     if (form.password !== form.password_confirmation) return toast.error("Konfirmasi kata sandi belum sama.");
     if (!isValidHttpUrl(form.maps_link)) return toast.error("Tautan Google Maps harus diawali http:// atau https://.");
     if (!isValidHttpUrl(form.linkedin)) return toast.error("Tautan LinkedIn atau portofolio belum valid.");
     if (role === "student" && !form.date_of_birth) return toast.error("Tanggal lahir murid wajib diisi.");
-    if (isMinorStudent && !isValidPhone(form.guardian_phone)) return toast.error("Nomor orang tua atau wali belum valid.");
+    if (isMinorStudent && !isValidPersonName(form.guardian_name)) return toast.error("Nama orang tua atau wali harus berisi huruf dan tidak boleh memuat angka.");
+    if (isMinorStudent && !isValidPhone(form.guardian_phone)) return toast.error("Nomor orang tua atau wali harus berisi 8–15 angka.");
     if (
       isMinorStudent
       && (!form.guardian_name.trim() || !form.guardian_relationship || !guardianConsent)
@@ -199,11 +208,11 @@ export default function Register() {
 
           <form onSubmit={submit} className="mt-7 space-y-6">
             <div className="grid gap-4 sm:grid-cols-2">
-              <FormField label="Nama lengkap" icon={User}><Input required className="h-12 rounded-xl" value={form.name} onChange={(event) => setValue("name", event.target.value)} /></FormField>
+              <FormField label="Nama lengkap" icon={User}><Input required className="h-12 rounded-xl" value={form.name} onChange={(event) => setValue("name", sanitizePersonName(event.target.value))} /></FormField>
               <FormField label="Email aktif" icon={Mail}><Input required type="email" className="h-12 rounded-xl" value={form.email} onChange={(event) => setValue("email", event.target.value)} /></FormField>
             </div>
             <FormField label="Nomor WhatsApp/telepon aktif" icon={User}>
-              <Input required inputMode="tel" className="h-12 rounded-xl" value={form.phone} onChange={(event) => setValue("phone", event.target.value)} placeholder="Contoh: 0812 3456 7890" />
+              <Input required inputMode="tel" autoComplete="tel" maxLength={16} className="h-12 rounded-xl" value={form.phone} onChange={(event) => setValue("phone", sanitizePhoneInput(event.target.value))} placeholder="Contoh: 0812 3456 7890" />
             </FormField>
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField label="Kata sandi" icon={Lock}>
@@ -236,10 +245,10 @@ export default function Register() {
                     </div>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <FormField label="Nama orang tua/wali" icon={User}>
-                        <Input required className="h-12 rounded-xl bg-white" value={form.guardian_name} onChange={(event) => setValue("guardian_name", event.target.value)} />
+                        <Input required className="h-12 rounded-xl bg-white" value={form.guardian_name} onChange={(event) => setValue("guardian_name", sanitizePersonName(event.target.value))} />
                       </FormField>
                       <FormField label="Nomor orang tua/wali" icon={UserRoundCheck}>
-                        <Input required inputMode="tel" className="h-12 rounded-xl bg-white" value={form.guardian_phone} onChange={(event) => setValue("guardian_phone", event.target.value)} placeholder="Contoh: 0812 3456 7890" />
+                        <Input required inputMode="tel" autoComplete="tel" maxLength={16} className="h-12 rounded-xl bg-white" value={form.guardian_phone} onChange={(event) => setValue("guardian_phone", sanitizePhoneInput(event.target.value))} placeholder="Contoh: 0812 3456 7890" />
                       </FormField>
                     </div>
                     <FormField label="Hubungan dengan murid" icon={UserRoundCheck}>

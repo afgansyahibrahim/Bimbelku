@@ -32,4 +32,9 @@ class BookingParticipant extends Model
     {
         return $this->belongsTo(Order::class);
     }
+
+    public function attendance()
+    {
+        return $this->hasOne(ParticipantAttendance::class);
+    }
 }

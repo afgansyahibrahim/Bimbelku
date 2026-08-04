@@ -7,9 +7,12 @@ use App\Models\Booking;
 use App\Models\BookingDispute;
 use App\Models\BookingParticipant;
 use App\Models\Notification;
+use App\Models\ParticipantAttendance;
 use App\Models\Refund;
 use App\Models\SessionReport;
+use App\Models\TeacherAppeal;
 use App\Models\Setting;
+use App\Services\CustomerWalletService;
 use App\Services\TeacherPointService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -25,7 +28,13 @@ class SessionWorkflowController extends Controller
         $validated = $request->validate([
             'evidence' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'notes' => ['required', 'string', 'min:20', 'max:2000'],
+            'capture_source' => ['required', Rule::in(['camera'])],
+            'captured_at' => ['required', 'date'],
         ]);
+        $capturedAt = Carbon::parse($validated['captured_at']);
+        if ($capturedAt->lt(now()->subMinutes(20)) || $capturedAt->gt(now()->addMinutes(5))) {
+            return response()->json(['message' => 'Foto bukti harus diambil langsung saat pengiriman.'], 422);
+        }
 
         if (!in_array($booking->status, ['confirmed', 'in_progress'], true)) {
             return response()->json(['message' => 'Bukti belum dapat dikirim pada status sesi ini.'], 422);
@@ -38,27 +47,21 @@ class SessionWorkflowController extends Controller
                 'message' => 'Masa unggah bukti telah berakhir. Sesi harus diperiksa admin.',
             ], 422);
         }
-        if ($booking->class_type === 'private') {
-            $attendance = $booking->sessionAttendances()
-                ->where('user_id', $request->user()->id)
-                ->first();
-            if (!$attendance?->pin_verified_at || !$attendance?->check_out_at) {
-                return response()->json([
-                    'message' => 'Check-in dengan PIN dan check-out harus diselesaikan sebelum bukti dikirim.',
-                ], 422);
-            }
-            if (!$booking->learningProgressReports()->exists()) {
-                return response()->json([
-                    'message' => 'Laporan perkembangan harus diterbitkan sebelum bukti penyelesaian dikirim.',
-                ], 422);
-            }
+        $attendance = $booking->sessionAttendances()
+            ->where('user_id', $request->user()->id)
+            ->first();
+        if (!$attendance?->pin_verified_at || !$attendance?->check_out_at) {
+            return response()->json([
+                'message' => 'Check-in dengan PIN dan check-out harus diselesaikan sebelum bukti dikirim.',
+            ], 422);
         }
+        $this->assertAttendanceAndProgressComplete($booking);
 
         $path = $request->file('evidence')->store('session_evidence', 'local');
         $objectionHours = max(1, (int) (Setting::where('key', 'student_objection_hours')->value('value') ?? 48));
 
         try {
-            DB::transaction(function () use ($booking, $validated, $path, $objectionHours) {
+            DB::transaction(function () use ($booking, $validated, $path, $objectionHours, $capturedAt) {
                 $lockedBooking = Booking::query()->lockForUpdate()->findOrFail($booking->id);
                 if (!in_array($lockedBooking->status, ['confirmed', 'in_progress'], true)) {
                     abort(422, 'Bukti sesi ini sudah diproses atau statusnya telah berubah.');
@@ -69,24 +72,21 @@ class SessionWorkflowController extends Controller
                 if (now()->gt($this->completionUploadDeadline($lockedBooking))) {
                     abort(422, 'Masa unggah bukti telah berakhir. Sesi harus diperiksa admin.');
                 }
-                if (
-                    $lockedBooking->class_type === 'private'
-                    && (
-                        !$lockedBooking->sessionAttendances()
-                            ->whereNotNull('pin_verified_at')
-                            ->whereNotNull('check_out_at')
-                            ->where('user_id', $lockedBooking->teacher_id)
-                            ->exists()
-                        || !$lockedBooking->learningProgressReports()->exists()
-                    )
-                ) {
+                if (!$lockedBooking->sessionAttendances()
+                    ->whereNotNull('pin_verified_at')
+                    ->whereNotNull('check_out_at')
+                    ->where('user_id', $lockedBooking->teacher_id)
+                    ->exists()) {
                     abort(422, 'Verifikasi kehadiran dan laporan perkembangan belum lengkap.');
                 }
+                $this->assertAttendanceAndProgressComplete($lockedBooking);
 
                 $lockedBooking->update([
                     'status' => 'awaiting_student_approval',
                     'completion_evidence' => $path,
                     'completion_notes' => $validated['notes'],
+                    'completion_capture_source' => $validated['capture_source'],
+                    'completion_captured_at' => $capturedAt,
                     'completion_submitted_at' => now(),
                     'objection_deadline' => now()->addHours($objectionHours),
                 ]);
@@ -101,6 +101,8 @@ class SessionWorkflowController extends Controller
                             'title' => 'Bukti sesi telah dikirim',
                             'message' => 'Periksa bukti pelaksanaan. Persetujuan atau keberatan dapat diberikan dalam dua hari.',
                             'type' => 'info',
+                            'target_url' => '/student/my-classes',
+                            'unique_key' => "completion-evidence:{$participant->booking_id}:{$participant->student_id}",
                         ]);
                     });
             });
@@ -533,6 +535,22 @@ class SessionWorkflowController extends Controller
                 ->latest()
                 ->limit(200)
                 ->get(),
+            'teacher_appeals' => TeacherAppeal::query()
+                ->where('status', 'pending')
+                ->with(['teacher:id,name,email', 'pointEntry.booking.bookingRequest:id,subject_name'])
+                ->latest()
+                ->limit(200)
+                ->get()
+                ->map(fn (TeacherAppeal $appeal) => [
+                    'id' => $appeal->id,
+                    'teacher' => $appeal->teacher,
+                    'point_entry' => $appeal->pointEntry,
+                    'reason' => $appeal->reason,
+                    'evidence_url' => $appeal->evidence_path
+                        ? "teacher-appeals/{$appeal->id}/evidence"
+                        : null,
+                    'created_at' => $appeal->created_at,
+                ]),
         ]);
     }
 
@@ -870,28 +888,43 @@ class SessionWorkflowController extends Controller
         return response()->json(['message' => 'Pemeriksaan bukti sesi berhasil diselesaikan.']);
     }
 
-    public function completeRefund(Request $request, Refund $refund)
-    {
+    public function completeRefund(
+        Request $request,
+        Refund $refund,
+        CustomerWalletService $wallets
+    ) {
         $validated = $request->validate([
-            'proof' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'destination_method' => ['required', Rule::in(['bank_transfer', 'bimbelku_balance'])],
+            'proof' => ['nullable', 'required_if:destination_method,bank_transfer', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'notes' => ['nullable', 'string', 'max:1000'],
         ]);
 
         $refund->loadMissing('order');
-        if (
+        $isBankTransfer = $validated['destination_method'] === 'bank_transfer';
+        if ($isBankTransfer && (
             blank($refund->order?->bank_name)
             || blank($refund->order?->sender_name)
             || blank($refund->order?->sender_account_number)
-        ) {
+        )) {
             return response()->json([
                 'message' => 'Tujuan refund belum lengkap. Hubungi murid untuk memastikan bank, nama pemilik, dan nomor rekening/e-wallet.',
             ], 422);
         }
 
-        $path = $request->file('proof')->store('refund_proofs', 'local');
+        $path = $isBankTransfer
+            ? $request->file('proof')->store('refund_proofs', 'local')
+            : null;
+        $walletTransaction = null;
 
         try {
-            DB::transaction(function () use ($request, $refund, $validated, $path) {
+            DB::transaction(function () use (
+                $request,
+                $refund,
+                $validated,
+                $path,
+                $wallets,
+                &$walletTransaction
+            ) {
                 $lockedRefund = Refund::query()
                     ->with(['order.participant.bookingRequest', 'booking'])
                     ->lockForUpdate()
@@ -901,8 +934,23 @@ class SessionWorkflowController extends Controller
                     abort(422, 'Refund ini sudah diproses.');
                 }
 
+                $destinationMethod = $validated['destination_method'];
+                if ($destinationMethod === 'bimbelku_balance') {
+                    $walletTransaction = $wallets->creditRefund($lockedRefund, (int) $request->user()->id);
+                }
+
                 $lockedRefund->update([
                     'status' => 'paid',
+                    'destination_method' => $destinationMethod,
+                    'destination_bank_name' => $destinationMethod === 'bank_transfer'
+                        ? $lockedRefund->order->bank_name
+                        : null,
+                    'destination_account_name' => $destinationMethod === 'bank_transfer'
+                        ? $lockedRefund->order->sender_name
+                        : null,
+                    'destination_account_number' => $destinationMethod === 'bank_transfer'
+                        ? $lockedRefund->order->sender_account_number
+                        : null,
                     'proof' => $path,
                     'processed_by' => $request->user()->id,
                     'processed_at' => now(),
@@ -941,24 +989,68 @@ class SessionWorkflowController extends Controller
                     ]);
                 }
 
+                $walletDestination = $destinationMethod === 'bimbelku_balance';
                 Notification::create([
                     'user_id' => $lockedRefund->user_id,
-                    'title' => 'Refund telah ditransfer',
-                    'message' => 'Refund penuh telah dikirim oleh admin. Bukti transfer tersedia pada riwayat transaksi.',
+                    'title' => $walletDestination ? 'Refund masuk ke Saldo BimbelKu' : 'Refund telah ditransfer',
+                    'message' => $walletDestination
+                        ? 'Refund penuh sudah masuk ke Saldo BimbelKu dan tercatat pada riwayat saldo.'
+                        : 'Refund penuh telah dikirim oleh admin. Bukti transfer tersedia pada riwayat transaksi.',
                     'type' => 'success',
+                    'target_url' => '/student/history',
+                    'unique_key' => "refund-completed:{$lockedRefund->id}",
                 ]);
-            });
+            }, 3);
         } catch (\Throwable $exception) {
-            Storage::disk('local')->delete($path);
+            if ($path) {
+                Storage::disk('local')->delete($path);
+            }
             throw $exception;
         }
 
-        return response()->json(['message' => 'Refund ditandai telah ditransfer.']);
+        return response()->json([
+            'message' => $validated['destination_method'] === 'bimbelku_balance'
+                ? 'Refund berhasil dimasukkan ke Saldo BimbelKu.'
+                : 'Refund ditandai telah ditransfer.',
+            'wallet_balance' => $walletTransaction?->balance_after,
+        ]);
     }
 
     private function authorizeTeacher(Request $request, Booking $booking): void
     {
         abort_unless((int) $booking->teacher_id === (int) $request->user()->id, 403);
+    }
+
+    private function assertAttendanceAndProgressComplete(Booking $booking): void
+    {
+        $participants = $booking->participants()
+            ->whereHas('order', fn ($query) => $query->where('status', 'paid'))
+            ->get();
+        if ($participants->isEmpty()) {
+            abort(422, 'Peserta berbayar belum tersedia.');
+        }
+        $attendances = ParticipantAttendance::query()
+            ->where('booking_id', $booking->id)
+            ->get()
+            ->keyBy('booking_participant_id');
+        if ($participants->contains(fn ($participant) => !$attendances->has($participant->id))) {
+            abort(422, 'Kehadiran seluruh murid harus dicatat sebelum bukti dikirim.');
+        }
+
+        $studentsRequiringProgress = $participants
+            ->filter(fn ($participant) => in_array(
+                $attendances->get($participant->id)?->status,
+                ['present', 'late', 'partial'],
+                true
+            ))
+            ->pluck('student_id');
+        $reportedStudentIds = $booking->learningProgressReports()
+            ->whereIn('student_id', $studentsRequiringProgress)
+            ->pluck('student_id')
+            ->unique();
+        if ($reportedStudentIds->count() !== $studentsRequiringProgress->unique()->count()) {
+            abort(422, 'Laporan perkembangan setiap murid yang hadir harus diterbitkan sebelum bukti dikirim.');
+        }
     }
 
     private function studentParticipant(Request $request, Booking $booking): BookingParticipant

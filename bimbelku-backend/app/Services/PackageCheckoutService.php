@@ -717,13 +717,6 @@ class PackageCheckoutService
 
     private function teacherAvailableAt(User $teacher, Carbon $start, Carbon $end): bool
     {
-        $day = [1 => 'Senin', 2 => 'Selasa', 3 => 'Rabu', 4 => 'Kamis', 5 => 'Jumat', 6 => 'Sabtu', 7 => 'Minggu'][$start->dayOfWeekIso];
-
-        return $teacher->availabilities()
-            ->where('day', $day)
-            ->where('is_active', true)
-            ->where('start_time', '<=', $start->format('H:i:s'))
-            ->where('end_time', '>=', $end->format('H:i:s'))
-            ->exists();
+        return $this->matchingService->teacherAvailableAt($teacher, $start, $end);
     }
 }

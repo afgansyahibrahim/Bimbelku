@@ -1,226 +1,70 @@
-import React, { useEffect, useState } from "react";
-import TeacherLayout from "../../components/TeacherLayout";
-import { 
-  Banknote, History, Calendar, CheckCircle2, 
-  Eye, Loader2, DollarSign, Users, Clock, Percent
-} from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { Banknote, CheckCircle2, Clock3, Eye, Landmark, Loader2, LockKeyhole, RefreshCw, Send, ShieldAlert, WalletCards } from "lucide-react";
 import { toast } from "sonner";
+import TeacherLayout from "@/components/TeacherLayout";
 import { openProtectedFile } from "@/components/ProtectedImage";
-import { getCached } from "@/lib/http";
+import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
+import { Button } from "@/components/ui/button";
+import http, { getApiError } from "@/lib/http";
 
-// Helper Rupiah
-const formatRupiah = (num: number) => 
-  new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(num);
+type SalaryData = {
+  balances: { held: number; available: number; requested: number; paid: number };
+  totals: { gross: number; commission: number; net: number };
+  ready_sessions: number;
+  ready_bookings: Array<{ id: number; subject: string; completed_at: string; gross_amount: number; commission_amount: number; net_amount: number }>;
+  bank: { is_complete: boolean; bank_name?: string | null; account_name?: string | null; account_number_masked?: string | null; payout_hold_until?: string | null };
+  payout_requests: Array<{ id: number; net_amount: number; gross_amount: number; commission_amount: number; status: string; requested_at: string; processed_at?: string | null; review_notes?: string | null }>;
+  history: Array<{ id: number; period: string; amount: number; transfer_date?: string | null; total_students?: number | null; status: string; proof_url?: string | null }>;
+};
+
+const rupiah = (value?: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
+const dateTime = (value?: string | null) => value ? new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "-";
+const labels: Record<string, string> = { pending: "Menunggu admin", approved: "Disetujui", rejected: "Ditolak", processing: "Diproses", completed: "Dibayar", cancelled: "Dibatalkan" };
 
 export default function TeacherSalary() {
-  const [data, setData] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    fetchSalary();
+  const confirm = useConfirmDialog();
+  const [data, setData] = useState<SalaryData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [requesting, setRequesting] = useState(false);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { const response = await http.get<SalaryData>("/teacher/salary"); setData(response.data); }
+    catch (error) { toast.error(getApiError(error, "Data pendapatan gagal dimuat.")); }
+    finally { setLoading(false); }
   }, []);
+  useEffect(() => { void load(); }, [load]);
 
-  const fetchSalary = async () => {
-    try {
-      const response = await getCached("/teacher/salary", { maxAgeMs: 15_000 });
-      setData(response.data);
-    } catch (error) {
-      console.error("Error fetching salary:", error);
-      toast.error("Gagal memuat data gaji.");
-    } finally {
-      setIsLoading(false);
-    }
+  const heldByBankChange = Boolean(data?.bank.payout_hold_until && new Date(data.bank.payout_hold_until).getTime() > Date.now());
+  const requestPayout = async () => {
+    if (!data?.balances.available) return;
+    const approved = await confirm({ title: "Ajukan seluruh saldo tersedia?", description: `${rupiah(data.balances.available)} dari ${data.ready_sessions} sesi akan dipindahkan ke status menunggu pemeriksaan admin. Rekening tujuan: ${data.bank.bank_name || "-"} ${data.bank.account_number_masked || ""}.`, confirmText: "Ajukan pencairan", tone: "primary" });
+    if (!approved) return;
+    setRequesting(true);
+    try { const response = await http.post("/teacher/payout-requests", { booking_ids: data.ready_bookings.map((item) => item.id) }); toast.success(response.data.message); await load(); }
+    catch (error) { toast.error(getApiError(error, "Pencairan gagal diajukan.")); }
+    finally { setRequesting(false); }
   };
 
-  if (isLoading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-600"/></div>;
+  return <TeacherLayout title="Pendapatan & Pencairan"><div className="space-y-5 pb-10 sm:space-y-7">
+    <section className="rounded-[1.7rem] bg-gradient-to-br from-slate-950 via-emerald-950 to-indigo-950 p-5 text-white shadow-xl sm:rounded-[2rem] sm:p-8"><div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-black uppercase tracking-[.18em] text-emerald-200">Dompet tutor</p><h1 className="mt-2 text-2xl font-black sm:text-3xl">Pendapatan & pencairan</h1><p className="mt-2 max-w-xl text-sm leading-6 text-emerald-100/75">Nilai sesi, komisi admin, saldo ditahan, pengajuan, dan transfer dipisahkan agar mudah diperiksa.</p></div><Button variant="outline" onClick={() => void load()} className="h-11 rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"><RefreshCw size={16} className="mr-2" />Muat ulang</Button></div></section>
+    {loading ? <div className="grid min-h-80 place-items-center rounded-[2rem] bg-white"><Loader2 className="animate-spin text-indigo-600" size={30} /></div> : !data ? <div className="rounded-[2rem] bg-white p-16 text-center"><ShieldAlert className="mx-auto text-rose-300" /><p className="mt-3 font-black">Data pendapatan belum tersedia.</p></div> : <>
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Balance icon={LockKeyhole} label="Ditahan" value={data.balances.held} detail="Masa keberatan/kasus" color="bg-amber-500" /><Balance icon={WalletCards} label="Tersedia" value={data.balances.available} detail={`${data.ready_sessions} sesi siap diajukan`} color="bg-emerald-600" /><Balance icon={Clock3} label="Diajukan" value={data.balances.requested} detail="Menunggu admin" color="bg-indigo-600" /><Balance icon={CheckCircle2} label="Dibayar" value={data.balances.paid} detail="Masuk rekening" color="bg-slate-800" /></section>
 
-  return (
-    <TeacherLayout title="Pendapatan Tutor">
-      <div className="max-w-6xl mx-auto space-y-8 pb-10">
-        
-        <div>
-            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Pendapatan & Pencairan</h1>
-            <p className="text-gray-500 mt-1">Pantau saldo bersih siap cair dan riwayat transfer manual dari admin.</p>
-        </div>
+      <section className="grid gap-4 lg:grid-cols-[1fr_.8fr]">
+        <article className="rounded-[1.7rem] border border-slate-100 bg-white p-5 shadow-sm sm:rounded-[2rem] sm:p-6"><div className="flex items-start gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-700"><Landmark size={19} /></span><div className="min-w-0 flex-1"><p className="font-black text-slate-900">Rekening tujuan</p>{data.bank.is_complete ? <><p className="mt-1 text-sm text-slate-600">{data.bank.bank_name} · {data.bank.account_number_masked}</p><p className="mt-1 text-xs text-slate-400">a.n. {data.bank.account_name}</p></> : <p className="mt-1 text-sm text-rose-600">Rekening belum lengkap.</p>}</div></div>{heldByBankChange && <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs leading-5 text-amber-800">Pencairan ditahan setelah perubahan rekening sampai {dateTime(data.bank.payout_hold_until)} WIB.</div>}<div className="mt-5 grid gap-2 sm:grid-cols-2"><Button asChild variant="outline" className="h-11 rounded-xl"><Link to="/guru/rekening">Atur rekening</Link></Button><Button onClick={() => void requestPayout()} disabled={requesting || !data.bank.is_complete || heldByBankChange || data.balances.available <= 0} className="h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700">{requesting ? <Loader2 className="mr-2 animate-spin" size={16} /> : <Send className="mr-2" size={16} />}Ajukan {rupiah(data.balances.available)}</Button></div></article>
+        <article className="rounded-[1.7rem] border border-slate-100 bg-white p-5 shadow-sm sm:rounded-[2rem] sm:p-6"><p className="font-black text-slate-900">Perhitungan pendapatan</p><Row label="Nilai seluruh sesi" value={data.totals.gross} /><Row label="Komisi admin" value={data.totals.commission} negative /><Row label="Pendapatan bersih" value={data.totals.net} strong /></article>
+      </section>
 
-        {/* --- 3 KARTU INFORMASI --- */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-           
-           {/* KARTU 1: GAJI MINGGU INI (PENDING) */}
-           <Card className="rounded-[2rem] border-none shadow-lg bg-indigo-900 text-white relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-4 opacity-10"><DollarSign size={100} /></div>
-              <CardContent className="p-6 flex flex-col justify-between h-full">
-                 <div>
-                    <div className="flex justify-between items-start">
-                        <div className="flex items-center gap-2 mb-2 opacity-90">
-                            <Calendar size={16} />
-                            <p className="text-xs font-bold uppercase tracking-widest">Periode: {data?.current_period}</p>
-                        </div>
-                        {/* BADGE PERSENTASE DINAMIS DARI DATABASE */}
-                        {data?.share_percent && (
-                            <Badge className="bg-white/20 hover:bg-white/30 text-white border-none px-2 py-0.5 text-[10px]">
-                                <Percent size={10} className="mr-1"/> {data.share_percent}% Share
-                            </Badge>
-                        )}
-                    </div>
-                    <p className="text-indigo-200 text-sm font-medium mb-1">Saldo Bersih Siap Dicairkan</p>
-                    <h3 className="text-3xl font-bold">{formatRupiah(data?.pending_amount || 0)}</h3>
-                 </div>
-                 
-                 <div className="mt-4">
-                    {data?.pending_amount > 0 ? (
-                        <Badge className="bg-orange-500 hover:bg-orange-600 text-white border-none px-3 py-1">
-                            <Clock size={12} className="mr-1"/> Siap Diproses Admin
-                        </Badge>
-                    ) : (
-                        <Badge className="bg-indigo-700 text-indigo-100 border-none px-3 py-1">
-                           Menunggu Transaksi Baru
-                        </Badge>
-                    )}
-                 </div>
-              </CardContent>
-           </Card>
+      <section className="rounded-[1.7rem] border border-slate-100 bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-6"><div className="mb-4"><h2 className="text-lg font-black text-slate-900">Sesi siap dicairkan</h2><p className="mt-1 text-xs text-slate-500">Setiap sesi menampilkan nilai bruto, komisi, dan bagian bersih tutor.</p></div><div className="space-y-3">{data.ready_bookings.length ? data.ready_bookings.map((item) => <article key={item.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-black text-slate-900">{item.subject}</p><p className="mt-1 text-xs text-slate-400">Selesai {dateTime(item.completed_at)}</p></div><div className="grid grid-cols-3 gap-2 text-right text-xs"><div><p className="text-slate-400">Bruto</p><p className="mt-1 font-bold text-slate-700">{rupiah(item.gross_amount)}</p></div><div><p className="text-slate-400">Komisi</p><p className="mt-1 font-bold text-rose-600">-{rupiah(item.commission_amount)}</p></div><div><p className="text-slate-400">Bersih</p><p className="mt-1 font-black text-emerald-700">{rupiah(item.net_amount)}</p></div></div></div></article>) : <p className="py-10 text-center text-sm text-slate-500">Belum ada sesi berstatus siap dicairkan.</p>}</div></section>
 
-           {/* KARTU 2: TOTAL MURID MINGGU INI */}
-           <Card className="rounded-[2rem] border-none shadow-sm bg-white border border-gray-100">
-              <CardContent className="p-6 flex flex-col justify-between h-full">
-                 <div className="flex items-center gap-3 mb-4">
-                    <div className="p-3 bg-blue-100 text-blue-600 rounded-xl"><Users size={24}/></div>
-                    <div>
-                        <p className="text-gray-500 text-xs font-bold uppercase tracking-wider">Murid Baru Minggu Ini</p>
-                        <h3 className="text-3xl font-bold text-gray-900">{data?.student_count_week || 0}</h3>
-                    </div>
-                 </div>
-                 <p className="text-sm text-gray-400">
-                    *Total siswa yang mendaftar dan membayar minggu ini.
-                 </p>
-              </CardContent>
-           </Card>
-
-           {/* KARTU 3: TOTAL DICAIRKAN (ALL TIME) */}
-           <Card className="rounded-[2rem] border-none shadow-sm bg-white border border-gray-100">
-              <CardContent className="p-6 flex flex-col justify-between h-full">
-                 <div className="flex items-center gap-3 mb-4">
-                    <div className="p-3 bg-green-100 text-green-600 rounded-xl"><Banknote size={24}/></div>
-                    <div>
-                        <p className="text-gray-500 text-xs font-bold uppercase tracking-wider">Total Penghasilan Cair</p>
-                        <h3 className="text-3xl font-bold text-gray-900">{formatRupiah(data?.total_withdrawn || 0)}</h3>
-                    </div>
-                 </div>
-                 <div className="bg-green-50 text-green-700 px-3 py-2 rounded-lg text-xs font-bold inline-flex items-center gap-2 w-fit">
-                    <CheckCircle2 size={14}/> Sudah Masuk Rekening
-                 </div>
-              </CardContent>
-           </Card>
-        </div>
-
-        {/* --- TABEL RIWAYAT --- */}
-        <div>
-           <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <History size={20} className="text-gray-500"/> Riwayat Pencairan
-           </h2>
-           
-           <div className="overflow-hidden rounded-[2rem] border border-gray-100 bg-white shadow-sm">
-              <div className="space-y-3 p-4 md:hidden">
-                 {data?.history?.map((item: any) => (
-                    <article key={item.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                       <div className="flex items-start justify-between gap-3">
-                          <div>
-                             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Periode saldo</p>
-                             <h3 className="mt-1 font-black text-slate-900">{item.period}</h3>
-                          </div>
-                          <Badge className="gap-1 border-none bg-green-100 text-green-700 hover:bg-green-100">
-                             <CheckCircle2 size={12}/>{item.status}
-                          </Badge>
-                       </div>
-                       <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-                          <div className="rounded-xl bg-white p-3">
-                             <p className="font-bold text-slate-400">Tanggal transfer</p>
-                             <p className="mt-1 font-black text-slate-700">{item.transfer_date || "-"}</p>
-                          </div>
-                          <div className="rounded-xl bg-white p-3">
-                             <p className="font-bold text-slate-400">Jumlah murid</p>
-                             <p className="mt-1 font-black text-slate-700">{item.total_students ? `${item.total_students} murid` : "-"}</p>
-                          </div>
-                       </div>
-                       <div className="mt-4 flex items-end justify-between gap-3">
-                          <div>
-                             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nominal cair</p>
-                             <p className="mt-1 text-lg font-black text-green-600">{formatRupiah(item.amount)}</p>
-                          </div>
-                          {item.proof_url ? (
-                             <Button type="button" variant="outline" size="sm" className="rounded-xl text-blue-600" onClick={() => void openProtectedFile(item.proof_url, `struk-gaji-${item.id}`).catch(() => toast.error("Struk tidak dapat dibuka."))}>
-                                <Eye size={14} className="mr-1"/>Bukti
-                             </Button>
-                          ) : <span className="text-xs text-slate-400">Tanpa bukti</span>}
-                       </div>
-                    </article>
-                 ))}
-                 {(!data?.history || data.history.length === 0) && (
-                    <div className="py-10 text-center text-sm italic text-gray-400">Belum ada riwayat pencairan.</div>
-                 )}
-              </div>
-              <div className="hidden overflow-x-auto md:block">
-                <table className="w-full text-left">
-                   <thead className="bg-gray-50/50 text-xs uppercase text-gray-500 font-bold border-b border-gray-100">
-                      <tr>
-                         <th className="px-6 py-4">Periode Saldo</th>
-                         <th className="px-6 py-4">Tanggal Transfer</th>
-                         <th className="px-6 py-4 text-center">Info</th>
-                         <th className="px-6 py-4 text-right">Nominal Cair</th>
-                         <th className="px-6 py-4 text-center">Status</th>
-                         <th className="px-6 py-4 text-center">Bukti</th>
-                      </tr>
-                   </thead>
-                   <tbody className="divide-y divide-gray-100">
-                      {data?.history?.map((item: any) => (
-                         <tr key={item.id} className="hover:bg-gray-50 transition">
-                            <td className="px-6 py-4 font-bold text-gray-900">{item.period}</td>
-                            
-                            <td className="px-6 py-4 text-sm text-gray-500">{item.transfer_date || "-"}</td>
-                            
-                            <td className="px-6 py-4 text-center">
-                                <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-md text-xs font-bold">
-                                   {item.total_students ? item.total_students + ' Siswa' : '-'}
-                                </span>
-                            </td>
-                            
-                            <td className="px-6 py-4 text-right font-bold text-green-600 text-base">
-                                {formatRupiah(item.amount)}
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                                <Badge className="bg-green-100 text-green-700 hover:bg-green-200 border-none gap-1">
-                                    <CheckCircle2 size={12}/> {item.status}
-                                </Badge>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                               {item.proof_url ? (
-                                 <Button type="button" variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-8 text-xs" onClick={() => void openProtectedFile(item.proof_url, `struk-gaji-${item.id}`).catch(() => toast.error("Struk tidak dapat dibuka."))}>
-                                    <Eye size={14} className="mr-1"/> Lihat struk
-                                 </Button>
-                               ) : (
-                                 <span className="text-gray-400 text-xs">-</span>
-                               )}
-                            </td>
-                         </tr>
-                      ))}
-                      {(!data?.history || data.history.length === 0) && (
-                         <tr>
-                            <td colSpan={6} className="text-center py-12 text-gray-400 italic">
-                               Belum ada riwayat pencairan.
-                            </td>
-                         </tr>
-                      )}
-                   </tbody>
-                </table>
-              </div>
-           </div>
-        </div>
-
-      </div>
-    </TeacherLayout>
-  );
+      <section className="grid gap-4 lg:grid-cols-2"><History title="Pengajuan pencairan">{data.payout_requests.length ? data.payout_requests.map((item) => <article key={item.id} className="rounded-2xl border border-slate-100 p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-lg font-black text-slate-900">{rupiah(item.net_amount)}</p><p className="mt-1 text-xs text-slate-400">Diajukan {dateTime(item.requested_at)}</p></div><Status value={item.status} /></div><div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-xs"><span>Bruto <b className="block mt-1">{rupiah(item.gross_amount)}</b></span><span>Komisi <b className="block mt-1 text-rose-600">-{rupiah(item.commission_amount)}</b></span></div>{item.review_notes && <p className="mt-3 text-xs leading-5 text-slate-600">Catatan admin: {item.review_notes}</p>}</article>) : <Empty text="Belum ada pengajuan pencairan." />}</History><History title="Transfer selesai">{data.history.length ? data.history.map((item) => <article key={item.id} className="flex items-center gap-3 rounded-2xl border border-slate-100 p-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-700"><Banknote size={18} /></span><div className="min-w-0 flex-1"><p className="font-black text-slate-900">{rupiah(item.amount)}</p><p className="mt-1 text-xs text-slate-400">{item.period} · {item.transfer_date || "-"}</p></div>{item.proof_url && <Button size="icon" variant="outline" className="shrink-0 rounded-xl" aria-label="Lihat bukti transfer" onClick={() => void openProtectedFile(item.proof_url!, `bukti-pencairan-${item.id}`).catch(() => toast.error("Bukti transfer gagal dibuka."))}><Eye size={16} /></Button>}</article>) : <Empty text="Belum ada transfer selesai." />}</History></section>
+    </>}
+  </div></TeacherLayout>;
 }
+
+function Balance({ icon: Icon, label, value, detail, color }: { icon: typeof Banknote; label: string; value: number; detail: string; color: string }) { return <div className="min-w-0 rounded-[1.35rem] border border-slate-100 bg-white p-4 shadow-sm"><span className={`grid h-9 w-9 place-items-center rounded-xl text-white ${color}`}><Icon size={16} /></span><p className="mt-3 text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 truncate text-lg font-black text-slate-900 sm:text-xl">{rupiah(value)}</p><p className="mt-1 truncate text-[10px] text-slate-500">{detail}</p></div>; }
+function Row({ label, value, negative, strong }: { label: string; value: number; negative?: boolean; strong?: boolean }) { return <div className={`mt-3 flex items-center justify-between gap-3 rounded-xl px-3 py-3 text-sm ${strong ? "bg-emerald-50" : "bg-slate-50"}`}><span className={`font-bold ${strong ? "text-emerald-800" : "text-slate-500"}`}>{label}</span><span className={`text-right font-black ${negative ? "text-rose-600" : strong ? "text-emerald-800" : "text-slate-900"}`}>{negative ? "-" : ""}{rupiah(value)}</span></div>; }
+function History({ title, children }: { title: string; children: React.ReactNode }) { return <article className="rounded-[1.7rem] border border-slate-100 bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-6"><h2 className="mb-4 text-lg font-black text-slate-900">{title}</h2><div className="space-y-3">{children}</div></article>; }
+function Status({ value }: { value: string }) { return <span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black ${value === "completed" || value === "approved" ? "bg-emerald-50 text-emerald-700" : value === "rejected" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700"}`}>{labels[value] || value}</span>; }
+function Empty({ text }: { text: string }) { return <p className="py-10 text-center text-sm text-slate-500">{text}</p>; }

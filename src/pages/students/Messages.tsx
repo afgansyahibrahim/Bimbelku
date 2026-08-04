@@ -1,5 +1,10 @@
-import StudentWorkspaceList from "@/components/StudentWorkspaceList";
+import MarketplaceMessages from "@/components/MarketplaceMessages";
+import StudentLayout from "@/components/StudentLayout";
 
 export default function Messages() {
-  return <StudentWorkspaceList mode="messages" />;
+  return (
+    <StudentLayout title="Pesan">
+      <MarketplaceMessages role="student" />
+    </StudentLayout>
+  );
 }

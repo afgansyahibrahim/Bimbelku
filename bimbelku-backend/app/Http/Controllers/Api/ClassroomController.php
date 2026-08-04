@@ -22,13 +22,21 @@ class ClassroomController extends Controller
                 'disputes' => fn ($query) => $query->latest(),
                 'sessionAttendances',
                 'learningProgressReports',
+                'participantAttendances',
+                'latestClassroomMessage.sender:id,name',
+                'scheduleChangeRequests' => fn ($query) => $query
+                    ->where('status', 'pending')
+                    ->with('responses')
+                    ->latest(),
             ])
             ->latest('start_at')
             ->limit(200)
             ->get();
 
-        return response()->json($bookings->map(function (Booking $booking) {
-            $request = $booking->bookingRequest;
+        $teacherId = (int) $request->user()->id;
+
+        return response()->json($bookings->map(function (Booking $booking) use ($teacherId) {
+            $bookingRequest = $booking->bookingRequest;
             $canSeeFullAddress = $booking->learning_mode === 'offline'
                 && in_array($booking->status, [
                     'confirmed',
@@ -42,14 +50,14 @@ class ClassroomController extends Controller
 
             return [
                 'id' => $booking->id,
-                'subject' => $request?->subject_name,
-                'education_level' => $request?->education_level,
-                'grade' => $request?->grade,
-                'chapter' => $request?->chapter,
-                'subtopic' => $request?->subtopic,
-                'topic' => $request?->topic,
-                'learning_goal' => $request?->learning_goal,
-                'attachment_url' => $request?->attachment ? "learning-attachments/{$request->id}" : null,
+                'subject' => $bookingRequest?->subject_name,
+                'education_level' => $bookingRequest?->education_level,
+                'grade' => $bookingRequest?->grade,
+                'chapter' => $bookingRequest?->chapter,
+                'subtopic' => $bookingRequest?->subtopic,
+                'topic' => $bookingRequest?->topic,
+                'learning_goal' => $bookingRequest?->learning_goal,
+                'attachment_url' => $bookingRequest?->attachment ? "learning-attachments/{$bookingRequest->id}" : null,
                 'method' => $booking->learning_mode,
                 'type' => $booking->class_type,
                 'status' => $booking->status,
@@ -67,8 +75,10 @@ class ClassroomController extends Controller
                     ? "bookings/{$booking->id}/completion-evidence"
                     : null,
                 'completion_notes' => $booking->completion_notes,
+                'completion_capture_source' => $booking->completion_capture_source,
+                'completion_captured_at' => $booking->completion_captured_at,
                 'objection_deadline' => $booking->objection_deadline,
-                'participants' => $booking->participants->map(function ($participant) {
+                $booking->participants->map(function ($participant) use ($booking) {
                     $hasSessionAccess = $participant->order?->status === 'paid';
 
                     return [
@@ -81,20 +91,42 @@ class ClassroomController extends Controller
                         'amount' => $participant->amount,
                         'order_status' => $participant->order?->status,
                         'refund_status' => $participant->order?->refund?->status,
+                        'attendance' => optional($booking->participantAttendances
+                            ->firstWhere('booking_participant_id', $participant->id))->only([
+                                'status', 'notes', 'marked_at',
+                            ]),
                     ];
                 })->values(),
+                'latest_message' => $booking->latestClassroomMessage ? [
+                    'body' => $booking->latestClassroomMessage->body,
+                    'sender_name' => $booking->latestClassroomMessage->sender?->name,
+                    'created_at' => $booking->latestClassroomMessage->created_at,
+                    'has_attachment' => (bool) $booking->latestClassroomMessage->attachment_path,
+                ] : null,
+                'unread_message_count' => $booking->classroomMessages()
+                    ->where('sender_id', '!=', $teacherId)
+                    ->whereDoesntHave('reads', fn ($query) => $query->where('user_id', $teacherId))
+                    ->count(),
+                'pending_schedule_change' => $booking->scheduleChangeRequests->first(),
                 'latest_report' => $booking->reports->first(),
                 'latest_dispute' => $booking->disputes->first(),
                 'can_complete' => in_array($booking->status, ['confirmed', 'in_progress'], true)
                     && now()->gte($booking->end_at->copy()->subMinutes(15))
-                    && (
-                        $booking->class_type !== 'private'
-                        || (
-                            $booking->sessionAttendances
-                                ->contains(fn ($attendance) => $attendance->pin_verified_at && $attendance->check_out_at)
-                            && $booking->learningProgressReports->isNotEmpty()
-                        )
-                    ),
+                    && $booking->sessionAttendances
+                        ->contains(fn ($attendance) => $attendance->pin_verified_at && $attendance->check_out_at)
+                    && $booking->participants
+                        ->filter(fn ($participant) => $participant->order?->status === 'paid')
+                        ->every(fn ($participant) => $booking->participantAttendances
+                            ->contains('booking_participant_id', $participant->id))
+                    && $booking->participants
+                        ->filter(fn ($participant) => $participant->order?->status === 'paid')
+                        ->filter(function ($participant) use ($booking) {
+                            $status = $booking->participantAttendances
+                                ->firstWhere('booking_participant_id', $participant->id)?->status;
+                            return in_array($status, ['present', 'late', 'partial'], true);
+                        })
+                        ->every(fn ($participant) => $booking->learningProgressReports
+                            ->contains('student_id', $participant->student_id)),
                 'can_report_absence' => in_array($booking->status, ['confirmed', 'in_progress'], true)
                     && now()->gte($booking->start_at->copy()->addMinutes(15)),
                 'can_report_emergency' => !in_array($booking->status, [

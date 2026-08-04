@@ -10,6 +10,13 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import http, { getApiError, getCached } from "@/lib/http";
+import {
+  containsLetter,
+  isValidAccountNumber,
+  isValidPersonName,
+  sanitizeDigits,
+  sanitizePersonName,
+} from "@/lib/validation";
 
 export default function TeacherBankSettings() {
   const confirm = useConfirmDialog();
@@ -32,8 +39,8 @@ export default function TeacherBankSettings() {
         const profileData = response.data.profile;
         if (profileData) {
             setBankName(profileData.bank_name || "");
-            setAccountNumber(profileData.account_number || "");
-            setAccountHolder(profileData.account_name || "");
+            setAccountNumber(sanitizeDigits(profileData.account_number || "", 50));
+            setAccountHolder(sanitizePersonName(profileData.account_name || "", 150));
             setPayoutHoldUntil(profileData.payout_hold_until || null);
         }
     } catch (error) {
@@ -49,8 +56,16 @@ export default function TeacherBankSettings() {
         toast.error("Mohon lengkapi semua data rekening.");
         return;
     }
-    if (!/^[0-9 .-]+$/.test(accountNumber)) {
-        toast.error("Nomor rekening hanya boleh berisi angka, spasi, titik, atau tanda hubung.");
+    if (!containsLetter(bankName)) {
+        toast.error("Nama bank atau e-wallet wajib mengandung huruf.");
+        return;
+    }
+    if (!isValidAccountNumber(accountNumber)) {
+        toast.error("Nomor rekening atau e-wallet harus berisi 6–50 angka.");
+        return;
+    }
+    if (!isValidPersonName(accountHolder)) {
+        toast.error("Nama pemilik rekening harus berisi huruf dan tidak boleh memuat angka.");
         return;
     }
 
@@ -88,14 +103,14 @@ export default function TeacherBankSettings() {
     }
   };
 
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-600"/></div>;
+  if (isLoading) return <TeacherLayout title="Pengaturan Rekening"><div className="grid min-h-[65dvh] place-items-center"><Loader2 className="animate-spin text-indigo-600"/></div></TeacherLayout>;
 
   return (
     <TeacherLayout title="Pengaturan Rekening">
-      <div className="max-w-5xl mx-auto space-y-8 pb-10">
+      <div className="mx-auto max-w-5xl space-y-6 pb-10 sm:space-y-8">
           
           <div>
-            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Rekening Pencairan</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Rekening Pencairan</h1>
             <p className="text-slate-500 mt-1">Atur rekening utama untuk menerima pencairan manual dari admin.</p>
           </div>
 
@@ -114,7 +129,7 @@ export default function TeacherBankSettings() {
                      </div>
                   </div>
                </CardHeader>
-               <CardContent className="p-6 space-y-5">
+               <CardContent className="space-y-5 p-4 sm:p-6">
                   <div className="space-y-2">
                      <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
                         <Building size={16} className="text-slate-400" /> Nama Bank / E-Wallet
@@ -156,8 +171,11 @@ export default function TeacherBankSettings() {
                      </label>
                      <Input 
                         placeholder="Contoh: 1234567890"
+                        inputMode="numeric"
+                        maxLength={50}
+                        autoComplete="off"
                         value={accountNumber}
-                        onChange={(e) => setAccountNumber(e.target.value)}
+                        onChange={(e) => setAccountNumber(sanitizeDigits(e.target.value, 50))}
                         className="h-12 rounded-xl border-slate-200 focus:bg-white bg-slate-50 transition font-mono tracking-wide text-lg"
                      />
                   </div>
@@ -169,7 +187,7 @@ export default function TeacherBankSettings() {
                      <Input 
                         placeholder="Nama Pemilik Rekening"
                         value={accountHolder}
-                        onChange={(e) => setAccountHolder(e.target.value)}
+                        onChange={(e) => setAccountHolder(sanitizePersonName(e.target.value, 150))}
                         className="h-12 rounded-xl border-slate-200 focus:bg-white bg-slate-50 transition"
                      />
                   </div>
@@ -192,7 +210,7 @@ export default function TeacherBankSettings() {
             <div className="space-y-6 order-1 lg:order-2 flex flex-col items-center lg:items-start">
                
                {/* KARTU ATM REALISTIS */}
-               <div className="w-full max-w-[360px] aspect-[1.58/1] rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 text-white shadow-2xl shadow-indigo-200 p-6 flex flex-col justify-between overflow-hidden relative group hover:scale-105 transition-transform duration-500">
+               <div className="group relative flex aspect-[1.58/1] w-full max-w-[360px] flex-col justify-between overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 p-5 text-white shadow-2xl shadow-indigo-200 transition-transform duration-500 sm:p-6 sm:hover:scale-105">
                   {/* Efek Background */}
                   <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full blur-3xl -mt-10 -mr-10"></div>
                   <div className="absolute bottom-0 left-0 w-32 h-32 bg-purple-500/30 rounded-full blur-3xl -mb-10 -ml-10"></div>
@@ -213,7 +231,7 @@ export default function TeacherBankSettings() {
 
                   {/* Nomor & Info */}
                   <div className="relative z-10 mt-2">
-                     <p className="font-mono text-xl md:text-2xl tracking-[0.12em] drop-shadow-md text-center tabular-nums">
+                     <p className="truncate text-center font-mono text-lg tracking-[0.08em] tabular-nums drop-shadow-md sm:text-xl md:text-2xl md:tracking-[0.12em]">
                         {accountNumber || "0000 0000 0000"}
                      </p>
                   </div>

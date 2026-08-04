@@ -41,7 +41,7 @@ type Voucher = {
   status: string;
   promotion: { id: number; title: string; discount_type: "percentage" | "fixed"; discount_value: number; ends_at?: string | null };
 };
-type DurationHours = 1 | 2 | 3;
+type DurationHours = 1;
 type DraftSubject = {
   key: string;
   curriculum_subject_id: number | "";
@@ -50,7 +50,7 @@ type DraftSubject = {
   schedules: string[];
   schedule_start_date: string;
   schedule_time: string;
-  frequency_per_week: 1 | 2 | 3;
+  weekdays: number[];
   chapter: string;
   learning_goal: string;
   preferred_teacher_id?: number;
@@ -98,18 +98,33 @@ const timeRange = (value: string, durationHours: DurationHours) => {
 const fullSchedule = (value: string, durationHours: DurationHours) =>
   `${new Date(value).toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short" })} · ${timeRange(value, durationHours)} WIB`;
 
-const nextSlots = (count: number, time = "18:00", startDate?: string, frequency: 1 | 2 | 3 = 2) => {
+const WEEKDAYS = [
+  { value: 1, label: "Senin", short: "Sen" },
+  { value: 2, label: "Selasa", short: "Sel" },
+  { value: 3, label: "Rabu", short: "Rab" },
+  { value: 4, label: "Kamis", short: "Kam" },
+  { value: 5, label: "Jumat", short: "Jum" },
+  { value: 6, label: "Sabtu", short: "Sab" },
+  { value: 7, label: "Minggu", short: "Min" },
+];
+
+const isoWeekday = (date: Date) => ((date.getDay() + 6) % 7) + 1;
+
+const nextSlots = (count: number, time = "18:00", startDate?: string, weekdays: number[] = [1, 3, 5]) => {
   const result: string[] = [];
   const cursor = startDate ? new Date(`${startDate}T00:00:00`) : new Date();
   if (!startDate) cursor.setDate(cursor.getDate() + 4);
-  const [hour, minute] = time.split(":").map(Number);
-  cursor.setHours(hour || 0, minute || 0, 0, 0);
-  const interval = frequency === 1 ? 7 : frequency === 2 ? 3 : 2;
-  for (let index = 0; index < count; index += 1) {
-    const date = new Date(cursor);
-    date.setDate(cursor.getDate() + index * interval);
-    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-    result.push(local.toISOString().slice(0, 16));
+  const [hour] = time.split(":").map(Number);
+  cursor.setHours(hour || 0, 0, 0, 0);
+  const selectedDays = new Set(weekdays.length ? weekdays : [1]);
+  let guard = 0;
+  while (result.length < count && guard < 730) {
+    if (selectedDays.has(isoWeekday(cursor))) {
+      const local = new Date(cursor.getTime() - cursor.getTimezoneOffset() * 60_000);
+      result.push(local.toISOString().slice(0, 16));
+    }
+    cursor.setDate(cursor.getDate() + 1);
+    guard += 1;
   }
   return result;
 };
@@ -118,7 +133,7 @@ const createSubject = (sessionCount = 1, time = "18:00", offsetDays = 0): DraftS
   const start = new Date();
   start.setDate(start.getDate() + 4 + offsetDays);
   const scheduleStartDate = dateInput(start);
-  const frequency: 1 | 2 | 3 = sessionCount >= 10 ? 3 : 2;
+  const weekdays = sessionCount >= 10 ? [1, 3, 5] : [2, 4];
   return {
     key: `${Date.now()}-${Math.random()}`,
     curriculum_subject_id: "",
@@ -126,8 +141,8 @@ const createSubject = (sessionCount = 1, time = "18:00", offsetDays = 0): DraftS
     session_count: sessionCount,
     schedule_start_date: scheduleStartDate,
     schedule_time: time,
-    frequency_per_week: frequency,
-    schedules: nextSlots(sessionCount, time, scheduleStartDate, frequency),
+    weekdays,
+    schedules: nextSlots(sessionCount, time, scheduleStartDate, weekdays),
     chapter: "",
     learning_goal: "",
   };
@@ -136,7 +151,7 @@ const createSubject = (sessionCount = 1, time = "18:00", offsetDays = 0): DraftS
 const rebuildSchedules = (subject: DraftSubject, count = subject.session_count) => ({
   ...subject,
   session_count: count,
-  schedules: nextSlots(count, subject.schedule_time, subject.schedule_start_date, subject.frequency_per_week),
+  schedules: nextSlots(count, subject.schedule_time, subject.schedule_start_date, subject.weekdays),
 });
 
 const rebalance = (items: DraftSubject[], total: number) => {
@@ -158,7 +173,7 @@ export default function PackageBuilder() {
   const [level, setLevel] = useState("SD");
   const [grade, setGrade] = useState("Kelas 1");
   const [mode, setMode] = useState<"online" | "offline">("online");
-  const [durationHours, setDurationHours] = useState<DurationHours>(1);
+  const durationHours: DurationHours = 1;
   const [subjects, setSubjects] = useState<DraftSubject[]>([createSubject()]);
   const [promoCode, setPromoCode] = useState("");
   const [voucherId, setVoucherId] = useState<number | "">("");
@@ -207,7 +222,7 @@ export default function PackageBuilder() {
     && schedulesDoNotOverlap
     && scheduleRangeDays <= plan.validity_days
     && (mode === "online" || Boolean(studentProfile?.address))
-    && subjects.every((item) => item.curriculum_subject_id && item.subject_name && item.schedules.length === item.session_count && item.schedules.every(Boolean)),
+    && subjects.every((item) => item.curriculum_subject_id && item.subject_name && item.weekdays.length > 0 && item.schedules.length === item.session_count && item.schedules.every(Boolean)),
   );
 
   useEffect(() => {
@@ -226,11 +241,12 @@ export default function PackageBuilder() {
         setPlans(plansResponse.data);
         setCatalog(catalogResponse.data.subject_options || []);
         setVouchers(voucherResponse.data.data.filter((item) => item.status === "available"));
-        setTimeSlots(slotsResponse.data);
+        const fullHourSlots = slotsResponse.data.filter((slot) => slot.start_time.slice(3, 5) === "00");
+        setTimeSlots(fullHourSlots);
         setStudentProfile(profileResponse.data);
         setHasMultiSubjectPackage(Boolean(tutorialStatusResponse.data.has_multi_subject_package));
-        const defaultTime = slotsResponse.data.find((slot) => slot.start_time.slice(0, 5) === "18:00")?.start_time.slice(0, 5)
-          || slotsResponse.data[0]?.start_time.slice(0, 5)
+        const defaultTime = fullHourSlots.find((slot) => slot.start_time.slice(0, 5) === "18:00")?.start_time.slice(0, 5)
+          || fullHourSlots[0]?.start_time.slice(0, 5)
           || "18:00";
         const defaultPlan = plansResponse.data.find((item) => item.session_count === 4) || plansResponse.data[0];
         if (defaultPlan) {
@@ -244,7 +260,6 @@ export default function PackageBuilder() {
           setLevel(previous.education_level);
           setGrade(previous.grade);
           setMode(previous.learning_mode);
-          setDurationHours(([1, 2, 3].includes(Number(previous.duration_hours)) ? Number(previous.duration_hours) : 1) as DurationHours);
           const selectedOld = renewalSubjectId
             ? previous.subjects.filter((item: any) => item.id === renewalSubjectId)
             : previous.subjects;
@@ -276,14 +291,18 @@ export default function PackageBuilder() {
               setLevel(saved.level);
               setGrade(saved.grade);
               setMode(saved.mode);
-              setDurationHours(([1, 2, 3].includes(Number(saved.duration_hours)) ? Number(saved.duration_hours) : 1) as DurationHours);
-              setSubjects(saved.subjects.map((item, index) => rebuildSchedules({
-                ...item,
-                key: item.key || `${Date.now()}-${index}`,
-                schedule_start_date: item.schedule_start_date || item.schedules[0]?.slice(0, 10) || dateInput(new Date()),
-                schedule_time: item.schedule_time || item.schedules[0]?.slice(11, 16) || defaultTime,
-                frequency_per_week: item.frequency_per_week || 2,
-              })));
+              setSubjects(saved.subjects.map((item, index) => {
+                const restoredDays = Array.isArray(item.weekdays) && item.weekdays.length
+                  ? item.weekdays
+                  : [...new Set((item.schedules || []).map((schedule) => isoWeekday(new Date(schedule))))];
+                return rebuildSchedules({
+                  ...item,
+                  key: item.key || `${Date.now()}-${index}`,
+                  schedule_start_date: item.schedule_start_date || item.schedules[0]?.slice(0, 10) || dateInput(new Date()),
+                  schedule_time: item.schedule_time?.slice(3, 5) === "00" ? item.schedule_time : defaultTime,
+                  weekdays: restoredDays.length ? restoredDays : [1, 3, 5],
+                });
+              }));
               setPromoCode(saved.promo_code || "");
               setVoucherId(saved.voucher_id || "");
               setDraftSavedAt(saved.saved_at);
@@ -347,7 +366,7 @@ export default function PackageBuilder() {
       }
     }, 600);
     return () => window.clearTimeout(timer);
-  }, [durationHours, grade, level, loading, mode, planId, promoCode, renewalId, subjects, voucherId]);
+  }, [grade, level, loading, mode, planId, promoCode, renewalId, subjects, voucherId]);
 
   const openMultiSubjectGuide = () => {
     window.dispatchEvent(new Event("bimbelku:open-tutorial"));
@@ -419,7 +438,7 @@ export default function PackageBuilder() {
     setSubjects((current) => current.map((item) => {
       if (item.key !== key) return item;
       const next = { ...item, ...patch };
-      if (patch.session_count !== undefined || patch.schedule_start_date !== undefined || patch.schedule_time !== undefined || patch.frequency_per_week !== undefined) {
+      if (patch.session_count !== undefined || patch.schedule_start_date !== undefined || patch.schedule_time !== undefined || patch.weekdays !== undefined) {
         return rebuildSchedules(next);
       }
       return next;
@@ -467,7 +486,6 @@ export default function PackageBuilder() {
     setLevel("SD");
     setGrade("Kelas 1");
     setMode("online");
-    setDurationHours(1);
     setPromoCode("");
     setVoucherId("");
     setQuote(null);
@@ -495,6 +513,7 @@ export default function PackageBuilder() {
           chapter: item.chapter || undefined,
           learning_goal: item.learning_goal || undefined,
           preferred_teacher_id: item.preferred_teacher_id,
+          weekdays: item.weekdays,
           schedules: item.schedules,
         })),
       });
@@ -534,7 +553,7 @@ export default function PackageBuilder() {
     Boolean(plan),
     subjects.every((item) => item.curriculum_subject_id),
     Boolean(plan && selectedSessions === plan.session_count),
-    subjects.every((item) => item.schedules.length === item.session_count && item.schedules.every(Boolean)) && schedulesDoNotOverlap,
+    subjects.every((item) => item.weekdays.length > 0 && item.schedules.length === item.session_count && item.schedules.every(Boolean)) && schedulesDoNotOverlap,
     Boolean(draftValid && quote),
   ];
   const firstIncomplete = completedSteps.findIndex((done) => !done);
@@ -564,19 +583,19 @@ export default function PackageBuilder() {
         <section className="rounded-[2rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-blue-900 p-6 text-white sm:p-8">
           <p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">{renewalId ? "Tutor lama diprioritaskan" : "Langkah 1"}</p>
           <h1 className="mt-3 text-3xl font-black">Susun paket belajarmu</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Pilih jumlah sesi dan durasi pertemuan. Periksa ringkasan, bayar, lalu sistem mulai mencari tutor.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Pilih jumlah sesi, hari, dan satu jam tetap. Periksa ringkasan, bayar, lalu sistem mencari tutor.</p>
         </section>
 
         <nav aria-label="Tahapan pemesanan" className="rounded-3xl border border-slate-100 bg-white p-3 shadow-sm">
           <div className="sm:hidden">
             <div className="flex items-center justify-between gap-3">
-              <div><p className="text-[10px] font-black uppercase tracking-wider text-indigo-500">Langkah {activeStepIndex + 1} dari 5</p><p className="mt-1 text-sm font-black text-slate-900">{["Paket & durasi", "Mata pelajaran", "Pembagian sesi", "Jadwal", "Ringkasan"][activeStepIndex]}</p></div>
+              <div><p className="text-[10px] font-black uppercase tracking-wider text-indigo-500">Langkah {activeStepIndex + 1} dari 5</p><p className="mt-1 text-sm font-black text-slate-900">{["Paket & sesi", "Mata pelajaran", "Pembagian sesi", "Jadwal", "Ringkasan"][activeStepIndex]}</p></div>
               <span className="grid h-10 w-10 place-items-center rounded-2xl bg-indigo-600 text-sm font-black text-white">{activeStepIndex + 1}</span>
             </div>
             <div className="mt-3 grid grid-cols-5 gap-1.5" aria-hidden="true">{completedSteps.map((done, index) => <span key={index} className={`h-1.5 rounded-full ${index === activeStepIndex ? "bg-indigo-600" : done ? "bg-emerald-400" : "bg-slate-200"}`} />)}</div>
           </div>
           <ol className="hidden grid-cols-5 gap-2 sm:grid">
-            {["Paket & Durasi", "Mapel", "Pembagian Sesi", "Jadwal", "Ringkasan"].map((label, index) => (
+            {["Paket & Sesi", "Mapel", "Pembagian Sesi", "Jadwal", "Ringkasan"].map((label, index) => (
               <li key={label} className={`flex min-h-12 items-center gap-2 rounded-2xl px-3 text-xs font-black ${index === activeStepIndex ? "bg-indigo-600 text-white" : completedSteps[index] ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-400"}`}>
                 <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full ${index === activeStepIndex ? "bg-white/20" : completedSteps[index] ? "bg-emerald-100" : "bg-white"}`}>{completedSteps[index] && index !== activeStepIndex ? <Check size={14} /> : index + 1}</span>
                 {label}
@@ -621,16 +640,13 @@ export default function PackageBuilder() {
         <section data-tour="package-duration-picker" className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-7">
           <div className="flex items-start gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600"><Clock3 size={20} /></div>
-            <div><h2 className="text-lg font-black text-slate-900">2. Durasi setiap pertemuan</h2><p className="mt-1 text-sm leading-6 text-slate-500">Pilihan ini berlaku untuk seluruh sesi dalam satu paket.</p></div>
+            <div><h2 className="text-lg font-black text-slate-900">2. Durasi setiap pertemuan</h2><p className="mt-1 text-sm leading-6 text-slate-500">Setiap sesi berdurasi satu jam dan tidak dapat diubah.</p></div>
           </div>
-          <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
-            {([1, 2, 3] as DurationHours[]).map((hours) => (
-              <button key={hours} type="button" onClick={() => setDurationHours(hours)} className={`min-h-24 rounded-2xl border px-2 py-3 text-center transition sm:px-4 ${durationHours === hours ? "border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-100" : "border-slate-200 bg-slate-50 text-slate-700 hover:border-indigo-300"}`}>
-                <span className="block text-2xl font-black">{hours}</span><span className={`mt-1 block text-xs font-black ${durationHours === hours ? "text-indigo-100" : "text-slate-500"}`}>jam</span>
-              </button>
-            ))}
+          <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-600 px-5 py-5 text-white shadow-lg shadow-indigo-100">
+            <span className="text-3xl font-black">1 jam</span>
+            <p className="mt-1 text-xs font-bold text-indigo-100">Semua sesi memakai jam mulai tepat pada menit 00.</p>
           </div>
-          <p className="mt-3 rounded-2xl bg-indigo-50 px-4 py-3 text-xs font-bold leading-5 text-indigo-800">{plan ? `${plan.session_count} sesi × ${durationHours} jam = ${plan.session_count * durationHours} jam belajar` : "Pilih paket untuk melihat total jam belajar."}</p>
+          <p className="mt-3 rounded-2xl bg-indigo-50 px-4 py-3 text-xs font-bold leading-5 text-indigo-800">{plan ? `${plan.session_count} sesi = ${plan.session_count} jam belajar` : "Pilih paket untuk melihat total jam belajar."}</p>
         </section>
 
         <section className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-7">
@@ -720,7 +736,7 @@ export default function PackageBuilder() {
                 </div>
                 <div className="mt-5 rounded-2xl border border-indigo-100 bg-white p-4">
                   <p className="mb-3 flex items-center gap-2 text-sm font-black text-slate-700"><CalendarPlus size={17} /> Atur pola jadwal sekali</p>
-                  <div className="grid gap-4 md:grid-cols-3">
+                  <div className="grid gap-4 md:grid-cols-2">
                     <Field label="Mulai belajar">
                       <input type="date" min={dateInput(new Date(Date.now() + 96 * 60 * 60 * 1000))} value={item.schedule_start_date} onChange={(event) => updateSubject(item.key, { schedule_start_date: event.target.value })} className="form-field" />
                     </Field>
@@ -732,18 +748,26 @@ export default function PackageBuilder() {
                         onChange={(value) => updateSubject(item.key, { schedule_time: value })}
                       />
                     </div>
-                    <Field label="Frekuensi">
-                      <select value={item.frequency_per_week} onChange={(event) => updateSubject(item.key, { frequency_per_week: Number(event.target.value) as 1 | 2 | 3 })} className="form-field">
-                        <option value={1}>1 kali per minggu</option>
-                        <option value={2}>2 kali per minggu</option>
-                        <option value={3}>3 kali per minggu</option>
-                      </select>
-                    </Field>
+                    <div className="md:col-span-2">
+                      <span className="mb-2 block text-xs font-black uppercase tracking-wider text-slate-500">Hari belajar</span>
+                      <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+                        {WEEKDAYS.map((day) => {
+                          const active = item.weekdays.includes(day.value);
+                          return <button key={day.value} type="button" onClick={() => {
+                            const weekdays = active
+                              ? item.weekdays.filter((value) => value !== day.value)
+                              : [...item.weekdays, day.value].sort((a, b) => a - b);
+                            if (weekdays.length) updateSubject(item.key, { weekdays });
+                          }} className={`min-h-11 rounded-xl border px-2 text-xs font-black ${active ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-200 bg-white text-slate-600"}`} title={day.label}>{day.short}</button>;
+                        })}
+                      </div>
+                      <p className="mt-2 text-xs font-medium text-slate-500">Jam yang dipilih berlaku sama pada seluruh hari.</p>
+                    </div>
                   </div>
                   <div className="mt-4 rounded-2xl bg-indigo-50 p-4 text-sm text-indigo-900">
                     <p className="font-black">{item.subject_name || `Mapel ${subjectIndex + 1}`} · {item.schedules.length} pertemuan otomatis</p>
                     <p className="mt-1 text-xs font-medium leading-5 text-indigo-700">
-                      {item.schedules.length ? `${new Date(item.schedules[0]).toLocaleDateString("id-ID", { dateStyle: "medium" })} sampai ${new Date(item.schedules[item.schedules.length - 1]).toLocaleDateString("id-ID", { dateStyle: "medium" })} · ${timeRange(item.schedules[0], durationHours)} WIB` : "Jadwal belum terbentuk."}
+                      {item.schedules.length ? `${item.weekdays.map((day) => WEEKDAYS.find((option) => option.value === day)?.label).filter(Boolean).join(", ")} · ${new Date(item.schedules[0]).toLocaleDateString("id-ID", { dateStyle: "medium" })} sampai ${new Date(item.schedules[item.schedules.length - 1]).toLocaleDateString("id-ID", { dateStyle: "medium" })} · ${timeRange(item.schedules[0], durationHours)} WIB` : "Jadwal belum terbentuk."}
                     </p>
                     <details className="mt-3">
                       <summary className="cursor-pointer text-xs font-black">Lihat semua tanggal</summary>
@@ -791,7 +815,7 @@ export default function PackageBuilder() {
                 <div className="mt-5 space-y-3 text-sm">
                   {quote.lines.map((line) => (
                     <div key={line.curriculum_subject_id} className="flex justify-between gap-3 text-slate-300">
-                      <span>{line.subject_name} · {line.session_count} sesi × {durationHours} jam</span>
+                      <span>{line.subject_name} · {line.session_count} sesi × 1 jam</span>
                       <span>{rupiah(line.subtotal_amount)}</span>
                     </div>
                   ))}
@@ -816,7 +840,7 @@ export default function PackageBuilder() {
 
         {summaryOpen && quote && plan && (
           <div className="fixed inset-0 z-[230] flex items-end justify-center bg-slate-950/70 p-0 sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !submitting) setSummaryOpen(false); }}>
-            <section role="dialog" aria-modal="true" aria-labelledby="order-summary-title" className="flex max-h-[94vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-[2rem] bg-white shadow-2xl sm:rounded-[2rem]">
+            <section role="dialog" aria-modal="true" aria-labelledby="order-summary-title" className="flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-[2rem] bg-white shadow-2xl sm:rounded-[2rem]">
               <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 p-5 sm:p-7">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[.18em] text-indigo-600">Langkah terakhir sebelum pembayaran</p>
@@ -829,7 +853,7 @@ export default function PackageBuilder() {
               <div className="min-h-0 space-y-5 overflow-y-auto p-5 sm:p-7">
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <SummaryItem label="Paket" value={`${plan.name} · ${plan.session_count} sesi`} />
-                  <SummaryItem label="Durasi" value={`${durationHours} jam/pertemuan`} />
+                  <SummaryItem label="Durasi" value="1 jam/pertemuan" />
                   <SummaryItem label="Jenjang" value={`${level} · ${grade}`} />
                   <SummaryItem label="Metode" value={mode === "online" ? "Online" : "Offline"} />
                 </div>

@@ -1,234 +1,60 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  ArrowRight,
-  BookOpen,
-  CalendarDays,
-  Clock3,
-  MapPin,
-  Monitor,
-  ShieldCheck,
-  TrendingUp,
-  Users,
-} from "lucide-react";
+import { AlertCircle, ArrowRight, Banknote, Bell, BookOpen, CalendarClock, ClipboardCheck, Loader2, MapPin, MessageSquare, Monitor, RefreshCw, ShieldCheck, Star, Users } from "lucide-react";
 import { toast } from "sonner";
-
 import TeacherLayout from "@/components/TeacherLayout";
-import { getCached } from "@/lib/http";
+import { Button } from "@/components/ui/button";
+import http, { getApiError } from "@/lib/http";
 
-type Participant = {
-  student_id: number;
-  name: string;
-  status: string;
+type DashboardData = {
+  teacher: { name: string; points: number; is_accepting_requests: boolean; suspended_until?: string | null };
+  priorities: { pending_offers: number; unread_messages: number; unread_notifications: number; schedule_responses: number; pending_appeals: number };
+  classes: { active: number; in_progress: number; awaiting_student: number; student_count: number; next?: { id: number; subject: string; chapter?: string | null; start_at: string; end_at: string; learning_mode: string; status: string } | null };
+  earnings: { held: number; available: number; requested: number };
+  rating: { average: number; count: number };
 };
 
-type TeacherClass = {
-  id: number;
-  subject: string;
-  chapter?: string | null;
-  subtopic?: string | null;
-  method: "online" | "offline";
-  type: "private" | "group";
-  status: string;
-  start_at: string;
-  end_at: string;
-  teacher_net_amount: number;
-  participants: Participant[];
-};
-
-const activeStatuses = new Set([
-  "confirmed",
-  "in_progress",
-  "awaiting_student_approval",
-  "disputed",
-  "admin_review_required",
-]);
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value || 0);
-
-const formatSchedule = (value: string) =>
-  new Intl.DateTimeFormat("id-ID", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
+const rupiah = (value: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
+const dateTime = (value?: string | null) => value ? new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "-";
 
 export default function TeacherDashboard() {
-  const [name, setName] = useState("Tutor");
-  const [points, setPoints] = useState(150);
-  const [salary, setSalary] = useState({ pending_amount: 0, ready_sessions: 0 });
-  const [classes, setClasses] = useState<TeacherClass[]>([]);
+  const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [profileResponse, salaryResponse, classesResponse] = await Promise.all([
-          getCached("/teacher/profile", { maxAgeMs: 60_000 }),
-          getCached("/teacher/salary", { maxAgeMs: 15_000 }),
-          getCached<TeacherClass[]>("/teacher/classes", { maxAgeMs: 15_000 }),
-        ]);
-
-        setName(profileResponse.data.user?.name || "Tutor");
-        setPoints(Number(profileResponse.data.profile?.points || 0));
-        setSalary(salaryResponse.data);
-        setClasses(classesResponse.data);
-      } catch (error: any) {
-        toast.error(error.response?.data?.message || "Dashboard tutor gagal dimuat.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    load();
+  const [failed, setFailed] = useState(false);
+  const load = useCallback(async () => {
+    setLoading(true); setFailed(false);
+    try { const response = await http.get<DashboardData>("/teacher/dashboard-v2"); setData(response.data); }
+    catch (error) { setFailed(true); toast.error(getApiError(error, "Dashboard tutor gagal dimuat.")); }
+    finally { setLoading(false); }
   }, []);
+  useEffect(() => { void load(); }, [load]);
 
-  const activeClasses = useMemo(
-    () => classes.filter((item) => activeStatuses.has(item.status)),
-    [classes],
-  );
-  const studentCount = useMemo(
-    () =>
-      new Set(
-        activeClasses.flatMap((item) =>
-          item.participants
-            .filter((participant) => !["cancelled", "refunded"].includes(participant.status))
-            .map((participant) => participant.student_id),
-        ),
-      ).size,
-    [activeClasses],
-  );
-  const upcoming = useMemo(
-    () =>
-      [...activeClasses]
-        .filter((item) => new Date(item.end_at).getTime() >= Date.now())
-        .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
-        .slice(0, 4),
-    [activeClasses],
-  );
+  const priorityItems = data ? [
+    { label: "Permintaan menunggu", count: data.priorities.pending_offers, to: "/guru/permintaan", icon: ClipboardCheck, color: "bg-amber-50 text-amber-700" },
+    { label: "Pesan belum dibaca", count: data.priorities.unread_messages, to: "/guru/pesan", icon: MessageSquare, color: "bg-indigo-50 text-indigo-700" },
+    { label: "Persetujuan jadwal", count: data.priorities.schedule_responses, to: "/guru/kelas", icon: CalendarClock, color: "bg-violet-50 text-violet-700" },
+    { label: "Notifikasi baru", count: data.priorities.unread_notifications, to: "/guru/notifikasi", icon: Bell, color: "bg-rose-50 text-rose-700" },
+    { label: "Banding diproses", count: data.priorities.pending_appeals, to: "/guru/performa", icon: ShieldCheck, color: "bg-emerald-50 text-emerald-700" },
+  ].filter((item) => item.count > 0) : [];
 
-  return (
-    <TeacherLayout title="Dashboard Tutor">
-      <div className="space-y-7 pb-16">
-        <section className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-8 text-white shadow-xl md:p-10">
-          <div className="absolute -right-16 -top-16 h-64 w-64 rounded-full bg-indigo-400/20 blur-3xl" />
-          <div className="relative flex flex-col justify-between gap-7 md:flex-row md:items-center">
-            <div>
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-indigo-100">
-                <ShieldCheck size={14} /> {points} poin performa
-              </span>
-              <h1 className="mt-5 text-3xl font-black tracking-tight md:text-4xl">
-                Halo, {loading ? "…" : name.split(" ")[0]}!
-              </h1>
-              <p className="mt-2 max-w-xl text-indigo-100/75">
-                Pantau sesi sesuai slot yang sudah dipesan, unggah bukti pelaksanaan, dan jaga respons tetap cepat.
-              </p>
-            </div>
-            <Link
-              to="/guru/permintaan"
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 shadow-lg transition hover:bg-indigo-50"
-            >
-              Lihat permintaan <ArrowRight size={17} />
-            </Link>
-          </div>
-        </section>
+  return <TeacherLayout title="Beranda Tutor"><div className="space-y-5 pb-10 sm:space-y-7">
+    <section className="relative overflow-hidden rounded-[1.7rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-5 text-white shadow-xl sm:rounded-[2rem] sm:p-8">
+      <div className="absolute -right-16 -top-16 h-56 w-56 rounded-full bg-indigo-400/20 blur-3xl" />
+      <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-100"><ShieldCheck size={13} />{data?.teacher.points || 0} poin · {data?.teacher.is_accepting_requests ? "menerima permintaan" : "permintaan dijeda"}</span><h1 className="mt-4 text-2xl font-black sm:text-4xl">Halo, {data?.teacher.name?.split(" ")[0] || "Tutor"}</h1><p className="mt-2 max-w-xl text-sm leading-6 text-indigo-100/75">Selesaikan pekerjaan mendesak lebih dahulu, lalu lanjutkan sesi mengajar dan pencairan.</p></div><Button onClick={() => void load()} variant="outline" className="h-11 rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"><RefreshCw size={16} className="mr-2" />Muat ulang</Button></div>
+    </section>
 
-        <section className="grid gap-4 md:grid-cols-3">
-          <Metric icon={Users} label="Murid aktif" value={`${studentCount}`} color="bg-orange-500" />
-          <Metric icon={BookOpen} label="Sesi aktif" value={`${activeClasses.length}`} color="bg-indigo-600" />
-          <Metric
-            icon={TrendingUp}
-            label={`${salary.ready_sessions || 0} sesi siap dicairkan`}
-            value={formatCurrency(salary.pending_amount)}
-            color="bg-emerald-600"
-          />
-        </section>
+    {loading ? <div className="grid min-h-72 place-items-center rounded-[2rem] bg-white"><Loader2 className="animate-spin text-indigo-600" size={30} /></div> : failed || !data ? <div className="rounded-[2rem] border border-rose-100 bg-white p-12 text-center"><AlertCircle className="mx-auto text-rose-400" /><p className="mt-3 font-black">Dashboard belum dapat dimuat</p><Button onClick={() => void load()} className="mt-4 rounded-xl bg-indigo-600">Coba lagi</Button></div> : <>
+      <section><div className="mb-3 flex items-center justify-between"><div><h2 className="text-lg font-black text-slate-900">Perlu dikerjakan</h2><p className="mt-1 text-xs text-slate-500">Diurutkan berdasarkan pekerjaan yang menunggu tindakanmu.</p></div></div>{priorityItems.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{priorityItems.map(({ label, count, to, icon: Icon, color }) => <Link key={label} to={to} className="group flex items-center gap-3 rounded-[1.4rem] border border-slate-100 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"><span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${color}`}><Icon size={18} /></span><span className="min-w-0 flex-1"><span className="block text-2xl font-black text-slate-900">{count}</span><span className="block text-xs font-bold text-slate-500">{label}</span></span><ArrowRight className="shrink-0 text-slate-300 group-hover:text-indigo-500" size={17} /></Link>)}</div> : <div className="rounded-[1.4rem] border border-emerald-100 bg-emerald-50 p-5 text-sm font-bold text-emerald-800"><ShieldCheck className="mr-2 inline" size={17} />Tidak ada pekerjaan mendesak saat ini.</div>}</section>
 
-        <section className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 p-6">
-            <div>
-              <h2 className="flex items-center gap-2 text-xl font-black text-slate-900">
-                <CalendarDays className="text-indigo-600" /> Jadwal terdekat
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">Waktu ini sudah dikunci dan tidak boleh bertabrakan.</p>
-            </div>
-            <Link to="/guru/kelas" className="text-sm font-bold text-indigo-600 hover:text-indigo-700">
-              Kelola semua
-            </Link>
-          </div>
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Metric icon={BookOpen} label="Kelas aktif" value={String(data.classes.active)} /><Metric icon={Users} label="Murid aktif" value={String(data.classes.student_count)} /><Metric icon={Star} label="Penilaian" value={data.rating.count ? `${data.rating.average.toFixed(1)} / 5` : "-"} /><Metric icon={Banknote} label="Siap dicairkan" value={rupiah(data.earnings.available)} /></section>
 
-          {loading ? (
-            <div className="p-10 text-center text-sm text-slate-400">Memuat jadwal…</div>
-          ) : upcoming.length ? (
-            <div className="divide-y divide-slate-100">
-              {upcoming.map((item) => (
-                <Link
-                  key={item.id}
-                  to="/guru/kelas"
-                  className="flex flex-col gap-4 p-6 transition hover:bg-slate-50 md:flex-row md:items-center md:justify-between"
-                >
-                  <div className="flex min-w-0 items-center gap-4">
-                    <div className={`grid h-13 w-13 shrink-0 place-items-center rounded-2xl ${item.method === "online" ? "bg-indigo-50 text-indigo-600" : "bg-emerald-50 text-emerald-600"}`}>
-                      {item.method === "online" ? <Monitor size={22} /> : <MapPin size={22} />}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-lg font-black text-slate-900">{item.subject}</p>
-                      <p className="mt-1 truncate text-sm text-slate-500">
-                        {[item.chapter, item.subtopic].filter(Boolean).join(" · ") || "Materi sesuai permintaan murid"}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
-                    <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-600">
-                      <Clock3 size={13} className="mr-1 inline" /> {formatSchedule(item.start_at)} WIB
-                    </span>
-                    <span className="rounded-full bg-indigo-50 px-3 py-1.5 text-indigo-700">
-                      {item.type === "group" ? `${item.participants.length} murid` : "Privat"}
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="p-12 text-center">
-              <BookOpen className="mx-auto text-slate-300" size={36} />
-              <p className="mt-3 font-bold text-slate-700">Belum ada sesi aktif.</p>
-              <p className="mt-1 text-sm text-slate-400">Permintaan yang cocok akan muncul pada halaman permintaan.</p>
-            </div>
-          )}
-        </section>
-      </div>
-    </TeacherLayout>
-  );
+      <section className="grid gap-4 lg:grid-cols-[1.35fr_.65fr]">
+        <article className="rounded-[1.7rem] border border-slate-100 bg-white p-5 shadow-sm sm:rounded-[2rem] sm:p-6"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-wider text-indigo-500">Sesi berikutnya</p><h2 className="mt-2 text-xl font-black text-slate-900">{data.classes.next?.subject || "Belum ada jadwal"}</h2></div>{data.classes.next && <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${data.classes.next.learning_mode === "online" ? "bg-indigo-50 text-indigo-600" : "bg-emerald-50 text-emerald-600"}`}>{data.classes.next.learning_mode === "online" ? <Monitor size={19} /> : <MapPin size={19} />}</span>}</div>{data.classes.next ? <><p className="mt-2 text-sm text-slate-500">{data.classes.next.chapter || "Materi sesuai permintaan murid"}</p><div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-700"><CalendarClock className="mr-2 inline text-indigo-600" size={17} />{dateTime(data.classes.next.start_at)} WIB</div><Button asChild className="mt-4 h-11 w-full rounded-xl bg-indigo-600"><Link to="/guru/kelas">Buka kelas <ArrowRight className="ml-2" size={16} /></Link></Button></> : <p className="mt-3 text-sm leading-6 text-slate-500">Permintaan yang diterima dan kelas berbayar akan muncul di sini.</p>}</article>
+        <article className="rounded-[1.7rem] border border-slate-100 bg-white p-5 shadow-sm sm:rounded-[2rem] sm:p-6"><p className="text-xs font-black uppercase tracking-wider text-emerald-600">Ringkasan saldo</p><Money label="Ditahan" value={data.earnings.held} /><Money label="Tersedia" value={data.earnings.available} /><Money label="Diajukan" value={data.earnings.requested} /><Button asChild variant="outline" className="mt-4 h-11 w-full rounded-xl border-emerald-200 text-emerald-700"><Link to="/guru/gaji">Kelola pencairan</Link></Button></article>
+      </section>
+    </>}
+  </div></TeacherLayout>;
 }
 
-function Metric({
-  icon: Icon,
-  label,
-  value,
-  color,
-}: {
-  icon: typeof Users;
-  label: string;
-  value: string;
-  color: string;
-}) {
-  return (
-    <div className="flex items-center gap-4 rounded-[1.6rem] border border-slate-100 bg-white p-5 shadow-sm">
-      <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-white ${color}`}>
-        <Icon size={22} />
-      </div>
-      <div className="min-w-0">
-        <p className="truncate text-xs font-bold uppercase tracking-wider text-slate-400">{label}</p>
-        <p className="mt-1 truncate text-2xl font-black text-slate-900">{value}</p>
-      </div>
-    </div>
-  );
-}
+function Metric({ icon: Icon, label, value }: { icon: typeof BookOpen; label: string; value: string }) { return <div className="min-w-0 rounded-[1.3rem] border border-slate-100 bg-white p-4 shadow-sm"><Icon className="text-indigo-600" size={18} /><p className="mt-3 truncate text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 truncate text-lg font-black text-slate-900 sm:text-xl">{value}</p></div>; }
+function Money({ label, value }: { label: string; value: number }) { return <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-3 text-sm"><span className="font-bold text-slate-500">{label}</span><span className="text-right font-black text-slate-900">{rupiah(value)}</span></div>; }

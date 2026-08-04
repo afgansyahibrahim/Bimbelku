@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FileText,
   RotateCw,
@@ -19,6 +19,8 @@ export default function FilePreviewProvider() {
   const [preview, setPreview] = useState<FilePreviewDetail | null>(null);
   const [scale, setScale] = useState(1);
   const [rotation, setRotation] = useState(0);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
 
   const close = () => {
     setPreview((current) => {
@@ -47,6 +49,11 @@ export default function FilePreviewProvider() {
   useEffect(() => {
     if (!preview) return;
 
+    restoreFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    window.requestAnimationFrame(() => dialogRef.current?.focus());
+
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -63,6 +70,7 @@ export default function FilePreviewProvider() {
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
+      restoreFocusRef.current?.focus();
     };
   }, [preview]);
 
@@ -77,7 +85,9 @@ export default function FilePreviewProvider() {
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex flex-col bg-slate-950/95 text-white backdrop-blur-sm"
+      ref={dialogRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-[200] flex flex-col bg-slate-950/95 text-white backdrop-blur-sm outline-none"
       role="dialog"
       aria-modal="true"
       aria-label={`Pratinjau ${preview.filename}`}
@@ -127,6 +137,7 @@ export default function FilePreviewProvider() {
       </div>
 
       <div
+        role="presentation"
         className="relative flex-1 overflow-auto p-3 sm:p-6"
         onClick={(event) => {
           if (event.target === event.currentTarget) close();
@@ -137,7 +148,9 @@ export default function FilePreviewProvider() {
             <img
               src={preview.url}
               alt={preview.filename}
-              className="max-h-[calc(100vh-7rem)] max-w-full cursor-zoom-in select-none object-contain shadow-2xl transition-transform duration-200"
+              loading="eager"
+              decoding="async"
+              className="max-h-[calc(100dvh-7rem)] max-w-full cursor-zoom-in select-none object-contain shadow-2xl transition-transform duration-200"
               style={{ transform: `scale(${scale}) rotate(${rotation}deg)` }}
               onClick={() => setScale((value) => value === 1 ? 2 : 1)}
               draggable={false}
@@ -147,7 +160,7 @@ export default function FilePreviewProvider() {
           <iframe
             title={`Pratinjau ${preview.filename}`}
             src={pdfUrl}
-            className="h-full min-h-[calc(100vh-7rem)] w-full rounded-xl border-0 bg-white"
+            className="h-full min-h-[calc(100dvh-7rem)] w-full rounded-xl border-0 bg-white"
           />
         ) : (
           <div className="grid min-h-full place-items-center">

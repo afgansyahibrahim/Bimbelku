@@ -73,6 +73,8 @@ const Footer = () => {
                         <img 
                             src={item.icon_url} 
                             alt={item.name} 
+                            loading="lazy"
+                            decoding="async"
                             className="w-5 h-5 object-contain opacity-70 group-hover:opacity-100 transition-opacity"
                         />
                     </a>

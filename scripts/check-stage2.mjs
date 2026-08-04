@@ -39,8 +39,12 @@ const checks = [
   {
     file: "src/pages/teacher/TeacherSalary.tsx",
     patterns: [
-      /md:hidden/,
-      /hidden overflow-x-auto md:block/,
+      /grid grid-cols-2 gap-3/,
+      /sm:flex-row/,
+      /ready_bookings/,
+    ],
+    forbidden: [
+      /min-w-\[900px\]/,
     ],
   },
   {

@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class AdminStageFiveController extends Controller
 {
@@ -226,7 +227,7 @@ class AdminStageFiveController extends Controller
 
     private function validateTimeSlot(Request $request, ?LearningTimeSlot $slot = null): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'start_time' => [
                 'required',
                 'date_format:H:i',
@@ -236,6 +237,19 @@ class AdminStageFiveController extends Controller
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'is_active' => ['required', 'boolean'],
         ]);
+
+        if (substr($data['start_time'], 3, 2) !== '00') {
+            throw ValidationException::withMessages([
+                'start_time' => 'Pilihan jam hanya boleh menggunakan menit 00.',
+            ]);
+        }
+        if ($data['start_time'] >= '23:00') {
+            throw ValidationException::withMessages([
+                'start_time' => 'Jam mulai paling lambat 22.00 agar sesi selesai pada hari yang sama.',
+            ]);
+        }
+
+        return $data;
     }
 
     private function validatePromotion(Request $request, ?Promotion $promotion = null): array

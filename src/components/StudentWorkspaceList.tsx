@@ -90,7 +90,7 @@ export default function StudentWorkspaceList({ mode }: { mode: WorkspaceMode }) 
           <div className="flex items-start gap-4">
             <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/10 text-blue-200"><Icon size={24} /></span>
             <div className="min-w-0">
-              <p className="text-xs font-black uppercase tracking-[.18em] text-blue-200">Ruang belajar privat</p>
+              <p className="text-xs font-black uppercase tracking-[.18em] text-blue-200">Ruang belajar</p>
               <h1 className="mt-2 text-2xl font-black sm:text-3xl">{title}</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
                 {isMessages
@@ -128,7 +128,7 @@ export default function StudentWorkspaceList({ mode }: { mode: WorkspaceMode }) 
                 <article key={item.id} className="rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
                   <div className="flex items-start gap-3 sm:gap-4">
                     <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-indigo-50 text-indigo-600">
-                      {item.mentor_avatar ? <img src={item.mentor_avatar} alt="" className="h-full w-full object-cover" /> : <UserRound size={21} />}
+                      {item.mentor_avatar ? <img src={item.mentor_avatar} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <UserRound size={21} />}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-[10px] font-black uppercase tracking-wider text-indigo-500">{item.subject}</p>

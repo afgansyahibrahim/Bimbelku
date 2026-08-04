@@ -9,16 +9,21 @@ use App\Models\PaymentSetting;
 use App\Models\Order;
 use App\Models\Classroom;
 use App\Models\Payout; 
-use App\Models\PayoutApproval;
 use App\Models\SocialMedia;
 use App\Models\Booking;
+use App\Models\TeacherAppeal;
+use App\Models\BookingDispute;
+use App\Models\SessionReport;
+use App\Models\BookingRequest;
 use App\Models\Notification;
 use App\Models\Refund;
 use App\Models\TeacherProfile;
+use App\Models\TeacherPayoutRequest;
 use App\Services\GroupClassService;
 use App\Services\TeacherMatchingService;
 use App\Services\TeacherOfferReleaseService;
 use App\Services\PackageCheckoutService;
+use App\Support\AdminPermissionCatalog;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB; 
 use Carbon\Carbon;
@@ -246,7 +251,8 @@ class AdminController extends Controller
             'status' => 'required|in:active,banned',
         ]);
 
-        DB::transaction(function () use ($request) {
+        $affectedRole = null;
+        DB::transaction(function () use ($request, &$affectedRole) {
             $user = User::query()
                 ->lockForUpdate()
                 ->findOrFail($request->user_id);
@@ -260,6 +266,7 @@ class AdminController extends Controller
             if ($user->role === 'admin') {
                 abort(403, 'Akun admin tidak dapat diblokir dari menu pengguna.');
             }
+            $affectedRole = $user->role;
             if (
                 $request->status === 'active'
                 && $user->role === 'teacher'
@@ -283,7 +290,7 @@ class AdminController extends Controller
             }
         }, 3);
 
-        if ($request->status === 'banned') {
+        if ($request->status === 'banned' && $affectedRole === 'teacher') {
             $offerReleaseService
                 ->releaseForTeacher((int) $request->user_id, 'Akun tutor diblokir admin')
                 ->each(fn ($bookingRequest) => $matchingService->dispatchNextOffer($bookingRequest));
@@ -832,11 +839,17 @@ class AdminController extends Controller
     public function updatePaymentSettings(Request $request)
     {
         $request->validate([
-            'merchant_name'  => 'required|string|max:100',
-            'bank_name'      => 'required|string|max:100',
-            'account_number' => ['required', 'string', 'max:50', 'regex:/^[0-9 .-]+$/'],
-            'account_name'   => 'required|string|max:150',
+            'merchant_name'  => ['required', 'string', 'max:100', 'regex:/\pL/u'],
+            'bank_name'      => ['required', 'string', 'max:100', 'regex:/\pL/u'],
+            'account_number' => ['required', 'string', 'max:50', 'regex:/^[0-9]{6,50}$/'],
+            'account_name'   => ['required', 'string', 'max:150', 'regex:/\pL/u', 'not_regex:/\d/u'],
             'qris_image'     => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048'
+        ], [
+            'merchant_name.regex' => 'Nama merchant wajib mengandung huruf.',
+            'bank_name.regex' => 'Nama bank atau e-wallet wajib mengandung huruf.',
+            'account_number.regex' => 'Nomor rekening harus berisi 6–50 angka.',
+            'account_name.regex' => 'Nama pemilik rekening wajib mengandung huruf.',
+            'account_name.not_regex' => 'Nama pemilik rekening tidak boleh memuat angka.',
         ]);
 
         $settings = PaymentSetting::firstOrCreate(['singleton_key' => 1], [
@@ -868,9 +881,15 @@ class AdminController extends Controller
                         $query->where('status', 'submitted')
                             ->orWhere(function ($open) {
                                 $open->whereIn('status', ['pending', 'rejected'])
-                                    ->whereHas('booking', fn ($booking) => $booking
-                                        ->whereNotNull('payment_due_at')
-                                        ->where('payment_due_at', '>', now()));
+                                    ->where(function ($sources) {
+                                        $sources
+                                            ->whereHas('booking', fn ($booking) => $booking
+                                                ->whereNotNull('payment_due_at')
+                                                ->where('payment_due_at', '>', now()))
+                                            ->orWhereHas('learningPackage', fn ($package) => $package
+                                                ->whereNotNull('payment_due_at')
+                                                ->where('payment_due_at', '>', now()));
+                                    });
                             });
                     })
                     ->exists();
@@ -943,11 +962,6 @@ class AdminController extends Controller
     {
         Carbon::setLocale('id');
         $currentGlobalFee = (float) (\App\Models\Setting::where('key', 'admin_fee')->value('value') ?? 20);
-        $highValueThreshold = max(
-            100000,
-            (float) (\App\Models\Setting::where('key', 'high_value_payout_threshold')->value('value') ?? 5000000)
-        );
-
         $history = Payout::with('user')->latest()->limit(200)->get()->map(function ($p) {
             return [
                 'id' => $p->id,
@@ -964,39 +978,26 @@ class AdminController extends Controller
         });
 
         $readyBookings = Booking::query()
-            ->where('payout_status', 'ready')
+            ->whereIn('payout_status', ['ready', 'requested'])
             ->where('status', 'completed')
-            ->with(['teacher.teacherProfile', 'participants'])
+            ->with(['teacher.teacherProfile', 'participants', 'payoutRequest'])
             ->orderBy('completed_at')
             ->get();
 
         $pending = $readyBookings
-            ->groupBy('teacher_id')
-            ->map(function ($bookings) use ($highValueThreshold) {
+            ->groupBy(fn ($booking) => $booking->payout_request_id
+                ? 'request:'.$booking->payout_request_id
+                : 'teacher:'.$booking->teacher_id)
+            ->map(function ($bookings) {
                 $first = $bookings->first();
                 $teacher = $first->teacher;
                 $profile = $teacher?->teacherProfile;
                 $bookingIds = $bookings->pluck('id')->sort()->values()->all();
                 $netAmount = (float) $bookings->sum('teacher_net_amount');
-                $approval = null;
-                if ($netAmount >= $highValueThreshold) {
-                    $fingerprint = FinanceApprovalController::fingerprint(
-                        (int) $first->teacher_id,
-                        $bookingIds,
-                        $netAmount,
-                        (int) ($profile?->bank_details_version ?? 0),
-                        $profile?->bank_account_fingerprint
-                    );
-                    $approval = PayoutApproval::query()
-                        ->where('fingerprint', $fingerprint)
-                        ->whereIn('status', ['pending', 'approved'])
-                        ->whereNull('consumed_at')
-                        ->where('expires_at', '>', now())
-                        ->latest()
-                        ->first();
-                }
-
                 return [
+                    'queueKey' => $first->payout_request_id
+                        ? 'request:'.$first->payout_request_id
+                        : 'teacher:'.$first->teacher_id,
                     'teacherId' => $first->teacher_id,
                     'bookingIds' => $bookingIds,
                     'name' => $teacher?->name ?? 'Tutor',
@@ -1008,16 +1009,13 @@ class AdminController extends Controller
                         fn ($booking) => (float) $booking->gross_amount - (float) $booking->teacher_net_amount
                     ),
                     'netAmount' => $netAmount,
-                    'requiresSecondApproval' => $netAmount >= $highValueThreshold,
-                    'approval' => $approval ? [
-                        'id' => $approval->id,
-                        'status' => $approval->status,
-                        'requestedBy' => $approval->requested_by,
-                        'approvedBy' => $approval->approved_by,
-                        'expiresAt' => $approval->expires_at,
-                    ] : null,
                     'payoutHoldUntil' => $profile?->payout_hold_until,
                     'payoutBlocked' => (bool) $profile?->payout_hold_until?->isFuture(),
+                    'request' => optional($bookings->pluck('payoutRequest')->filter()->sortByDesc('requested_at')->first(), fn ($item) => [
+                        'id' => $item->id,
+                        'status' => $item->status,
+                        'requestedAt' => $item->requested_at,
+                    ]),
                     'bankDetails' => [
                         'bank' => $profile?->bank_name ?: 'Belum diatur',
                         'number' => $profile?->account_number ?: '-',
@@ -1028,32 +1026,27 @@ class AdminController extends Controller
             ->values();
 
         $sevenDaysAgo = Carbon::now()->subDays(7);
-        $recentOrders = Order::query()
-            ->where('status', 'paid')
-            ->whereNotNull('verified_at')
-            ->where('verified_at', '>=', $sevenDaysAgo)
-            ->with('booking:id,commission_percent')
-            ->get();
-        $revenue7Days = (float) $recentOrders->sum('amount');
-        $teacherShare7Days = (float) $recentOrders->sum(function (Order $order) {
-            $commission = (float) ($order->booking?->commission_percent ?? 20);
-
-            return round((float) $order->amount * (100 - $commission) / 100);
-        });
-        $adminProfit7Days = $revenue7Days - $teacherShare7Days;
+        $paidPayouts7Days = Payout::query()
+            ->where('status', 'completed')
+            ->where('processed_at', '>=', $sevenDaysAgo);
+        $readyAmount = (float) Booking::query()
+            ->where('status', 'completed')
+            ->where('payout_status', 'ready')
+            ->sum('teacher_net_amount');
+        $requestedAmount = (float) Booking::query()
+            ->where('status', 'completed')
+            ->where('payout_status', 'requested')
+            ->sum('teacher_net_amount');
 
         return response()->json([
-            'pending' => $pending, 
-            'history' => $history, 
-            'stats' => [           
-                'revenue_7days' => $revenue7Days,
-                'teacher_7days' => $teacherShare7Days,
-                'admin_7days'   => $adminProfit7Days,
-                'admin_fee_percent' => $currentGlobalFee 
-            ],
-            'security' => [
-                'current_admin_id' => $request->user()->id,
-                'high_value_threshold' => $highValueThreshold,
+            'pending' => $pending,
+            'history' => $history,
+            'stats' => [
+                'ready_amount' => round($readyAmount, 2),
+                'requested_amount' => round($requestedAmount, 2),
+                'paid_7days' => round((float) (clone $paidPayouts7Days)->sum('amount'), 2),
+                'paid_count_7days' => (clone $paidPayouts7Days)->count(),
+                'admin_fee_percent' => $currentGlobalFee,
             ],
         ]);
     }
@@ -1064,7 +1057,6 @@ class AdminController extends Controller
             'teacher_id' => 'required|exists:users,id',
             'booking_ids' => 'required|array|min:1|max:200',
             'booking_ids.*' => 'integer|distinct|exists:bookings,id',
-            'approval_id' => 'nullable|integer|exists:payout_approvals,id',
             'proof_file' => 'required|image|mimes:jpg,jpeg,png,webp|max:5120',
         ]);
 
@@ -1090,17 +1082,11 @@ class AdminController extends Controller
         }
 
         $path = $request->file('proof_file')->store('payout_proofs', 'local');
-        $highValueThreshold = max(
-            100000,
-            (float) (\App\Models\Setting::where('key', 'high_value_payout_threshold')->value('value') ?? 5000000)
-        );
-
         try {
             $payout = DB::transaction(function () use (
                 $request,
                 $validated,
-                $path,
-                $highValueThreshold
+                $path
             ) {
                 $profile = TeacherProfile::query()
                     ->where('user_id', $validated['teacher_id'])
@@ -1127,7 +1113,7 @@ class AdminController extends Controller
                     ->where('teacher_id', $validated['teacher_id'])
                     ->whereIn('id', $validated['booking_ids'])
                     ->where('status', 'completed')
-                    ->where('payout_status', 'ready')
+                    ->whereIn('payout_status', ['ready', 'requested'])
                     ->lockForUpdate()
                     ->get();
 
@@ -1139,34 +1125,23 @@ class AdminController extends Controller
                 $net = (float) $bookings->sum('teacher_net_amount');
                 $commission = $gross - $net;
                 $bookingIds = $bookings->pluck('id')->sort()->values()->all();
-                $approval = null;
-
-                if ($net >= $highValueThreshold) {
-                    if (empty($validated['approval_id'])) {
-                        abort(422, 'Pencairan bernilai besar harus disetujui admin kedua.');
-                    }
-                    $approval = PayoutApproval::query()
-                        ->lockForUpdate()
-                        ->findOrFail($validated['approval_id']);
-                    $expectedFingerprint = FinanceApprovalController::fingerprint(
-                        (int) $validated['teacher_id'],
-                        $bookingIds,
-                        $net,
-                        (int) $profile->bank_details_version,
-                        $profile->bank_account_fingerprint
-                    );
+                $payoutRequestIds = $bookings->pluck('payout_request_id')->filter()->unique()->values();
+                if ($payoutRequestIds->count() > 1) {
+                    abort(422, 'Sesi berasal dari beberapa pengajuan pencairan. Proses setiap pengajuan secara terpisah.');
+                }
+                $teacherPayoutRequest = $payoutRequestIds->isNotEmpty()
+                    ? TeacherPayoutRequest::query()->lockForUpdate()->findOrFail($payoutRequestIds->first())
+                    : null;
+                if ($teacherPayoutRequest) {
+                    $requestBookingIds = collect($teacherPayoutRequest->booking_ids)->map(fn ($id) => (int) $id)->sort()->values()->all();
                     if (
-                        $approval->status !== 'approved'
-                        || $approval->consumed_at
-                        || $approval->expires_at->isPast()
-                        || (int) $approval->teacher_id !== (int) $validated['teacher_id']
-                        || !hash_equals($approval->fingerprint, $expectedFingerprint)
-                        || (int) $approval->requested_by === (int) $approval->approved_by
+                        $teacherPayoutRequest->status !== 'pending'
+                        || (int) $teacherPayoutRequest->teacher_id !== (int) $validated['teacher_id']
+                        || $requestBookingIds !== array_map('intval', $bookingIds)
                     ) {
-                        abort(422, 'Persetujuan admin kedua tidak berlaku untuk pencairan ini.');
+                        abort(422, 'Data pengajuan pencairan telah berubah. Muat ulang halaman keuangan.');
                     }
                 }
-
                 $record = Payout::create([
                     'user_id' => $validated['teacher_id'],
                     'amount' => $net,
@@ -1182,15 +1157,15 @@ class AdminController extends Controller
                     'bank_name' => $profile->bank_name,
                     'account_number' => $profile->account_number,
                     'account_name' => $profile->account_name,
-                    'payout_approval_id' => $approval?->id,
                 ]);
 
                 $bookings->each->update([
                     'payout_status' => 'paid',
                 ]);
-                $approval?->update([
-                    'status' => 'consumed',
-                    'consumed_at' => now(),
+                $teacherPayoutRequest?->update([
+                    'status' => 'completed',
+                    'payout_id' => $record->id,
+                    'processed_at' => now(),
                 ]);
 
                 Notification::create([
@@ -1198,6 +1173,8 @@ class AdminController extends Controller
                     'title' => 'Pendapatan telah ditransfer',
                     'message' => 'Admin mencatat pencairan sebesar Rp'.number_format($net, 0, ',', '.').'.',
                     'type' => 'success',
+                    'target_url' => '/guru/gaji',
+                    'unique_key' => "payout-completed:{$record->id}",
                 ]);
 
                 return $record;
@@ -1213,31 +1190,204 @@ class AdminController extends Controller
         return response()->json(['message' => 'Gaji berhasil dicairkan!', 'data' => $payload]);
     }
 
-    public function getDashboardStats()
+    public function getDashboardStats(Request $request)
     {
+        $admin = $request->user();
+        $can = fn (string $permission): bool => $admin->hasAdminPermission($permission);
         $today = Carbon::today();
         $startOfMonth = Carbon::now()->startOfMonth();
         $startOfYear = Carbon::now()->startOfYear();
 
-        $revenueToday = Order::where('status', 'paid')->whereDate('verified_at', $today)->sum('amount');
-        $revenueMonth = Order::where('status', 'paid')->where('verified_at', '>=', $startOfMonth)->sum('amount');
-        $revenueYear  = Order::where('status', 'paid')->where('verified_at', '>=', $startOfYear)->sum('amount');
+        $canPayments = $can(AdminPermissionCatalog::FINANCE_PAYMENTS);
+        $canMatching = $can(AdminPermissionCatalog::MATCHING_MANAGE);
+        $canCases = $can(AdminPermissionCatalog::CASES_MANAGE);
+        $canRefunds = $can(AdminPermissionCatalog::FINANCE_REFUNDS);
+        $canPayouts = $can(AdminPermissionCatalog::FINANCE_PAYOUTS);
+        $canTeachers = $can(AdminPermissionCatalog::TEACHERS_MANAGE);
+        $canUsers = $can(AdminPermissionCatalog::USERS_MANAGE);
 
-        $pendingTeachers = User::where('role', 'teacher')->where('status', 'pending')->count();
-        $pendingOrders = Order::where('status', 'submitted')->whereNotNull('payment_proof')->count(); 
-        $totalUsers = User::where('status', 'active')->count();
+        $revenueToday = $canPayments
+            ? Order::where('status', 'paid')->whereDate('verified_at', $today)->sum('amount')
+            : 0;
+        $revenueMonth = $canPayments
+            ? Order::where('status', 'paid')->where('verified_at', '>=', $startOfMonth)->sum('amount')
+            : 0;
+        $revenueYear = $canPayments
+            ? Order::where('status', 'paid')->where('verified_at', '>=', $startOfYear)->sum('amount')
+            : 0;
+
+        $pendingTeachers = $canTeachers
+            ? User::where('role', 'teacher')->where('status', 'pending')->count()
+            : 0;
+        $pendingOrders = $canPayments
+            ? Order::where('status', 'submitted')->whereNotNull('payment_proof')->count()
+            : 0;
+        $totalUsers = $canUsers ? User::where('status', 'active')->count() : 0;
+        $activeMatching = $canMatching
+            ? BookingRequest::query()
+                ->whereIn('status', ['matching', 'teacher_pending'])
+                ->matchingAnchors()
+                ->count()
+            : 0;
+        $matchingNeedsAttention = $canMatching
+            ? BookingRequest::query()
+                ->matchingAnchors()
+                ->where(function ($query) {
+                    $query
+                        ->where(function ($noTeacher) {
+                            $noTeacher
+                                ->where('status', 'no_teacher')
+                                ->whereDate('scheduled_date', '>=', today());
+                        })
+                        ->orWhere(function ($expired) {
+                            $expired
+                                ->where('status', 'expired')
+                                ->whereDate('scheduled_date', '>=', today());
+                        })
+                        ->orWhere(function ($pending) {
+                            $pending
+                                ->where('status', 'teacher_pending')
+                                ->whereNotNull('teacher_response_deadline')
+                                ->where('teacher_response_deadline', '<=', now());
+                        })
+                        ->orWhere(function ($expiring) {
+                            $expiring
+                                ->whereIn('status', ['matching', 'teacher_pending'])
+                                ->whereNotNull('search_expires_at')
+                                ->whereBetween('search_expires_at', [now(), now()->addHours(6)]);
+                        });
+                })
+                ->count()
+            : 0;
+        $pendingCases = $canCases
+            ? SessionReport::where('status', 'pending')->count()
+                + BookingDispute::where('status', 'pending')->count()
+                + Booking::where('status', 'admin_review_required')->count()
+                + TeacherAppeal::where('status', 'pending')->count()
+            : 0;
+        $pendingRefunds = $canRefunds ? Refund::where('status', 'pending')->count() : 0;
+        $pendingPayouts = $canPayouts ? TeacherPayoutRequest::where('status', 'pending')->count() : 0;
+
+        $matchingPreview = $canMatching
+            ? BookingRequest::query()
+                ->whereIn('status', ['matching', 'teacher_pending', 'no_teacher'])
+                ->matchingAnchors()
+                ->whereDate('scheduled_date', '>=', $today)
+                ->with(['student:id,name', 'matchedTeacher:id,name'])
+                ->orderByRaw("CASE status WHEN 'no_teacher' THEN 0 WHEN 'teacher_pending' THEN 1 ELSE 2 END")
+                ->orderByRaw('CASE WHEN teacher_response_deadline IS NOT NULL AND teacher_response_deadline <= ? THEN 0 ELSE 1 END', [now()])
+                ->orderBy('search_started_at')
+                ->limit(5)
+                ->get()
+                ->map(function (BookingRequest $bookingRequest) {
+                    $isOverdue = $bookingRequest->status === 'teacher_pending'
+                        && $bookingRequest->teacher_response_deadline?->isPast();
+                    $needsAttention = $bookingRequest->status === 'no_teacher' || $isOverdue;
+
+                    return [
+                        'id' => $bookingRequest->id,
+                        'student_name' => $bookingRequest->student?->name ?? 'Murid',
+                        'subject_name' => $bookingRequest->subject_name,
+                        'status' => $bookingRequest->status,
+                        'status_label' => match ($bookingRequest->status) {
+                            'matching' => 'Mencari tutor',
+                            'teacher_pending' => $isOverdue ? 'Jawaban tutor terlambat' : 'Menunggu tutor',
+                            'no_teacher' => 'Tutor belum ditemukan',
+                            default => $bookingRequest->status,
+                        },
+                        'teacher_name' => $bookingRequest->matchedTeacher?->name,
+                        'search_radius_km' => (int) $bookingRequest->search_radius_km,
+                        'scheduled_at' => Carbon::parse(
+                            $bookingRequest->scheduled_date->format('Y-m-d').' '.$bookingRequest->start_time,
+                            config('app.timezone', 'Asia/Jakarta')
+                        )->toIso8601String(),
+                        'needs_attention' => $needsAttention,
+                    ];
+                })
+                ->values()
+            : collect();
+
+        $workQueue = collect([
+            $canPayments ? [
+                'key' => 'payments',
+                'label' => 'Pembayaran murid',
+                'description' => 'Bukti pembayaran menunggu pemeriksaan.',
+                'count' => $pendingOrders,
+                'href' => '/admin/pembayaran',
+                'tone' => $pendingOrders > 0 ? 'urgent' : 'normal',
+            ] : null,
+            $canMatching ? [
+                'key' => 'matching',
+                'label' => 'Pencarian tutor',
+                'description' => 'Permintaan yang perlu dipantau atau disinkronkan.',
+                'count' => $matchingNeedsAttention,
+                'href' => '/admin/tutor-searches?status=attention',
+                'tone' => $matchingNeedsAttention > 0 ? 'urgent' : 'normal',
+            ] : null,
+            $canCases ? [
+                'key' => 'cases',
+                'label' => 'Kasus dan keberatan',
+                'description' => 'Kasus operasional menunggu keputusan admin.',
+                'count' => $pendingCases,
+                'href' => '/admin/cases',
+                'tone' => $pendingCases > 0 ? 'warning' : 'normal',
+            ] : null,
+            $canRefunds ? [
+                'key' => 'refunds',
+                'label' => 'Refund',
+                'description' => 'Pengembalian dana menunggu penyelesaian.',
+                'count' => $pendingRefunds,
+                'href' => '/admin/refunds',
+                'tone' => $pendingRefunds > 0 ? 'warning' : 'normal',
+            ] : null,
+            $canPayouts ? [
+                'key' => 'payouts',
+                'label' => 'Pencairan tutor',
+                'description' => 'Pengajuan tutor menunggu transfer admin.',
+                'count' => $pendingPayouts,
+                'href' => '/admin/finance',
+                'tone' => $pendingPayouts > 0 ? 'warning' : 'normal',
+            ] : null,
+            $canTeachers ? [
+                'key' => 'teachers',
+                'label' => 'Verifikasi tutor',
+                'description' => 'Akun tutor baru menunggu pemeriksaan.',
+                'count' => $pendingTeachers,
+                'href' => '/admin/guru',
+                'tone' => $pendingTeachers > 0 ? 'warning' : 'normal',
+            ] : null,
+        ])->filter()
+            ->sortByDesc(fn (array $item) => ($item['tone'] === 'urgent' ? 2000 : ($item['tone'] === 'warning' ? 1000 : 0)) + $item['count'])
+            ->values();
 
         return response()->json([
             'revenue' => [
-                'today' => $revenueToday,
-                'month' => $revenueMonth,
-                'year'  => $revenueYear
+                'today' => (float) $revenueToday,
+                'month' => (float) $revenueMonth,
+                'year' => (float) $revenueYear,
             ],
             'counts' => [
                 'teachers' => $pendingTeachers,
-                'orders'   => $pendingOrders,
-                'users'    => $totalUsers
-            ]
+                'orders' => $pendingOrders,
+                'users' => $totalUsers,
+                'matching_active' => $activeMatching,
+                'matching_attention' => $matchingNeedsAttention,
+                'cases' => $pendingCases,
+                'refunds' => $pendingRefunds,
+                'payouts' => $pendingPayouts,
+            ],
+            'visible_sections' => [
+                'payments' => $canPayments,
+                'matching' => $canMatching,
+                'cases' => $canCases,
+                'refunds' => $canRefunds,
+                'payouts' => $canPayouts,
+                'teachers' => $canTeachers,
+                'users' => $canUsers,
+            ],
+            'work_queue' => $workQueue,
+            'matching_preview' => $matchingPreview,
+            'generated_at' => now()->toIso8601String(),
         ]);
     }
 
@@ -1249,8 +1399,10 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'footer_address' => 'required|string|max:1000',
-            'footer_phone' => 'required|string|max:50',
+            'footer_phone' => ['required', 'string', 'max:16', 'regex:/^\+?[0-9]{8,15}$/'],
             'footer_email' => 'required|email|max:255',
+        ], [
+            'footer_phone.regex' => 'Nomor telepon atau WhatsApp harus berisi 8–15 angka.',
         ]);
 
         DB::transaction(function () use ($data) {

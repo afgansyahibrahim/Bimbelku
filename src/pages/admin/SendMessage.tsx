@@ -130,7 +130,7 @@ export default function SendMessage() {
                         <div className="flex items-center gap-4">
                             <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white shadow-md ${user.role === 'teacher' ? 'bg-indigo-600' : 'bg-orange-500'}`}>
                                 {user.photo_url ? (
-                                    <img src={user.photo_url} className="w-full h-full rounded-full object-cover"/>
+                                    <img src={user.photo_url} alt={`Foto ${user.name}`} loading="lazy" decoding="async" className="w-full h-full rounded-full object-cover"/>
                                 ) : (
                                     user.name.charAt(0).toUpperCase()
                                 )}

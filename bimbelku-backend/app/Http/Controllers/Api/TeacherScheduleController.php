@@ -4,11 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\TeacherAvailability;
+use App\Services\TeacherMatchingService;
+use App\Services\TeacherOfferReleaseService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use App\Services\TeacherMatchingService;
-use App\Services\TeacherOfferReleaseService;
 
 class TeacherScheduleController extends Controller
 {
@@ -23,11 +23,12 @@ class TeacherScheduleController extends Controller
 
         return response()->json(collect(self::DAYS)->map(function (string $day) use ($schedules) {
             $item = $schedules->get($day);
+            $ranges = $item?->normalizedRanges() ?? [];
+
             return [
                 'day' => $day,
-                'is_active' => (bool) ($item?->is_active ?? false),
-                'start_time' => $item?->start_time ? substr((string) $item->getRawOriginal('start_time'), 0, 5) : '',
-                'end_time' => $item?->end_time ? substr((string) $item->getRawOriginal('end_time'), 0, 5) : '',
+                'is_active' => (bool) ($item?->is_active && count($ranges) > 0),
+                'ranges' => $ranges,
             ];
         }));
     }
@@ -36,33 +37,60 @@ class TeacherScheduleController extends Controller
         Request $request,
         TeacherOfferReleaseService $offerReleaseService,
         TeacherMatchingService $matchingService
-    )
-    {
+    ) {
         $validated = $request->validate([
             'schedules' => ['required', 'array', 'size:7'],
             'schedules.*.day' => ['required', 'string', 'distinct', 'in:'.implode(',', self::DAYS)],
             'schedules.*.is_active' => ['required', 'boolean'],
-            'schedules.*.start_time' => ['nullable', 'date_format:H:i'],
-            'schedules.*.end_time' => ['nullable', 'date_format:H:i'],
+            'schedules.*.ranges' => ['present', 'array'],
+            'schedules.*.ranges.*.start_time' => ['required', 'date_format:H:i'],
+            'schedules.*.ranges.*.end_time' => ['required', 'date_format:H:i'],
         ]);
 
-        foreach ($validated['schedules'] as $item) {
-            if ($item['is_active']) {
-                if (empty($item['start_time']) || empty($item['end_time'])) {
-                    return response()->json(['message' => "Jam mulai dan selesai {$item['day']} wajib diisi."], 422);
-                }
-                if ($item['end_time'] <= $item['start_time']) {
-                    return response()->json(['message' => "Jam selesai {$item['day']} harus lebih besar dari jam mulai."], 422);
-                }
+        foreach ($validated['schedules'] as &$item) {
+            $item['ranges'] = collect($item['ranges'])
+                ->map(fn (array $range) => [
+                    'start_time' => substr($range['start_time'], 0, 5),
+                    'end_time' => substr($range['end_time'], 0, 5),
+                ])
+                ->sortBy('start_time')
+                ->values()
+                ->all();
+
+            if (!$item['is_active']) {
+                $item['ranges'] = [];
+                continue;
             }
 
+            if (empty($item['ranges'])) {
+                return response()->json([
+                    'message' => "Tambahkan sedikitnya satu rentang untuk {$item['day']}.",
+                ], 422);
+            }
+
+            foreach ($item['ranges'] as $index => $range) {
+                if (!TeacherAvailability::isFullHour($range['start_time']) || !TeacherAvailability::isFullHour($range['end_time'])) {
+                    return response()->json([
+                        'message' => "Jam {$item['day']} hanya boleh memakai menit 00.",
+                    ], 422);
+                }
+                if ($range['end_time'] <= $range['start_time']) {
+                    return response()->json([
+                        'message' => "Jam selesai {$item['day']} harus setelah jam mulai.",
+                    ], 422);
+                }
+                if ($index > 0 && $item['ranges'][$index - 1]['end_time'] > $range['start_time']) {
+                    return response()->json([
+                        'message' => "Rentang jadwal {$item['day']} tidak boleh bertabrakan.",
+                    ], 422);
+                }
+            }
         }
+        unset($item);
 
         $scheduleChanged = false;
         DB::transaction(function () use ($validated, &$scheduleChanged) {
-            \App\Models\User::query()
-                ->lockForUpdate()
-                ->findOrFail(Auth::id());
+            \App\Models\User::query()->lockForUpdate()->findOrFail(Auth::id());
             $current = TeacherAvailability::query()
                 ->where('user_id', Auth::id())
                 ->lockForUpdate()
@@ -71,27 +99,20 @@ class TeacherScheduleController extends Controller
 
             foreach ($validated['schedules'] as $item) {
                 $existing = $current->get($item['day']);
-                $startTime = $item['is_active'] ? $item['start_time'] : null;
-                $endTime = $item['is_active'] ? $item['end_time'] : null;
-                $existingStart = $existing?->start_time
-                    ? substr((string) $existing->getRawOriginal('start_time'), 0, 5)
-                    : null;
-                $existingEnd = $existing?->end_time
-                    ? substr((string) $existing->getRawOriginal('end_time'), 0, 5)
-                    : null;
+                $ranges = $item['is_active'] ? $item['ranges'] : [];
+                $existingRanges = $existing?->normalizedRanges() ?? [];
                 $scheduleChanged = $scheduleChanged
                     || !$existing
                     || (bool) $existing->is_active !== (bool) $item['is_active']
-                    || $existingStart !== $startTime
-                    || $existingEnd !== $endTime;
+                    || $existingRanges !== $ranges;
 
                 TeacherAvailability::updateOrCreate(
                     ['user_id' => Auth::id(), 'day' => $item['day']],
                     [
                         'is_active' => $item['is_active'],
-                        'start_time' => $startTime,
-                        'end_time' => $endTime,
-                        'slots' => null,
+                        'start_time' => $ranges[0]['start_time'] ?? null,
+                        'end_time' => $ranges[count($ranges) - 1]['end_time'] ?? null,
+                        'slots' => $ranges,
                     ]
                 );
             }
@@ -105,5 +126,4 @@ class TeacherScheduleController extends Controller
 
         return response()->json(['message' => 'Rentang jadwal mengajar berhasil disimpan.']);
     }
-
 }

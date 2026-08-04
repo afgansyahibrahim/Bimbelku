@@ -112,8 +112,10 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
                   
                   // Munculkan Custom Toast
                   toast.custom((t) => (
-                    <div 
-                        className="pointer-events-auto mx-auto flex w-[calc(100vw-1.5rem)] max-w-sm min-w-0 cursor-pointer gap-3 overflow-hidden rounded-2xl border border-slate-100 bg-white p-3.5 shadow-2xl transition hover:bg-slate-50 sm:w-full sm:gap-4 sm:p-4"
+                    <button
+                        type="button"
+                        aria-label={`Buka notifikasi: ${latest.title}`}
+                        className="pointer-events-auto mx-auto flex w-[calc(100vw-1.5rem)] max-w-sm min-w-0 gap-3 overflow-hidden rounded-2xl border border-slate-100 bg-white p-3.5 text-left shadow-2xl transition hover:bg-slate-50 sm:w-full sm:gap-4 sm:p-4"
                         onClick={() => {
                             toast.dismiss(t);
                             handleNotifClick(latest); // Buka modal saat diklik
@@ -127,7 +129,7 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
                             <p className="mt-1 line-clamp-2 break-words text-xs text-slate-500">{latest.message}</p>
                             <p className="text-[10px] text-blue-500 mt-2 font-bold">Ketuk untuk membaca</p>
                         </div>
-                    </div>
+                    </button>
                   ), { duration: 5000, position: 'top-center' });
               }
               lastNotificationIdRef.current = latest.id;
@@ -146,9 +148,9 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
 
   return (
     <div className="flex h-dvh min-h-screen w-full max-w-full overflow-hidden bg-[#F8FAFC] font-sans text-slate-800 selection:bg-blue-100 selection:text-blue-900">
-      
+      <a href="#main-content" className="skip-link">Lewati ke konten utama</a>
       {sidebarOpen && (
-        <div className="fixed inset-0 z-30 bg-slate-900/60 backdrop-blur-sm transition-opacity duration-300 xl:hidden" onClick={() => setSidebarOpen(false)} />
+        <button type="button" aria-label="Tutup menu murid" className="fixed inset-0 z-30 bg-slate-900/60 backdrop-blur-sm transition-opacity duration-300 xl:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
       {/* --- SIDEBAR --- */}
@@ -188,7 +190,7 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
       </aside>
 
       {/* --- MAIN CONTENT --- */}
-      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <main id="main-content" tabIndex={-1} className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-hidden">
         
         {/* HEADER */}
         <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-slate-200/70 bg-white/95 px-3 backdrop-blur-xl transition-all sm:h-20 sm:px-6 xl:px-8">
@@ -218,7 +220,7 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
 
                  {showNotifDropdown && (
                      <>
-                        <div className="fixed inset-0 z-[100]" onClick={() => setShowNotifDropdown(false)}></div>
+                        <button type="button" aria-label="Tutup daftar notifikasi" className="fixed inset-0 z-[100]" onClick={() => setShowNotifDropdown(false)} />
                         <div className="fixed inset-x-3 top-[4.5rem] z-[101] max-w-[calc(100vw-1.5rem)] origin-top-right overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white shadow-2xl ring-1 ring-slate-100 animate-in fade-in zoom-in-95 duration-200 sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-4 sm:w-[min(24rem,calc(100vw-2rem))] sm:rounded-[2rem]">
                             
                             <div className="p-5 border-b border-slate-50 bg-white flex justify-between items-center sticky top-0 z-10">
@@ -267,6 +269,8 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
                          <img
                            src={userData.avatar_url || userData.avatar}
                            alt={`Foto profil ${userData.name || "murid"}`}
+                           loading="lazy"
+                           decoding="async"
                            className="w-full h-full object-cover"
                          />
                        ) : (
@@ -278,8 +282,8 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
           </div>
         </header>
 
-        <div id="student-scroll-container" className="flex-1 overflow-y-auto scroll-smooth p-3 pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-24 xl:p-8 xl:pb-8">
-          <div className="mx-auto max-w-7xl pb-6 sm:pb-10">{children}</div>
+        <div id="student-scroll-container" className="flex-1 overflow-x-hidden overflow-y-auto scroll-smooth p-3 pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-24 xl:p-8 xl:pb-8">
+          <div className="mx-auto w-full min-w-0 max-w-7xl pb-6 sm:pb-10">{children}</div>
         </div>
         <MobileBottomNav role="student" />
         <Link
@@ -296,9 +300,9 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
             <div role="dialog" aria-modal="true" aria-label="Detail notifikasi" className="fixed inset-0 z-[200] flex items-end justify-center bg-slate-900/60 p-0 backdrop-blur-sm animate-in fade-in duration-300 sm:items-center sm:p-4">
                 {/* [PERBAIKAN] 
                     1. flex flex-col: Agar children (header, content, footer) tertata vertikal
-                    2. max-h-[90vh]: Batasi tinggi modal agar tidak melebihi layar
+                    2. max-h-[90dvh]: Batasi tinggi modal agar tidak melebihi layar
                 */}
-                <div className="relative flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[2rem] bg-white shadow-2xl animate-in zoom-in-95 duration-300 sm:max-h-[90vh] sm:rounded-[2.5rem]">
+                <div className="relative flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[2rem] bg-white shadow-2xl animate-in zoom-in-95 duration-300 sm:max-h-[90dvh] sm:rounded-[2.5rem]">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-blue-100/50 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
                     
                     {/* Header: Fixed */}

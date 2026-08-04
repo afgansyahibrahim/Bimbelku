@@ -21,6 +21,10 @@ class Order extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function verifier() {
+        return $this->belongsTo(User::class, 'verified_by');
+    }
+
     public function classroom() {
         return $this->belongsTo(Classroom::class);
     }

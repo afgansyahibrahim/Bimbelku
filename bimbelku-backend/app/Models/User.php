@@ -17,14 +17,22 @@ class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
 
+    /** Cache request-scoped untuk menghindari query admin utama berulang pada satu instance user. */
+    private ?bool $primaryAdminCache = null;
+
     protected $fillable = [
         'name',
         'email',
+        'email_verified_at',
         'phone',
         'password', 
         'profile_cover',
         'password_updated_at',
-        'role', 
+        'role',
+        'admin_type',
+        'admin_permissions',
+        'admin_permissions_updated_by',
+        'admin_permissions_updated_at',
         'status', 
         'school_name', 
         'student_education_level',
@@ -49,8 +57,6 @@ class User extends Authenticatable
         'teacher_rejection_streak',
         'last_teacher_rejection_at',
         'search_cooldown_until',
-        'finance_totp_secret',
-        'finance_totp_confirmed_at',
     ];
 
     protected $hidden = [
@@ -68,7 +74,6 @@ class User extends Authenticatable
         'guardian_consent_at',
         'consent_ip',
         'consent_user_agent',
-        'finance_totp_secret',
     ];
 
     protected $casts = [
@@ -83,9 +88,59 @@ class User extends Authenticatable
         'last_teacher_rejection_at' => 'datetime',
         'search_cooldown_until' => 'datetime',
         'teacher_rejection_streak' => 'integer',
-        'finance_totp_secret' => 'encrypted',
-        'finance_totp_confirmed_at' => 'datetime',
+        'admin_permissions' => 'array',
+        'admin_permissions_updated_at' => 'datetime',
     ];
+
+
+    public function isPrimaryAdmin(): bool
+    {
+        if ($this->primaryAdminCache !== null) {
+            return $this->primaryAdminCache;
+        }
+
+        if ($this->role !== 'admin' || $this->status !== 'active') {
+            return $this->primaryAdminCache = false;
+        }
+
+        $configuredEmail = (string) config('bimbelku.primary_admin_email', '');
+        if ($configuredEmail !== '') {
+            $configuredAdminId = static::query()
+                ->where('role', 'admin')
+                ->where('status', 'active')
+                ->whereRaw('LOWER(email) = ?', [$configuredEmail])
+                ->value('id');
+
+            if ($configuredAdminId !== null) {
+                return $this->primaryAdminCache = ((int) $this->getKey() === (int) $configuredAdminId);
+            }
+        }
+
+        $primaryId = static::query()
+            ->where('role', 'admin')
+            ->where('status', 'active')
+            ->min('id');
+
+        return $this->primaryAdminCache = ($primaryId !== null && (int) $this->getKey() === (int) $primaryId);
+    }
+
+    public function isSuperAdmin(): bool
+    {
+        // Nama method dipertahankan agar kode lama tetap kompatibel.
+        return $this->isPrimaryAdmin();
+    }
+
+    public function hasAdminPermission(string $permission): bool
+    {
+        // Parameter tetap diterima untuk kompatibilitas middleware dan audit,
+        // tetapi tidak ada lagi pembagian admin terbatas per modul.
+        return $this->isPrimaryAdmin();
+    }
+
+    public function adminPermissionsUpdatedBy()
+    {
+        return $this->belongsTo(self::class, 'admin_permissions_updated_by');
+    }
 
     // Relasi ke Profil Guru
     public function teacherProfile()

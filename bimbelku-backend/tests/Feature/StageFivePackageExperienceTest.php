@@ -133,6 +133,7 @@ class StageFivePackageExperienceTest extends TestCase
             'subjects' => [[
                 'curriculum_subject_id' => $subject->id,
                 'learning_goal' => 'Menguatkan aljabar dasar.',
+                'weekdays' => [1],
                 'schedules' => [
                     '2026-08-03 15:00:00',
                     '2026-08-10 15:00:00',
@@ -153,10 +154,10 @@ class StageFivePackageExperienceTest extends TestCase
         ];
         $this->postJson('/api/student/packages', $base, ['Idempotency-Key' => 'stage5-wrong-minute'])
             ->assertUnprocessable()
-            ->assertJsonPath('message', 'Jam yang dipilih tidak termasuk slot aktif dari aplikasi.');
+            ->assertJsonPath('message', 'Semua jadwal hanya boleh memakai menit 00.');
     }
 
-    public function test_duration_multiplies_quote_and_total_learning_hours(): void
+    public function test_package_quote_only_accepts_one_hour_sessions(): void
     {
         $this->seed(CurriculumCatalogSeeder::class);
         $this->seed(StageFiveExperienceSeeder::class);
@@ -177,22 +178,18 @@ class StageFivePackageExperienceTest extends TestCase
             ]],
         ];
 
-        $oneHour = $this->postJson('/api/student/packages/quote', [
+        $this->postJson('/api/student/packages/quote', [
             ...$payload,
             'duration_hours' => 1,
-        ])->assertOk();
-        $threeHours = $this->postJson('/api/student/packages/quote', [
+        ])
+            ->assertOk()
+            ->assertJsonPath('duration_hours', 1)
+            ->assertJsonPath('total_learning_hours', $plan->session_count)
+            ->assertJsonPath('lines.0.duration_hours', 1);
+
+        $this->postJson('/api/student/packages/quote', [
             ...$payload,
             'duration_hours' => 3,
-        ])->assertOk();
-
-        $this->assertSame(
-            (float) $oneHour->json('total_amount') * 3,
-            (float) $threeHours->json('total_amount')
-        );
-        $threeHours
-            ->assertJsonPath('duration_hours', 3)
-            ->assertJsonPath('total_learning_hours', $plan->session_count * 3)
-            ->assertJsonPath('lines.0.duration_hours', 3);
+        ])->assertUnprocessable();
     }
 }

@@ -14,6 +14,12 @@ interface CameraCaptureProps {
   currentAvailable?: boolean;
   required?: boolean;
   onCapture: (file: File) => void;
+  label?: string;
+  dialogTitle?: string;
+  dialogDescription?: string;
+  captureButtonLabel?: string;
+  facingMode?: "user" | "environment";
+  guideShape?: "face" | "frame";
 }
 
 export default function CameraCapture({
@@ -21,6 +27,12 @@ export default function CameraCapture({
   currentAvailable = false,
   required = false,
   onCapture,
+  label = "Foto wajah langsung",
+  dialogTitle = "Ambil foto wajah langsung",
+  dialogDescription = "Hadapkan wajah ke kamera, gunakan pencahayaan cukup, dan jangan memakai foto dari layar lain.",
+  captureButtonLabel = "Ambil foto",
+  facingMode = "user",
+  guideShape = "face",
 }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -45,7 +57,7 @@ export default function CameraCapture({
       }
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: "user",
+          facingMode,
           width: { ideal: 1280 },
           height: { ideal: 960 },
         },
@@ -61,7 +73,7 @@ export default function CameraCapture({
     } finally {
       setStarting(false);
     }
-  }, [stopCamera]);
+  }, [facingMode, stopCamera]);
 
   useEffect(() => {
     if (open) void startCamera();
@@ -123,7 +135,7 @@ export default function CameraCapture({
           : <Camera className="shrink-0 text-indigo-600" size={20} />}
         <span className="min-w-0">
           <span className="block text-xs font-bold text-slate-700">
-            Foto wajah langsung{required ? " *" : ""}
+            {label}{required ? " *" : ""}
           </span>
           <span className="mt-1 block text-[11px] leading-4 text-slate-400">{status}</span>
         </span>
@@ -133,9 +145,9 @@ export default function CameraCapture({
         <DialogContent className="overflow-hidden rounded-[2rem] p-0 sm:max-w-xl">
           <div className="p-6 pb-4">
             <DialogHeader>
-              <DialogTitle>Ambil foto wajah langsung</DialogTitle>
+              <DialogTitle>{dialogTitle}</DialogTitle>
               <DialogDescription>
-                Hadapkan wajah ke kamera, gunakan pencahayaan cukup, dan jangan memakai foto dari layar lain.
+                {dialogDescription}
               </DialogDescription>
             </DialogHeader>
           </div>
@@ -168,7 +180,7 @@ export default function CameraCapture({
               </div>
             )}
             {!error && !starting && (
-              <div className="pointer-events-none absolute inset-[12%] rounded-[45%] border-2 border-dashed border-white/70" />
+              <div className={`pointer-events-none absolute inset-[12%] border-2 border-dashed border-white/70 ${guideShape === "face" ? "rounded-[45%]" : "rounded-2xl"}`} />
             )}
           </div>
 
@@ -185,7 +197,7 @@ export default function CameraCapture({
               {capturing
                 ? <Loader2 className="mr-2 animate-spin" size={17} />
                 : <Camera className="mr-2" size={17} />}
-              Ambil foto
+              {captureButtonLabel}
             </Button>
           </div>
         </DialogContent>

@@ -5,11 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\BookingDispute;
+use App\Models\ClassroomMessage;
 use App\Models\Order;
 use App\Models\Payout;
 use App\Models\Refund;
 use App\Models\SessionReport;
 use App\Models\TicketReply;
+use App\Models\TeacherAppeal;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -27,6 +29,24 @@ class ProtectedFileController extends Controller
         $this->authorizeBooking($request, $booking);
 
         return $this->respond($booking->completion_evidence);
+    }
+
+    public function classroomMessageAttachment(Request $request, ClassroomMessage $classroomMessage)
+    {
+        $this->authorizeBooking($request, $classroomMessage->booking);
+
+        return $this->respond($classroomMessage->attachment_path, $classroomMessage->attachment_name);
+    }
+
+    public function teacherAppealEvidence(Request $request, TeacherAppeal $teacherAppeal)
+    {
+        abort_unless(
+            $request->user()->role === 'admin'
+            || (int) $teacherAppeal->teacher_id === (int) $request->user()->id,
+            403
+        );
+
+        return $this->respond($teacherAppeal->evidence_path, $teacherAppeal->evidence_name);
     }
 
     public function reportEvidence(Request $request, SessionReport $sessionReport)
@@ -121,14 +141,15 @@ class ProtectedFileController extends Controller
         abort_unless($allowed, 403);
     }
 
-    private function respond(?string $path)
+    private function respond(?string $path, ?string $displayName = null)
     {
         abort_unless($path, 404);
 
+        $filename = $this->safeFilename($displayName ?: $path);
         $headers = [
             'Cache-Control' => 'private, no-store, max-age=0',
             'X-Content-Type-Options' => 'nosniff',
-            'Content-Disposition' => 'inline; filename="'.basename($path).'"',
+            'Content-Disposition' => 'inline; filename="'.$filename.'"',
         ];
 
         if (Storage::disk('local')->exists($path)) {
@@ -136,5 +157,12 @@ class ProtectedFileController extends Controller
         }
 
         abort(404);
+    }
+
+    private function safeFilename(string $name): string
+    {
+        $filename = basename(str_replace(['\\', "\r", "\n", '"'], ['', '', '', ''], $name));
+
+        return $filename !== '' ? $filename : 'file';
     }
 }

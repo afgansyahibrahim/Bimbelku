@@ -1,0 +1,24 @@
+PATCH CHECKPOINT 5 — REGRESI AKHIR DAN DOKUMENTASI
+Tanggal: 2026-08-03
+
+FILE RUNTIME DIUBAH/DITAMBAH
+1. src/components/AppErrorBoundary.tsx [BARU]
+2. src/main.tsx [DIUBAH]
+3. src/pages/Login.tsx [DIUBAH]
+4. bimbelku-backend/tests/Feature/CheckpointFiveFinalRegressionTest.php [BARU]
+5. scripts/check-checkpoint5.mjs [BARU]
+6. scripts/run-final-regression.ps1 [BARU]
+7. package.json [DIUBAH]
+
+DOKUMENTASI DITAMBAH
+8. AUDIT_CHECKPOINT_5_REGRESI_AKHIR_DAN_DOKUMENTASI_2026-08-03.md
+9. CHECKPOINT_5_PASANG_DAN_UJI_2026-08-03.md
+10. FINAL_ROUTE_AND_SCENARIO_MATRIX_2026-08-03.md
+11. FINAL_AUDIT_SUMMARY_WEBSITE_BIMBELKU_2026-08-03.md
+12. PATCH_MANIFEST_CHECKPOINT_5_2026-08-03.txt
+
+FILE DIHAPUS
+Tidak ada.
+
+MIGRATION/DEPENDENCY
+Tidak ada migration atau dependency baru.

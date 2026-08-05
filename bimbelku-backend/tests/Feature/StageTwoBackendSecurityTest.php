@@ -37,7 +37,7 @@ class StageTwoBackendSecurityTest extends TestCase
         $this->assertDatabaseHas('users', [
             'id' => $student->id,
             'name' => 'Murid Baru',
-            'phone' => '+62 812-3456-7890',
+            'phone' => '6281234567890',
         ]);
     }
 

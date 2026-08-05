@@ -492,12 +492,16 @@ class StudentPackageController extends Controller
         ], 201);
     }
 
-    public function claim(Request $request, Promotion $promotion)
+    public function claim(Request $request, int $promotion)
     {
         $userId = $request->user()->id;
-        [$claimed, $alreadyClaimed] = DB::transaction(function () use ($promotion, $userId) {
-            $lockedPromotion = Promotion::query()->lockForUpdate()->findOrFail($promotion->id);
-            abort_unless($lockedPromotion->isAvailable(), 422, 'Penawaran tidak tersedia.');
+        $selectedPromotion = Promotion::query()->find($promotion);
+        abort_if($selectedPromotion === null, 404, 'Penawaran tidak ditemukan atau sudah dihapus.');
+
+        [$claimed, $alreadyClaimed] = DB::transaction(function () use ($selectedPromotion, $userId) {
+            $lockedPromotion = Promotion::query()->lockForUpdate()->find($selectedPromotion->id);
+            abort_if($lockedPromotion === null, 404, 'Penawaran tidak ditemukan atau sudah dihapus.');
+            abort_unless($lockedPromotion->isAvailable(), 422, 'Penawaran sudah berakhir atau dinonaktifkan.');
             $existing = PromotionClaim::query()
                 ->where('promotion_id', $lockedPromotion->id)
                 ->where('user_id', $userId)
@@ -812,13 +816,17 @@ class StudentPackageController extends Controller
                 ->where('user_id', $userId)
                 ->where('status', 'available')
                 ->with('promotion')
-                ->findOrFail($validated['promotion_claim_id']);
+                ->find($validated['promotion_claim_id']);
+            abort_unless($claim && $claim->promotion, 422, 'Voucher tidak ditemukan atau sudah tidak dapat digunakan.');
+            abort_unless($claim->promotion->isAvailable(), 422, 'Voucher sudah berakhir atau dinonaktifkan.');
             return [$claim->promotion, $claim];
         }
         if (!empty($validated['promotion_code'])) {
             $promotion = Promotion::query()
                 ->whereRaw('UPPER(code) = ?', [mb_strtoupper(trim($validated['promotion_code']))])
-                ->firstOrFail();
+                ->first();
+            abort_unless($promotion, 422, 'Kode promo tidak ditemukan.');
+            abort_unless($promotion->isAvailable(), 422, 'Kode promo sudah berakhir atau dinonaktifkan.');
             $availableClaim = PromotionClaim::query()
                 ->where('user_id', $userId)
                 ->where('promotion_id', $promotion->id)

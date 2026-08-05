@@ -97,7 +97,85 @@ const statusLabels: Record<string, string> = {
 };
 
 const rupiah = (value?: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
-const dateTime = (value: string) => new Intl.DateTimeFormat("id-ID", { dateStyle: "full", timeStyle: "short" }).format(new Date(value));
+
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object";
+
+const normalizeParticipant = (value: unknown): Participant | null => {
+  if (!isRecord(value)) return null;
+  const id = Number(value.id);
+  const studentId = Number(value.student_id);
+  if (!Number.isFinite(id)) return null;
+
+  return {
+    id,
+    student_id: Number.isFinite(studentId) ? studentId : 0,
+    name: typeof value.name === "string" && value.name.trim() ? value.name : "Murid BimbelKu",
+    status: typeof value.status === "string" ? value.status : "unknown",
+    amount: Number.isFinite(Number(value.amount)) ? Number(value.amount) : 0,
+    order_status: typeof value.order_status === "string" ? value.order_status : "unknown",
+    refund_status: typeof value.refund_status === "string" ? value.refund_status : undefined,
+  };
+};
+
+const normalizeTeacherClass = (value: unknown): TeacherClass | null => {
+  if (!isRecord(value)) return null;
+  const id = Number(value.id);
+  if (!Number.isFinite(id)) return null;
+
+  const participants = Array.isArray(value.participants)
+    ? value.participants.map(normalizeParticipant).filter((item): item is Participant => item !== null)
+    : [];
+
+  return {
+    ...(value as unknown as TeacherClass),
+    id,
+    subject: typeof value.subject === "string" && value.subject.trim() ? value.subject : "Mata pelajaran",
+    method: value.method === "offline" ? "offline" : "online",
+    type: value.type === "group" ? "group" : "private",
+    status: typeof value.status === "string" && value.status ? value.status : "confirmed",
+    start_at: typeof value.start_at === "string" ? value.start_at : "",
+    end_at: typeof value.end_at === "string" ? value.end_at : "",
+    duration_hours: Number.isFinite(Number(value.duration_hours)) ? Number(value.duration_hours) : 1,
+    commission_percent: Number.isFinite(Number(value.commission_percent)) ? Number(value.commission_percent) : 0,
+    payout_status: typeof value.payout_status === "string" ? value.payout_status : "pending",
+    participants,
+    can_complete: Boolean(value.can_complete),
+    can_report_absence: Boolean(value.can_report_absence),
+    can_report_emergency: Boolean(value.can_report_emergency),
+  };
+};
+
+const normalizeClasses = (payload: unknown): TeacherClass[] => {
+  const items = Array.isArray(payload)
+    ? payload
+    : isRecord(payload) && Array.isArray(payload.data)
+      ? payload.data
+      : [];
+
+  return items.map(normalizeTeacherClass).filter((item): item is TeacherClass => item !== null);
+};
+
+const parseDate = (value?: string) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const dateTime = (value?: string) => {
+  const date = parseDate(value);
+  return date
+    ? new Intl.DateTimeFormat("id-ID", { dateStyle: "full", timeStyle: "short" }).format(date)
+    : "Jadwal belum tersedia";
+};
+
+const timeRange = (start?: string, end?: string) => {
+  const startDate = parseDate(start);
+  const endDate = parseDate(end);
+  if (!startDate || !endDate) return "Jam belum tersedia";
+  const format = (date: Date) => date.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+  return `${format(startDate)}–${format(endDate)}`;
+};
+
 const localDateTimeInput = () => {
   const date = new Date();
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -107,6 +185,7 @@ export default function ManageClasses() {
   const confirm = useConfirmDialog();
   const [classes, setClasses] = useState<TeacherClass[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<TeacherClass | null>(null);
   const [action, setAction] = useState<{ type: Action; item: TeacherClass } | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -126,11 +205,17 @@ export default function ManageClasses() {
   const loadClasses = async () => {
     setLoading(true);
     try {
-      const response = await http.get<TeacherClass[]>("/teacher/classes");
-      setClasses(response.data);
-      setSelected((current) => current ? response.data.find((item) => item.id === current.id) || null : null);
+      const response = await http.get<unknown>("/teacher/classes");
+      const normalized = normalizeClasses(response.data);
+      setClasses(normalized);
+      setSelected((current) => current ? normalized.find((item) => item.id === current.id) || null : null);
+      setLoadError(null);
     } catch (error) {
-      toast.error(getApiError(error, "Daftar kelas gagal dimuat."));
+      const message = getApiError(error, "Daftar kelas gagal dimuat.");
+      setClasses([]);
+      setSelected(null);
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -158,7 +243,7 @@ export default function ManageClasses() {
     setEvidence(null);
     setEvidenceCapturedAt("");
     setNotes("");
-    setStudentId(item.type === "private" ? String(item.participants[0]?.student_id || "") : "");
+    setStudentId(item.type === "private" ? String(item.participants?.[0]?.student_id || "") : "");
     setIncidentType("");
     setIncidentAt(localDateTimeInput());
     setIncidentLocation("");
@@ -251,7 +336,14 @@ export default function ManageClasses() {
           {["Check-in PIN", "Catat kehadiran", "Check-out & laporan", "Foto bukti selesai"].map((label, index) => <div key={label} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm"><span className="grid h-7 w-7 place-items-center rounded-lg bg-indigo-50 text-xs font-black text-indigo-700">{index + 1}</span><p className="mt-2 text-xs font-black leading-5 text-slate-700">{label}</p></div>)}
         </section>
 
-        {classes.length === 0 ? (
+        {loadError ? (
+          <div className="rounded-[2rem] border border-rose-100 bg-white px-5 py-12 text-center shadow-sm">
+            <AlertTriangle className="mx-auto h-11 w-11 text-rose-400" />
+            <p className="mt-4 font-black text-slate-800">Kelas belum dapat dimuat</p>
+            <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-slate-500">{loadError}</p>
+            <Button onClick={loadClasses} className="mt-5 rounded-xl bg-indigo-600 hover:bg-indigo-700"><RefreshCw size={16} className="mr-2" />Coba lagi</Button>
+          </div>
+        ) : classes.length === 0 ? (
           <div className="rounded-[2rem] border-2 border-dashed border-slate-200 bg-white py-20 text-center"><BookOpen className="mx-auto h-11 w-11 text-slate-300" /><p className="mt-4 font-black text-slate-800">Belum ada kelas terkonfirmasi</p><p className="mt-1 text-sm text-slate-500">Permintaan baru tersedia pada menu Permintaan Bimbel.</p></div>
         ) : (
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -271,11 +363,11 @@ export default function ManageClasses() {
         <DialogContent className="max-h-[92dvh] overflow-y-auto rounded-[2rem] sm:max-w-2xl">
           {selected && <>
             <DialogHeader><DialogTitle className="text-2xl">{selected.subject} · {selected.chapter || selected.topic || "Sesi belajar"}</DialogTitle><DialogDescription>{dateTime(selected.start_at)} · {selected.type === "group" ? "Kelompok" : "Privat"}</DialogDescription></DialogHeader>
-            <div className="grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm sm:grid-cols-2"><Info icon={GraduationCap} text={`${selected.education_level || ""} ${selected.grade || ""}`} /><Info icon={Clock3} text={`${new Date(selected.start_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}–${new Date(selected.end_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`} /><Info icon={selected.method === "online" ? Monitor : MapPin} text={selected.method === "online" ? "Online" : selected.address || "Alamat murid"} /><Info icon={WalletCards} text={`Komisi admin ${selected.commission_percent}%`} /></div>
+            <div className="grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm sm:grid-cols-2"><Info icon={GraduationCap} text={`${selected.education_level || ""} ${selected.grade || ""}`} /><Info icon={Clock3} text={timeRange(selected.start_at, selected.end_at)} /><Info icon={selected.method === "online" ? Monitor : MapPin} text={selected.method === "online" ? "Online" : selected.address || "Alamat murid"} /><Info icon={WalletCards} text={`Komisi admin ${selected.commission_percent}%`} /></div>
             {selected.learning_goal && <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4"><p className="text-xs font-black uppercase tracking-widest text-indigo-500">Tujuan murid</p><p className="mt-2 text-sm leading-6 text-indigo-900">{selected.learning_goal}</p></div>}
             {selected.attachment_url && <Button type="button" variant="outline" className="rounded-xl" onClick={() => void openProtectedFile(selected.attachment_url!, "lampiran-materi").catch(() => toast.error("Lampiran tidak dapat dibuka."))}><ExternalLink size={16} className="mr-2" />Buka lampiran materi</Button>}
             {selected.method === "online" ? <div><Label className="font-bold">Tautan Google Meet/Zoom</Label><div className="mt-2 flex gap-2"><Input type="url" className="h-11 rounded-xl" value={meetingLink} onChange={(event) => setMeetingLink(event.target.value)} placeholder="https://..." /><Button aria-label="Simpan tautan kelas" onClick={() => saveMeetingLink(selected)} disabled={processing} className="rounded-xl bg-indigo-600"><Link2 size={16} /></Button></div></div> : selected.maps_link ? <Button asChild className="rounded-xl bg-emerald-600 hover:bg-emerald-700"><a href={selected.maps_link} target="_blank" rel="noreferrer"><MapPin size={16} className="mr-2" />Buka lokasi murid</a></Button> : <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-sm text-amber-800">Alamat lengkap dibuka setelah pembayaran dikonfirmasi.</div>}
-            <div><p className="text-sm font-black text-slate-800">Peserta</p><div className="mt-2 space-y-2">{selected.participants.map((participant) => <div key={participant.id} className="flex items-center justify-between rounded-xl border border-slate-100 p-3 text-sm"><div><p className="font-bold text-slate-800">{participant.name}</p><p className="text-xs text-slate-400">{participant.status}</p></div><span className="font-bold text-slate-600">{rupiah(participant.amount)}</span></div>)}</div></div>
+            <div><p className="text-sm font-black text-slate-800">Peserta</p><div className="mt-2 space-y-2">{selected.participants.length ? selected.participants.map((participant) => <div key={participant.id} className="flex items-center justify-between rounded-xl border border-slate-100 p-3 text-sm"><div><p className="font-bold text-slate-800">{participant.name}</p><p className="text-xs text-slate-400">{participant.status}</p></div><span className="font-bold text-slate-600">{rupiah(participant.amount)}</span></div>) : <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-500">Data peserta belum tersedia.</p>}</div></div>
             {["confirmed", "in_progress", "awaiting_student_approval", "disputed", "absence_review", "admin_review_required", "completed"].includes(selected.status) && <Button variant="outline" className="w-full rounded-xl border-indigo-200 text-indigo-700" onClick={() => { setHubBookingId(selected.id); setSelected(null); }}><MessageCircle size={16} className="mr-2" />Buka ruang belajar</Button>}
             {selected.latest_report && <div className="flex gap-3 rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900"><FileWarning className="shrink-0" /><div><p className="font-black">Laporan {selected.latest_report.status}</p><p className="mt-1 line-clamp-3 leading-6">{selected.latest_report.chronology}</p></div></div>}
             {selected.latest_dispute && <div className="flex gap-3 rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm text-rose-900"><ShieldAlert className="shrink-0" /><div><p className="font-black">Keberatan murid {selected.latest_dispute.status}</p><p className="mt-1 leading-6">{selected.latest_dispute.reason}</p></div></div>}
@@ -291,7 +383,7 @@ export default function ManageClasses() {
           {action && <>
             <DialogHeader><DialogTitle>{action.type === "complete" ? "Kirim bukti penyelesaian" : action.type === "absence" ? "Laporkan murid tidak hadir" : "Laporkan keadaan darurat"}</DialogTitle><DialogDescription>{action.type === "complete" ? "Murid memiliki 48 jam untuk menyetujui atau mengajukan keberatan." : action.type === "absence" ? "Laporan dapat diajukan setelah keterlambatan lebih dari 15 menit dan akan diperiksa admin." : "Refund penuh langsung masuk antrean. Bukti dan kronologi akan diperiksa admin."}</DialogDescription></DialogHeader>
             <form onSubmit={submitAction} className="space-y-4">
-              {action.type === "absence" && action.item.type === "group" && <div><Label>Pilih murid</Label><Select value={studentId} onValueChange={setStudentId}><SelectTrigger className="mt-2 h-11 rounded-xl"><SelectValue placeholder="Murid yang tidak hadir" /></SelectTrigger><SelectContent>{action.item.participants.filter((item) => item.status === "paid").map((item) => <SelectItem key={item.student_id} value={String(item.student_id)}>{item.name}</SelectItem>)}</SelectContent></Select></div>}
+              {action.type === "absence" && action.item.type === "group" && <div><Label>Pilih murid</Label><Select value={studentId} onValueChange={setStudentId}><SelectTrigger className="mt-2 h-11 rounded-xl"><SelectValue placeholder="Murid yang tidak hadir" /></SelectTrigger><SelectContent>{action.item.participants.filter((item) => item.order_status === "paid" || item.status === "paid").map((item) => <SelectItem key={item.student_id} value={String(item.student_id)}>{item.name}</SelectItem>)}</SelectContent></Select></div>}
               {action.type === "emergency" && <><div><Label>Jenis keadaan</Label><Input required maxLength={120} className="mt-2 rounded-xl" value={incidentType} onChange={(event) => setIncidentType(event.target.value)} placeholder="Contoh: kecelakaan dalam perjalanan" /></div><div><Label>Waktu kejadian</Label><Input required type="datetime-local" className="mt-2 rounded-xl" value={incidentAt} onChange={(event) => setIncidentAt(event.target.value)} /></div><div><Label>Lokasi kejadian</Label><Input required maxLength={500} className="mt-2 rounded-xl" value={incidentLocation} onChange={(event) => setIncidentLocation(event.target.value)} /></div><div><Label>Dampak terhadap sesi</Label><Textarea required minLength={20} maxLength={1500} className="mt-2 min-h-24 rounded-xl" value={impact} onChange={(event) => setImpact(event.target.value)} /></div></>}
               <div><Label>{action.type === "complete" ? "Catatan pelaksanaan" : "Kronologi lengkap"}</Label><Textarea required minLength={action.type === "complete" ? 20 : action.type === "absence" ? 30 : 50} maxLength={action.type === "emergency" ? 3000 : action.type === "absence" ? 2500 : 2000} className="mt-2 min-h-36 rounded-xl" value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Tuliskan kejadian dengan jelas dan masuk akal" /></div>
               {action.type === "complete" ? <div><Label>Bukti pelaksanaan dari kamera</Label><div className="mt-2"><CameraCapture file={evidence} required onCapture={(file) => { selectEvidence(file); setEvidenceCapturedAt(new Date().toISOString()); }} label="Ambil foto pelaksanaan sekarang" dialogTitle="Foto bukti pelaksanaan" dialogDescription="Ambil foto kondisi kelas saat ini. Galeri tidak digunakan agar waktu pengambilan dapat diverifikasi." captureButtonLabel="Ambil bukti" facingMode="environment" guideShape="frame" /></div><p className="mt-2 text-xs leading-5 text-slate-500">Foto harus diambil langsung dan dikirim dalam 20 menit.</p></div> : <div><Label>Bukti yang dapat dipercaya</Label><Input required className="mt-2" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(event) => selectEvidence(event.target.files?.[0])} /></div>}

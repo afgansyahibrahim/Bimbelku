@@ -111,12 +111,28 @@ class AdminStageFiveController extends Controller
 
     public function deletePromotion(Promotion $promotion)
     {
-        if ($promotion->claims()->exists()) {
-            $promotion->update(['is_active' => false]);
-            return response()->json(['message' => 'Promo dinonaktifkan karena sudah pernah diklaim.']);
-        }
-        $promotion->delete();
-        return response()->json(['message' => 'Promo berhasil dihapus.']);
+        $bannerDestination = "/student/offers/{$promotion->id}";
+        $hasClaims = $promotion->claims()->exists();
+
+        DB::transaction(function () use ($promotion, $bannerDestination, $hasClaims) {
+            DynamicBanner::query()
+                ->where('destination_kind', 'internal')
+                ->where('destination_url', $bannerDestination)
+                ->update(['is_active' => false]);
+
+            if ($hasClaims) {
+                $promotion->update(['is_active' => false]);
+                return;
+            }
+
+            $promotion->delete();
+        });
+
+        return response()->json([
+            'message' => $hasClaims
+                ? 'Promo dan banner terkait dinonaktifkan karena promo sudah pernah diklaim.'
+                : 'Promo berhasil dihapus. Banner terkait telah dinonaktifkan.',
+        ]);
     }
 
     public function banners()
@@ -317,12 +333,41 @@ class AdminStageFiveController extends Controller
         }
 
         if ($data['destination_kind'] === 'internal') {
+            $isPromotionDestination = preg_match(
+                '#^/student/offers/([1-9][0-9]*)$#',
+                $data['destination_url'],
+                $promotionMatch
+            ) === 1;
             $allowed = in_array($data['destination_url'], self::INTERNAL_DESTINATIONS, true)
-                || preg_match('#^/student/offers/[1-9][0-9]*$#', $data['destination_url']) === 1;
-            abort_unless($allowed, 422, 'Tujuan internal tidak diizinkan.');
+                || $isPromotionDestination;
+            if (!$allowed) {
+                throw ValidationException::withMessages([
+                    'destination_url' => 'Tujuan internal tidak diizinkan.',
+                ]);
+            }
+
+            if ($isPromotionDestination) {
+                $promotionExists = Promotion::query()
+                    ->whereKey((int) $promotionMatch[1])
+                    ->where('is_active', true)
+                    ->exists();
+                if (!$promotionExists) {
+                    throw ValidationException::withMessages([
+                        'destination_url' => 'Promo tujuan banner tidak ditemukan atau sudah dinonaktifkan.',
+                    ]);
+                }
+            }
         } else {
-            abort_unless(filter_var($data['destination_url'], FILTER_VALIDATE_URL), 422, 'Tautan luar tidak valid.');
-            abort_unless(str_starts_with($data['destination_url'], 'https://'), 422, 'Tautan luar wajib memakai HTTPS.');
+            if (!filter_var($data['destination_url'], FILTER_VALIDATE_URL)) {
+                throw ValidationException::withMessages([
+                    'destination_url' => 'Tautan luar tidak valid.',
+                ]);
+            }
+            if (!str_starts_with($data['destination_url'], 'https://')) {
+                throw ValidationException::withMessages([
+                    'destination_url' => 'Tautan luar wajib memakai HTTPS.',
+                ]);
+            }
         }
         return $data;
     }

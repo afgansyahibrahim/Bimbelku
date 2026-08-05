@@ -48,9 +48,12 @@ class ClassroomController extends Controller
                     'completed',
                 ], true);
 
+            $startAt = $booking->start_at;
+            $endAt = $booking->end_at;
+
             return [
                 'id' => $booking->id,
-                'subject' => $bookingRequest?->subject_name,
+                'subject' => $bookingRequest?->subject_name ?: 'Mata pelajaran',
                 'education_level' => $bookingRequest?->education_level,
                 'grade' => $bookingRequest?->grade,
                 'chapter' => $bookingRequest?->chapter,
@@ -58,19 +61,19 @@ class ClassroomController extends Controller
                 'topic' => $bookingRequest?->topic,
                 'learning_goal' => $bookingRequest?->learning_goal,
                 'attachment_url' => $bookingRequest?->attachment ? "learning-attachments/{$bookingRequest->id}" : null,
-                'method' => $booking->learning_mode,
-                'type' => $booking->class_type,
-                'status' => $booking->status,
+                'method' => $booking->learning_mode ?: 'online',
+                'type' => $booking->class_type ?: 'private',
+                'status' => $booking->status ?: 'confirmed',
                 'start_at' => $booking->start_at,
                 'end_at' => $booking->end_at,
-                'duration_hours' => $booking->duration_hours,
+                'duration_hours' => (int) ($booking->duration_hours ?: 1),
                 'meeting_link' => $booking->meeting_link,
                 'address' => $canSeeFullAddress ? $booking->address : null,
                 'maps_link' => $canSeeFullAddress ? $booking->maps_link : null,
                 'gross_amount' => $booking->gross_amount,
                 'teacher_net_amount' => $booking->teacher_net_amount,
-                'commission_percent' => $booking->commission_percent,
-                'payout_status' => $booking->payout_status,
+                'commission_percent' => (float) ($booking->commission_percent ?: 0),
+                'payout_status' => $booking->payout_status ?: 'pending',
                 'completion_evidence_url' => $booking->completion_evidence
                     ? "bookings/{$booking->id}/completion-evidence"
                     : null,
@@ -78,7 +81,7 @@ class ClassroomController extends Controller
                 'completion_capture_source' => $booking->completion_capture_source,
                 'completion_captured_at' => $booking->completion_captured_at,
                 'objection_deadline' => $booking->objection_deadline,
-                $booking->participants->map(function ($participant) use ($booking) {
+                'participants' => $booking->participants->map(function ($participant) use ($booking) {
                     $hasSessionAccess = $participant->order?->status === 'paid';
 
                     return [
@@ -110,8 +113,9 @@ class ClassroomController extends Controller
                 'pending_schedule_change' => $booking->scheduleChangeRequests->first(),
                 'latest_report' => $booking->reports->first(),
                 'latest_dispute' => $booking->disputes->first(),
-                'can_complete' => in_array($booking->status, ['confirmed', 'in_progress'], true)
-                    && now()->gte($booking->end_at->copy()->subMinutes(15))
+                'can_complete' => $endAt !== null
+                    && in_array($booking->status, ['confirmed', 'in_progress'], true)
+                    && now()->gte($endAt->copy()->subMinutes(15))
                     && $booking->sessionAttendances
                         ->contains(fn ($attendance) => $attendance->pin_verified_at && $attendance->check_out_at)
                     && $booking->participants
@@ -127,8 +131,9 @@ class ClassroomController extends Controller
                         })
                         ->every(fn ($participant) => $booking->learningProgressReports
                             ->contains('student_id', $participant->student_id)),
-                'can_report_absence' => in_array($booking->status, ['confirmed', 'in_progress'], true)
-                    && now()->gte($booking->start_at->copy()->addMinutes(15)),
+                'can_report_absence' => $startAt !== null
+                    && in_array($booking->status, ['confirmed', 'in_progress'], true)
+                    && now()->gte($startAt->copy()->addMinutes(15)),
                 'can_report_emergency' => !in_array($booking->status, [
                     'completed', 'cancelled', 'refunded', 'emergency_refund_pending',
                 ], true),

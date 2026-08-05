@@ -297,12 +297,12 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
 
         {/* --- [FIXED] MODAL DETAIL NOTIFIKASI SISWA --- */}
         {selectedNotif && (
-            <div role="dialog" aria-modal="true" aria-label="Detail notifikasi" className="fixed inset-0 z-[200] flex items-end justify-center bg-slate-900/60 p-0 backdrop-blur-sm animate-in fade-in duration-300 sm:items-center sm:p-4">
+            <div role="dialog" aria-modal="true" aria-label="Detail notifikasi" className="fixed inset-0 z-[200] flex items-end justify-center bg-slate-900/60 p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] backdrop-blur-sm animate-in fade-in duration-300 sm:items-center sm:p-4">
                 {/* [PERBAIKAN] 
                     1. flex flex-col: Agar children (header, content, footer) tertata vertikal
                     2. max-h-[90dvh]: Batasi tinggi modal agar tidak melebihi layar
                 */}
-                <div className="relative flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[2rem] bg-white shadow-2xl animate-in zoom-in-95 duration-300 sm:max-h-[90dvh] sm:rounded-[2.5rem]">
+                <div className="relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl animate-in zoom-in-95 duration-300 sm:max-h-[90dvh] sm:rounded-[2.5rem]">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-blue-100/50 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
                     
                     {/* Header: Fixed */}

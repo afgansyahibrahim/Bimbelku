@@ -296,8 +296,8 @@ export default function Register() {
             )}
 
             <div className="space-y-3">
-              <Consent checked={terms} onChange={setTerms}>Saya menyetujui <Link target="_blank" rel="noreferrer" to="/terms" className="font-bold text-indigo-600">Syarat dan Ketentuan</Link>.</Consent>
-              <Consent checked={privacy} onChange={setPrivacy}>Saya menyetujui <Link target="_blank" rel="noreferrer" to="/privacy" className="font-bold text-indigo-600">Kebijakan Privasi</Link>.</Consent>
+              <Consent checked={terms} onChange={setTerms}>Saya menyetujui <Link to="/terms" state={{ from: "/register" }} className="font-bold text-indigo-600">Syarat dan Ketentuan</Link>.</Consent>
+              <Consent checked={privacy} onChange={setPrivacy}>Saya menyetujui <Link to="/privacy" state={{ from: "/register" }} className="font-bold text-indigo-600">Kebijakan Privasi</Link>.</Consent>
             </div>
 
             <Button disabled={submitting || !terms || !privacy || (isMinorStudent && !guardianConsent)} className="h-13 w-full rounded-2xl bg-orange-600 py-6 font-black hover:bg-orange-700">

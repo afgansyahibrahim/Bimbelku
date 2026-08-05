@@ -28,6 +28,7 @@
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="FRONTEND_URL" value="http://127.0.0.1:8080"/>
         <env name="FRONTEND_ORIGINS" value="http://127.0.0.1:8080,http://localhost:8080"/>
+        <env name="POLICY_VERSION" value="2026-07-29"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

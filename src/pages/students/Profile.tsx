@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import StudentLayout from "../../components/StudentLayout";
 import { toast } from "sonner";
 import { 
@@ -607,10 +608,9 @@ export default function Profile() {
                 </div>
               </div>
               <div className="space-y-3">
-                <a
-                  href="/terms"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <Link
+                  to="/terms"
+                  state={{ from: "/student/profile" }}
                   className="flex min-h-14 items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 transition hover:bg-slate-100 sm:px-5 sm:py-4"
                 >
                   <div className="flex items-center gap-3">
@@ -618,11 +618,10 @@ export default function Profile() {
                     <span className="font-bold text-slate-800 text-sm">Syarat & Ketentuan Layanan</span>
                   </div>
                   <ExternalLink size={16} className="text-slate-400" />
-                </a>
-                <a
-                  href="/privacy"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                </Link>
+                <Link
+                  to="/privacy"
+                  state={{ from: "/student/profile" }}
                   className="flex min-h-14 items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 transition hover:bg-slate-100 sm:px-5 sm:py-4"
                 >
                   <div className="flex items-center gap-3">
@@ -630,7 +629,7 @@ export default function Profile() {
                     <span className="font-bold text-slate-800 text-sm">Kebijakan Privasi</span>
                   </div>
                   <ExternalLink size={16} className="text-slate-400" />
-                </a>
+                </Link>
                 <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
                   <ShieldCheck size={16} />
                   Kamu telah menyetujui kebijakan ini saat mendaftar.

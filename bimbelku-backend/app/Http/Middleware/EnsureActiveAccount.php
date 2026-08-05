@@ -21,7 +21,7 @@ class EnsureActiveAccount
         if ($user->status !== 'active') {
             return response()->json([
                 'message' => 'Sesi tidak berlaku karena akun sedang tidak aktif.',
-            ], 401);
+            ], $user->role === 'admin' ? 403 : 401);
         }
 
         if ($user->role === 'admin' && !$user->isPrimaryAdmin()) {

@@ -1,8 +1,11 @@
 <?php
 
+use App\Models\Promotion;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -24,5 +27,18 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->shouldRenderJsonWhen(
+            fn (Request $request, \Throwable $exception): bool =>
+                $request->is('api/*') || $request->expectsJson()
+        );
+
+        $exceptions->render(function (ModelNotFoundException $exception, Request $request) {
+            if ($request->is('api/*') && $exception->getModel() === Promotion::class) {
+                return response()->json([
+                    'message' => 'Promo tidak ditemukan atau sudah dihapus.',
+                ], 404);
+            }
+
+            return null;
+        });
     })->create();

@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft, CircleAlert, FileCheck2, Scale } from "lucide-react";
 
 const sections = [
@@ -70,14 +70,40 @@ const sections = [
 ];
 
 export default function TermsConditions() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const goBack = () => {
+    const state = location.state as { from?: unknown } | null;
+    const from = typeof state?.from === "string" && state.from.startsWith("/") && !state.from.startsWith("//")
+      ? state.from
+      : null;
+
+    if (from) {
+      navigate(from);
+      return;
+    }
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+
+    try {
+      const role = JSON.parse(localStorage.getItem("user") || "null")?.role;
+      navigate(role === "student" ? "/student/account" : role === "teacher" ? "/guru/saya" : role === "admin" ? "/admin" : "/");
+    } catch {
+      navigate("/");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-100 pb-16 text-slate-600">
       <nav className="sticky top-0 z-40 border-b border-slate-200/70 bg-slate-100/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
           <Link to="/" className="text-xl font-black tracking-tight text-slate-950">BimbelKu</Link>
-          <Link to="/" className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-slate-600 hover:bg-white hover:text-slate-950">
+          <button type="button" onClick={goBack} className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-slate-600 hover:bg-white hover:text-slate-950">
             <ArrowLeft size={16} /> Kembali
-          </Link>
+          </button>
         </div>
       </nav>
 

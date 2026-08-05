@@ -21,7 +21,7 @@ type Promotion = {
   total_quota?: number | null;
   used_quota?: number;
 };
-type Claim = { id: number; status: string; claimed_at: string; used_at?: string | null; promotion: Promotion };
+type Claim = { id: number; status: string; claimed_at: string; used_at?: string | null; promotion?: Promotion | null };
 
 const discountLabel = (item: Promotion) =>
   item.discount_type === "percentage"
@@ -43,8 +43,8 @@ export default function Vouchers() {
         getCached<{ data: Claim[] }>("/student/vouchers", { maxAgeMs: 10_000, force: true }),
         getCached<Promotion[]>("/content/promotions", { maxAgeMs: 30_000, force: true }),
       ]);
-      setClaims(claimsResponse.data.data);
-      setOffers(offersResponse.data);
+      setClaims((claimsResponse.data.data ?? []).filter((item) => Boolean(item.promotion?.id)));
+      setOffers(Array.isArray(offersResponse.data) ? offersResponse.data : []);
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
         if (!err.response) setError("network");
@@ -76,7 +76,7 @@ export default function Vouchers() {
     }
   };
 
-  const availableClaims = claims.filter((item) => item.status === "available");
+  const availableClaims = claims.filter((item): item is Claim & { promotion: Promotion } => item.status === "available" && Boolean(item.promotion));
   return (
     <StudentLayout title="Voucher">
       <div className="space-y-6 pb-20 sm:space-y-7">

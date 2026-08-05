@@ -196,12 +196,14 @@ axios.interceptors.response.use(
   handleRejectedResponse,
 );
 
+const isTechnicalServerMessage = (message: string): boolean => /no query results for model|modelnotfoundexception|sqlstate\[|stack trace|undefined (?:property|variable|array key)|call to (?:a member function|undefined method)|too few arguments|class [^ ]+ not found|syntax error/i.test(message);
+
 export function getApiError(error: unknown, fallback = "Terjadi kesalahan. Silakan coba lagi."): string {
   if (axios.isAxiosError(error)) {
     const data = error.response?.data as { message?: string; errors?: Record<string, string[]> } | undefined;
-    if (data?.message) return data.message;
     const firstError = data?.errors ? Object.values(data.errors).flat()[0] : undefined;
-    if (firstError) return firstError;
+    const message = data?.message || firstError;
+    if (message && !isTechnicalServerMessage(message)) return message;
   }
   return fallback;
 }

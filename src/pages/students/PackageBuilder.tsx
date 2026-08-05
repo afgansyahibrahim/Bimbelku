@@ -39,7 +39,7 @@ type TimeSlot = { id: number; start_time: string; label?: string | null };
 type Voucher = {
   id: number;
   status: string;
-  promotion: { id: number; title: string; discount_type: "percentage" | "fixed"; discount_value: number; ends_at?: string | null };
+  promotion?: { id: number; title: string; discount_type: "percentage" | "fixed"; discount_value: number; ends_at?: string | null } | null;
 };
 type DurationHours = 1;
 type DraftSubject = {
@@ -178,6 +178,7 @@ export default function PackageBuilder() {
   const [promoCode, setPromoCode] = useState("");
   const [voucherId, setVoucherId] = useState<number | "">("");
   const [quote, setQuote] = useState<Quote | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
   const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
@@ -240,7 +241,12 @@ export default function PackageBuilder() {
         ]);
         setPlans(plansResponse.data);
         setCatalog(catalogResponse.data.subject_options || []);
-        setVouchers(voucherResponse.data.data.filter((item) => item.status === "available"));
+        const availableVouchers = (voucherResponse.data.data ?? []).filter(
+          (item): item is Voucher & { promotion: NonNullable<Voucher["promotion"]> } =>
+            item.status === "available" && Boolean(item.promotion?.id),
+        );
+        setVouchers(availableVouchers);
+        setVoucherId((current) => current && !availableVouchers.some((item) => item.id === current) ? "" : current);
         const fullHourSlots = slotsResponse.data.filter((slot) => slot.start_time.slice(3, 5) === "00");
         setTimeSlots(fullHourSlots);
         setStudentProfile(profileResponse.data);
@@ -419,9 +425,18 @@ export default function PackageBuilder() {
           })),
         });
         setQuote(response.data);
+        setPromoError(null);
       } catch (error) {
         setQuote(null);
-        if (promoCode.trim() || voucherId) toast.error(getApiError(error, "Promo tidak dapat digunakan."));
+        if (promoCode.trim() || voucherId) {
+          const fallback = promoCode.trim()
+            ? "Kode promo tidak ditemukan atau sudah tidak berlaku."
+            : "Voucher tidak ditemukan atau sudah tidak berlaku.";
+          setPromoError(getApiError(error, fallback));
+        } else {
+          setPromoError(null);
+          toast.error(getApiError(error, "Harga paket tidak dapat dihitung."));
+        }
       } finally {
         setQuoting(false);
       }
@@ -575,21 +590,21 @@ export default function PackageBuilder() {
 
   return (
     <StudentLayout title={renewalId ? "Perpanjang Paket" : "Pilih Paket Belajar"}>
-      <div className="mx-auto max-w-6xl space-y-6 pb-20">
+      <div className="mx-auto w-full min-w-0 max-w-6xl space-y-5 overflow-hidden pb-20 sm:space-y-6">
         <button type="button" onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-slate-900">
           <ArrowLeft size={17} /> Kembali
         </button>
 
-        <section className="rounded-[2rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-blue-900 p-6 text-white sm:p-8">
+        <section className="min-w-0 overflow-hidden rounded-[1.5rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-blue-900 p-5 text-white sm:rounded-[2rem] sm:p-8">
           <p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">{renewalId ? "Tutor lama diprioritaskan" : "Langkah 1"}</p>
-          <h1 className="mt-3 text-3xl font-black">Susun paket belajarmu</h1>
+          <h1 className="mt-3 break-words text-2xl font-black sm:text-3xl">Susun paket belajarmu</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Pilih jumlah sesi, hari, dan satu jam tetap. Periksa ringkasan, bayar, lalu sistem mencari tutor.</p>
         </section>
 
         <nav aria-label="Tahapan pemesanan" className="rounded-3xl border border-slate-100 bg-white p-3 shadow-sm">
           <div className="sm:hidden">
             <div className="flex items-center justify-between gap-3">
-              <div><p className="text-[10px] font-black uppercase tracking-wider text-indigo-500">Langkah {activeStepIndex + 1} dari 5</p><p className="mt-1 text-sm font-black text-slate-900">{["Paket & sesi", "Mata pelajaran", "Pembagian sesi", "Jadwal", "Ringkasan"][activeStepIndex]}</p></div>
+              <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-wider text-indigo-500">Langkah {activeStepIndex + 1} dari 5</p><p className="mt-1 text-sm font-black text-slate-900">{["Paket & sesi", "Mata pelajaran", "Pembagian sesi", "Jadwal", "Ringkasan"][activeStepIndex]}</p></div>
               <span className="grid h-10 w-10 place-items-center rounded-2xl bg-indigo-600 text-sm font-black text-white">{activeStepIndex + 1}</span>
             </div>
             <div className="mt-3 grid grid-cols-5 gap-1.5" aria-hidden="true">{completedSteps.map((done, index) => <span key={index} className={`h-1.5 rounded-full ${index === activeStepIndex ? "bg-indigo-600" : done ? "bg-emerald-400" : "bg-slate-200"}`} />)}</div>
@@ -616,14 +631,14 @@ export default function PackageBuilder() {
 
         <section>
           <h2 className="mb-3 text-lg font-black text-slate-900">1. Pilih Paket Belajar</h2>
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <div className="grid min-w-0 grid-cols-1 gap-3 min-[360px]:grid-cols-2 xl:grid-cols-4">
             {plans.map((item) => (
               <button
                 key={item.id}
                 data-tour={item.maximum_subjects >= 2 ? "package-plan-picker" : undefined}
                 type="button"
                 onClick={() => choosePlan(item)}
-                className={`min-h-40 rounded-3xl border p-4 text-left transition sm:p-5 ${planId === item.id ? "border-indigo-600 bg-indigo-50 ring-2 ring-indigo-100" : "border-slate-200 bg-white hover:border-indigo-300"}`}
+                className={`min-h-40 min-w-0 overflow-hidden rounded-3xl border p-4 text-left transition sm:p-5 ${planId === item.id ? "border-indigo-600 bg-indigo-50 ring-2 ring-indigo-100" : "border-slate-200 bg-white hover:border-indigo-300"}`}
               >
                 <div className="flex items-start justify-between">
                   <BookOpenCheck className={planId === item.id ? "text-indigo-600" : "text-slate-400"} />
@@ -638,9 +653,9 @@ export default function PackageBuilder() {
         </section>
 
         <section data-tour="package-duration-picker" className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-7">
-          <div className="flex items-start gap-3">
+          <div className="flex min-w-0 items-start gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600"><Clock3 size={20} /></div>
-            <div><h2 className="text-lg font-black text-slate-900">2. Durasi setiap pertemuan</h2><p className="mt-1 text-sm leading-6 text-slate-500">Setiap sesi berdurasi satu jam dan tidak dapat diubah.</p></div>
+            <div className="min-w-0"><h2 className="break-words text-lg font-black text-slate-900">2. Durasi setiap pertemuan</h2><p className="mt-1 text-sm leading-6 text-slate-500">Setiap sesi berdurasi satu jam dan tidak dapat diubah.</p></div>
           </div>
           <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-600 px-5 py-5 text-white shadow-lg shadow-indigo-100">
             <span className="text-3xl font-black">1 jam</span>
@@ -786,27 +801,33 @@ export default function PackageBuilder() {
           {mode === "offline" && !studentProfile?.address && <div className="mt-4 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800"><AlertCircle className="shrink-0" size={19} />Lengkapi alamat dan titik lokasi dari halaman Saya sebelum memesan kelas offline.</div>}
         </section>
 
-        <section className="grid gap-5 lg:grid-cols-[1fr_360px]">
-          <div className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-7">
-            <h2 className="text-lg font-black text-slate-900">5. Voucher atau kode promo</h2>
+        <section className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="min-w-0 overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-7">
+            <h2 className="break-words text-lg font-black text-slate-900">5. Voucher atau kode promo</h2>
             <p className="mt-1 text-sm text-slate-500">Satu transaksi hanya memakai satu voucher atau kode.</p>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <Field label="Voucher Saya">
-                <select value={voucherId} onChange={(event) => { setVoucherId(Number(event.target.value) || ""); setPromoCode(""); }} className="form-field">
+                <select value={voucherId} onChange={(event) => { setVoucherId(Number(event.target.value) || ""); setPromoCode(""); setPromoError(null); }} className="form-field">
                   <option value="">Tanpa voucher</option>
-                  {vouchers.map((item) => <option key={item.id} value={item.id}>{item.promotion.title}</option>)}
+                  {vouchers.map((item) => <option key={item.id} value={item.id}>{item.promotion?.title || "Voucher tidak tersedia"}</option>)}
                 </select>
               </Field>
               <Field label="Masukkan kode promo">
                 <div className="relative">
                   <Tag className="absolute left-3 top-3.5 text-slate-400" size={17} />
-                  <input value={promoCode} disabled={Boolean(voucherId)} onChange={(event) => setPromoCode(event.target.value.toUpperCase())} className="form-field pl-10 uppercase disabled:bg-slate-100" placeholder="BELAJAR20" />
+                  <input value={promoCode} disabled={Boolean(voucherId)} onChange={(event) => { setPromoCode(event.target.value.toUpperCase()); setPromoError(null); }} className="form-field pl-10 uppercase disabled:bg-slate-100" placeholder="BELAJAR20" />
                 </div>
               </Field>
             </div>
+            {promoError && (
+              <div className="mt-4 flex min-w-0 items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700">
+                <AlertCircle className="mt-0.5 shrink-0" size={18} />
+                <p className="min-w-0 break-words">{promoError}</p>
+              </div>
+            )}
           </div>
 
-          <aside className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-xl">
+          <aside className="min-w-0 overflow-hidden rounded-[2rem] bg-slate-950 p-5 text-white shadow-xl sm:p-6">
             <div className="flex items-center gap-2 text-indigo-200"><Clock3 size={17} /><span className="text-xs font-black uppercase tracking-wider">Ringkasan harga</span></div>
             {quoting ? (
               <div className="grid h-32 place-items-center"><Loader2 className="animate-spin" /></div>
@@ -814,9 +835,9 @@ export default function PackageBuilder() {
               <>
                 <div className="mt-5 space-y-3 text-sm">
                   {quote.lines.map((line) => (
-                    <div key={line.curriculum_subject_id} className="flex justify-between gap-3 text-slate-300">
-                      <span>{line.subject_name} · {line.session_count} sesi × 1 jam</span>
-                      <span>{rupiah(line.subtotal_amount)}</span>
+                    <div key={line.curriculum_subject_id} className="flex min-w-0 items-start justify-between gap-3 text-slate-300">
+                      <span className="min-w-0 break-words">{line.subject_name} · {line.session_count} sesi × 1 jam</span>
+                      <span className="shrink-0 text-right">{rupiah(line.subtotal_amount)}</span>
                     </div>
                   ))}
                   <div className="border-t border-white/10 pt-3">
@@ -825,7 +846,7 @@ export default function PackageBuilder() {
                   </div>
                 </div>
                 <p className="mt-5 text-xs font-bold text-slate-400">Total pembayaran</p>
-                <p className="mt-1 text-3xl font-black">{rupiah(quote.total_amount)}</p>
+                <p className="mt-1 break-all text-2xl font-black sm:text-3xl">{rupiah(quote.total_amount)}</p>
                 {quote.promotion && <span className="mt-2 inline-flex rounded-full bg-emerald-400/15 px-2.5 py-1 text-[10px] font-black text-emerald-300">🏷️ {quote.promotion.title}</span>}
               </>
             ) : (
@@ -839,11 +860,11 @@ export default function PackageBuilder() {
         </section>
 
         {summaryOpen && quote && plan && (
-          <div className="fixed inset-0 z-[230] flex items-end justify-center bg-slate-950/70 p-0 sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !submitting) setSummaryOpen(false); }}>
-            <section role="dialog" aria-modal="true" aria-labelledby="order-summary-title" className="flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-[2rem] bg-white shadow-2xl sm:rounded-[2rem]">
-              <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 p-5 sm:p-7">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[.18em] text-indigo-600">Langkah terakhir sebelum pembayaran</p>
+          <div className="fixed inset-0 z-[230] flex items-end justify-center bg-slate-950/70 p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !submitting) setSummaryOpen(false); }}>
+            <section role="dialog" aria-modal="true" aria-labelledby="order-summary-title" className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl sm:max-h-[94dvh]">
+              <header className="flex min-w-0 shrink-0 items-start justify-between gap-4 border-b border-slate-100 p-5 sm:p-7">
+                <div className="min-w-0">
+                  <p className="break-words text-xs font-black uppercase tracking-[.18em] text-indigo-600">Langkah terakhir sebelum pembayaran</p>
                   <h2 id="order-summary-title" className="mt-2 text-2xl font-black text-slate-900">Periksa rincian bimbel</h2>
                   <p className="mt-1 text-sm text-slate-500">Pastikan paket, mapel, dan seluruh tanggal sudah tepat.</p>
                 </div>
@@ -875,7 +896,7 @@ export default function PackageBuilder() {
                   <p className="mb-3 text-xs font-bold text-slate-400">Total waktu belajar: {plan.session_count * durationHours} jam</p>
                   <div className="flex justify-between text-sm text-slate-300"><span>Harga normal</span><span>{rupiah(quote.subtotal_amount)}</span></div>
                   {quote.discount_amount > 0 && <div className="mt-2 flex justify-between text-sm text-emerald-300"><span>Potongan</span><span>-{rupiah(quote.discount_amount)}</span></div>}
-                  <div className="mt-4 flex items-end justify-between border-t border-white/10 pt-4"><span className="text-sm font-black">Total pembayaran</span><span className="text-2xl font-black">{rupiah(quote.total_amount)}</span></div>
+                  <div className="mt-4 flex flex-wrap items-end justify-between gap-2 border-t border-white/10 pt-4"><span className="text-sm font-black">Total pembayaran</span><span className="break-all text-right text-xl font-black sm:text-2xl">{rupiah(quote.total_amount)}</span></div>
                 </div>
                 <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm font-semibold leading-6 text-blue-900">Setelah dikonfirmasi, kamu langsung menuju pembayaran. Pencarian tutor baru dimulai setelah pembayaran diterima admin.</div>
               </div>
@@ -935,7 +956,7 @@ function ScheduleTimePicker({ value, options, onChange }: { value: string; optio
 
       {open && (
         <div
-          className="fixed inset-0 z-[250] flex items-end justify-center overflow-hidden bg-slate-950/60 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
+          className="fixed inset-0 z-[250] flex items-end justify-center overflow-hidden bg-slate-950/60 p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] backdrop-blur-[2px] sm:items-center sm:p-4"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setOpen(false);
           }}
@@ -944,7 +965,7 @@ function ScheduleTimePicker({ value, options, onChange }: { value: string; optio
             role="dialog"
             aria-modal="true"
             aria-labelledby="schedule-time-title"
-            className="flex max-h-[72dvh] w-full max-w-md flex-col overflow-hidden rounded-t-[2rem] bg-white shadow-2xl sm:rounded-[2rem]"
+            className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-md flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl sm:max-h-[72dvh]"
           >
             <header className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
               <div className="min-w-0">

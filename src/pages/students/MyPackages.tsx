@@ -26,7 +26,7 @@ type PackageData = {
   id: number;
   package_code: string;
   status: string;
-  plan: { name: string; validity_days: number };
+  plan?: { name?: string; validity_days?: number } | null;
   total_sessions: number;
   used_sessions: number;
   remaining_sessions: number;
@@ -36,15 +36,15 @@ type PackageData = {
   payment_due_at?: string | null;
   can_renew: boolean;
   learning_mode: string;
-  subjects: Array<{
+  subjects?: Array<{
     id: number;
     curriculum_subject_id: number;
     name: string;
     allocated_sessions: number;
     status: string;
     teacher?: { id: number; name: string; avatar_url?: string | null } | null;
-    sessions: Array<{ id: number; start_at: string; status: string; booking_id?: number | null }>;
-  }>;
+    sessions?: Array<{ id: number; start_at?: string | null; status?: string; booking_id?: number | null }> | null;
+  }> | null;
   latest_order?: { id: number; status: string } | null;
 };
 
@@ -63,6 +63,33 @@ const labels: Record<string, string> = {
   cancelled: "Dibatalkan",
 };
 
+type PackageListResponse = PackageData[] | { data?: PackageData[] };
+
+const readPackageRows = (payload: PackageListResponse): PackageData[] | null => {
+  if (Array.isArray(payload)) return payload;
+  return Array.isArray(payload?.data) ? payload.data : null;
+};
+
+const validDate = (value?: string | null): Date | null => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatShortDate = (value?: string | null): string => {
+  const date = validDate(value);
+  return date
+    ? date.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })
+    : "Setelah pembayaran";
+};
+
+const formatSessionDate = (value?: string | null): string | null => {
+  const date = validDate(value);
+  return date
+    ? date.toLocaleString("id-ID", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+    : null;
+};
+
 export default function MyPackages() {
   const confirm = useConfirmDialog();
   const [items, setItems] = useState<PackageData[]>([]);
@@ -73,8 +100,10 @@ export default function MyPackages() {
   const load = useCallback(async (force = false) => {
     setError(null);
     try {
-      const response = await getCached<{ data: PackageData[] }>("/student/packages", { maxAgeMs: 10_000, force });
-      setItems(response.data.data);
+      const response = await getCached<PackageListResponse>("/student/packages", { maxAgeMs: 10_000, force });
+      const rows = readPackageRows(response.data);
+      if (!rows) throw new Error("Format daftar paket tidak dikenali.");
+      setItems(rows);
     } catch (err) {
       if (axios.isAxiosError(err)) {
         if (!err.response) {
@@ -161,16 +190,17 @@ export default function MyPackages() {
         ) : items.length ? (
           <div className="space-y-5">
             {items.map((item) => {
-              const progress = Math.round((item.used_sessions / Math.max(1, item.total_sessions)) * 100);
+              const subjects = Array.isArray(item.subjects) ? item.subjects : [];
+              const progress = Math.round((Number(item.used_sessions || 0) / Math.max(1, Number(item.total_sessions || 0))) * 100);
               const needsPayment = ["awaiting_payment", "payment_rejected"].includes(item.status) && item.latest_order;
               const canCancelSearch = ["matching", "teacher_pending", "no_teacher"].includes(item.status);
-              const canRetry = item.subjects.some((subject) => subject.status === "no_teacher");
+              const canRetry = subjects.some((subject) => subject.status === "no_teacher");
               return (
                 <article key={item.id} className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm">
                   <div className="flex flex-col justify-between gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:p-6">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="text-xl font-black text-slate-900">{item.plan.name}</h2>
+                        <h2 className="text-xl font-black text-slate-900">{item.plan?.name || "Paket belajar"}</h2>
                         <span className="rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-indigo-700">{labels[item.status] || item.status}</span>
                       </div>
                       <p className="mt-1 text-xs font-bold text-slate-400">{item.package_code} · {item.learning_mode === "online" ? "Online" : "Offline"}</p>
@@ -200,15 +230,20 @@ export default function MyPackages() {
 
                   <div className="grid grid-cols-3 gap-2 p-4 sm:gap-4 sm:p-6">
                     <Stat icon={BookOpenCheck} label="Sisa sesi" value={`${item.remaining_sessions} sesi`} />
-                    <Stat icon={CalendarDays} label="Masa aktif" value={item.expires_at ? new Date(item.expires_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "Setelah pembayaran"} />
+                    <Stat icon={CalendarDays} label="Masa aktif" value={formatShortDate(item.expires_at)} />
                     <Stat icon={Clock3} label="Durasi" value={`${item.duration_hours || 1} jam`} />
                   </div>
 
                   <div className="px-5 pb-5 sm:px-6 sm:pb-6">
                     <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-indigo-600 to-cyan-500" style={{ width: `${progress}%` }} /></div>
                     <div className="mt-5 grid gap-3 lg:grid-cols-2">
-                      {item.subjects.map((subject) => {
-                        const next = subject.sessions.find((session) => new Date(session.start_at).getTime() >= Date.now());
+                      {subjects.map((subject) => {
+                        const sessions = Array.isArray(subject.sessions) ? subject.sessions : [];
+                        const next = sessions.find((session) => {
+                          const date = validDate(session.start_at);
+                          return date ? date.getTime() >= Date.now() : false;
+                        });
+                        const nextLabel = formatSessionDate(next?.start_at);
                         return (
                           <div key={subject.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
                             <div className="flex items-start justify-between gap-3">
@@ -221,7 +256,7 @@ export default function MyPackages() {
                               </div>
                             </div>
                             <p className="mt-3 text-sm font-bold text-slate-700">{subject.teacher ? `Tutor ${subject.teacher.name}` : "Tutor sedang dicari"}</p>
-                            {next && <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500"><Clock3 size={14} /> {new Date(next.start_at).toLocaleString("id-ID", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
+                            {nextLabel && <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500"><Clock3 size={14} /> {nextLabel}</p>}
                             {item.can_renew && subject.teacher && (
                               <Link to={`/student/packages/new?renew=${item.id}&subject=${subject.id}`} className="mt-4 inline-flex rounded-xl bg-white px-3 py-2 text-xs font-black text-indigo-700 shadow-sm">
                                 Perpanjang dengan Tutor Ini

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -75,6 +76,16 @@ class User extends Authenticatable
         'consent_ip',
         'consent_user_agent',
     ];
+
+
+    protected function dateOfBirth(): Attribute
+    {
+        return Attribute::make(
+            set: fn ($value) => ($value === null || $value === '')
+                ? null
+                : \Carbon\Carbon::parse($value)->toDateString(),
+        );
+    }
 
     protected $casts = [
         'email_verified_at' => 'datetime',

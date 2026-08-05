@@ -89,8 +89,9 @@ class PackageCheckoutService
         ?PromotionClaim $claim = null
     ): PromotionClaim {
         return DB::transaction(function () use ($promotion, $student, $package, $claim) {
-            $lockedPromotion = Promotion::query()->lockForUpdate()->findOrFail($promotion->id);
-            abort_unless($lockedPromotion->isAvailable(), 422, 'Promo tidak tersedia.');
+            $lockedPromotion = Promotion::query()->lockForUpdate()->find($promotion->id);
+            abort_unless($lockedPromotion, 422, 'Promo tidak ditemukan atau sudah dihapus.');
+            abort_unless($lockedPromotion->isAvailable(), 422, 'Promo sudah berakhir atau dinonaktifkan.');
 
             $reservedQuota = $lockedPromotion->claims()
                 ->whereIn('status', ['available', 'reserved', 'used'])

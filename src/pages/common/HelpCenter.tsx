@@ -107,7 +107,7 @@ export default function HelpCenter() {
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" }
       });
       
-      toast.success("Tiket bantuan dibuat!");
+      toast.success("Permintaan bantuan berhasil dikirim!");
       setSubject(""); setMessage(""); clearImage();
       fetchTickets();
       setView("list");
@@ -165,14 +165,14 @@ export default function HelpCenter() {
       <div className="mb-4 flex shrink-0 flex-col items-stretch justify-between gap-4 sm:mb-6 sm:flex-row sm:items-end">
           <div>
               <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">Pusat Bantuan</h1>
-              <p className="text-slate-500 font-medium">Layanan support dan pengaduan</p>
+              <p className="text-slate-500 font-medium">Kirim kendala ke admin dan pantau balasannya.</p>
           </div>
           {view === "list" && (
             <button 
                 onClick={() => setView("create")} 
                 className="flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 font-bold text-white shadow-lg shadow-indigo-200 transition hover:bg-indigo-700 active:scale-95"
             >
-                <Send size={18} strokeWidth={2.5}/> Buat Tiket Baru
+                <Send size={18} strokeWidth={2.5}/> Ajukan Bantuan
             </button>
           )}
       </div>
@@ -207,8 +207,8 @@ export default function HelpCenter() {
                   ) : filteredTickets.length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-full text-slate-400 opacity-60">
                           <MessageSquare size={64} className="mb-4 text-slate-300"/>
-                          <p className="font-bold text-lg">Belum ada tiket bantuan</p>
-                          <p className="text-sm">Klik tombol "Buat Tiket Baru" di atas</p>
+                          <p className="font-bold text-lg">Belum ada permintaan bantuan</p>
+                          <p className="text-sm">Tekan "Ajukan Bantuan" untuk menghubungi admin.</p>
                       </div>
                   ) : (
                       filteredTickets.map(t => (
@@ -248,7 +248,7 @@ export default function HelpCenter() {
                  <div className="max-w-2xl mx-auto w-full">
                      <h2 className="text-2xl font-black text-slate-900 mb-8 flex items-center gap-3">
                         <span className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center"><FileText size={20}/></span>
-                        Buat Tiket Baru
+                        Ajukan Bantuan ke Admin
                      </h2>
                      
                      <form onSubmit={handleCreate} className="space-y-6">
@@ -256,7 +256,7 @@ export default function HelpCenter() {
                             <label className="text-sm font-bold text-slate-700">Subjek Kendala</label>
                             <input 
                                 type="text" 
-                                placeholder="Contoh: Pembayaran Gagal" 
+                                placeholder="Contoh: Kode promo tidak dapat digunakan" 
                                 value={subject} 
                                 onChange={e=>setSubject(e.target.value)} 
                                 className="w-full p-4 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none font-bold text-slate-800 transition"
@@ -266,7 +266,7 @@ export default function HelpCenter() {
                         <div className="space-y-2">
                             <label className="text-sm font-bold text-slate-700">Detail Penjelasan</label>
                             <textarea 
-                                placeholder="Ceritakan masalah Anda..." 
+                                placeholder="Jelaskan kendala, waktu kejadian, dan hasil yang diharapkan..." 
                                 value={message} 
                                 onChange={e=>setMessage(e.target.value)} 
                                 className="w-full p-4 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none h-40 resize-none font-medium text-slate-700 transition"
@@ -292,7 +292,7 @@ export default function HelpCenter() {
 
                         <div className="pt-4">
                             <button disabled={isSending} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:shadow-indigo-300 transition flex justify-center gap-2 items-center">
-                                {isSending ? <Loader2 className="animate-spin"/> : <Send size={20}/>} Kirim Tiket
+                                {isSending ? <Loader2 className="animate-spin"/> : <Send size={20}/>} Kirim ke Admin
                             </button>
                         </div>
                      </form>

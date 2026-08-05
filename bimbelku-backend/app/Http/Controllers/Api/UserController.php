@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
@@ -84,7 +85,7 @@ class UserController extends Controller
         // 1. Validasi Input
         $request->validate([
             'name' => ['required', 'string', 'max:255', 'regex:/\pL/u', 'not_regex:/\d/u'],
-            'phone' => ['required', 'string', 'max:16', 'regex:/^\+?[0-9]{8,15}$/'],
+            'phone' => ['required', 'string', 'max:24', 'regex:/^\+?[0-9\s().-]+$/'],
             'avatar' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048', // Max 2MB
             'profile_cover' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:5120',
             'student_education_level' => ['nullable', Rule::in(EducationCatalog::LEVELS)],
@@ -97,6 +98,13 @@ class UserController extends Controller
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'location_consent' => ['nullable', 'boolean'],
         ]);
+        $normalizedPhone = preg_replace('/\D+/', '', (string) $request->input('phone'));
+        if (!is_string($normalizedPhone) || !preg_match('/^[0-9]{8,15}$/', $normalizedPhone)) {
+            throw ValidationException::withMessages([
+                'phone' => 'Nomor WhatsApp/telepon harus berisi 8–15 angka.',
+            ]);
+        }
+
         if ($request->filled('student_education_level') && $request->filled('grade')) {
             abort_unless(
                 EducationCatalog::supports($request->string('student_education_level')->toString(), $request->string('grade')->toString()),
@@ -116,7 +124,7 @@ class UserController extends Controller
 
         try {
             $user->name = $request->name;
-            $user->phone = trim((string) $request->phone);
+            $user->phone = $normalizedPhone;
             $user->student_education_level = $request->input('student_education_level') ?: null;
             $user->grade = $request->input('grade') ?: null;
             $user->school_name = $request->input('school_name') ?: null;

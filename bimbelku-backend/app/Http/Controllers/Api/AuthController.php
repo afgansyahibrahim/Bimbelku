@@ -15,6 +15,7 @@ use App\Support\EducationCatalog;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Carbon\Carbon;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
@@ -300,7 +301,44 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        $request->user()?->currentAccessToken()?->delete();
+        $user = $request->user();
+        $plainTextToken = trim((string) $request->bearerToken());
+
+        if ($user) {
+            $currentToken = $user->currentAccessToken();
+
+            if ($currentToken instanceof PersonalAccessToken) {
+                PersonalAccessToken::query()
+                    ->whereKey($currentToken->getKey())
+                    ->where('tokenable_type', $user->getMorphClass())
+                    ->where('tokenable_id', $user->getKey())
+                    ->delete();
+            } elseif ($plainTextToken !== '') {
+                $token = PersonalAccessToken::findToken($plainTextToken);
+
+                if (
+                    $token
+                    && $token->tokenable_type === $user->getMorphClass()
+                    && (int) $token->tokenable_id === (int) $user->getKey()
+                ) {
+                    $token->delete();
+                }
+            }
+        }
+
+        if ($request->hasSession()) {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
+
+        // RequestGuard menyimpan user yang sudah terautentikasi di memori.
+        // Bersihkan guard setelah token dicabut agar token lama tidak dapat
+        // dipakai lagi pada request berikutnya, termasuk pada worker panjang
+        // dan rangkaian feature test dalam proses PHP yang sama.
+        Auth::guard('sanctum')->forgetUser();
+        Auth::forgetGuards();
+        $request->setUserResolver(static fn () => null);
 
         return response()->json(['message' => 'Sesi berhasil ditutup.']);
     }

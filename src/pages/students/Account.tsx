@@ -42,13 +42,14 @@ type Shortcut = {
   to?: string;
   icon: typeof UserRound;
   action?: () => void;
+  state?: { from: string };
 };
 
 const Group = ({ title, items }: { title: string; items: Shortcut[] }) => (
   <section className="overflow-hidden rounded-[1.75rem] border border-slate-100 bg-white shadow-sm">
     <h2 className="border-b border-slate-100 px-5 py-4 text-sm font-black text-slate-900 sm:px-6">{title}</h2>
     <div className="divide-y divide-slate-100">
-      {items.map(({ label, description, to, icon: Icon, action }) => {
+      {items.map(({ label, description, to, icon: Icon, action, state }) => {
         const content = (
           <>
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-blue-50 text-blue-600"><Icon size={20} /></span>
@@ -60,7 +61,7 @@ const Group = ({ title, items }: { title: string; items: Shortcut[] }) => (
           </>
         );
         const className = "flex min-h-16 w-full items-center gap-3 px-5 py-3 transition hover:bg-slate-50 sm:px-6";
-        return to ? <Link key={label} to={to} className={className}>{content}</Link> : <button key={label} type="button" onClick={action} className={className}>{content}</button>;
+        return to ? <Link key={label} to={to} state={state} className={className}>{content}</Link> : <button key={label} type="button" onClick={action} className={className}>{content}</button>;
       })}
     </div>
   </section>
@@ -123,12 +124,12 @@ export default function Account() {
             { label: "Profil dan lokasi belajar", description: "Atur identitas, pendidikan, alamat, dan persetujuan lokasi.", to: "/student/profile", icon: UserRound },
             { label: "Keamanan akun", description: "Ubah kata sandi dan periksa perlindungan akun.", to: "/student/profile", icon: LockKeyhole },
             { label: "Notifikasi", description: "Notifikasi terbaru tersedia dari ikon lonceng di bagian atas.", to: "/student/dashboard", icon: Bell },
-            { label: "Privasi", description: "Baca kebijakan penggunaan dan perlindungan data.", to: "/privacy", icon: ShieldCheck },
+            { label: "Privasi", description: "Baca kebijakan penggunaan dan perlindungan data.", to: "/privacy", state: { from: "/student/account" }, icon: ShieldCheck },
           ]} />
           <Group title="Bantuan dan informasi" items={[
             { label: "Tutorial penggunaan", description: "Tampilkan kembali panduan dengan tombol target yang tetap terang.", icon: CircleHelp, action: openTutorial },
             { label: "Pusat Bantuan", description: "Temukan jawaban atau kirim permintaan bantuan.", to: "/student/help", icon: MessageSquareText },
-            { label: "Syarat dan ketentuan", description: "Baca aturan layanan BimbelKu.", to: "/terms", icon: FileText },
+            { label: "Syarat dan ketentuan", description: "Baca aturan layanan BimbelKu.", to: "/terms", state: { from: "/student/account" }, icon: FileText },
           ]} />
         </div>
       </div>

@@ -196,6 +196,8 @@ class CurriculumCatalogSeeder extends Seeder
             ['name' => 'Mengaji dan Tahsin', 'group' => 'Keagamaan', 'levels' => ['Umum']],
             ['name' => 'Gitar', 'group' => 'Musik', 'levels' => ['Umum']],
             ['name' => 'Persiapan Tes CPNS dan PPPK', 'group' => 'Persiapan Tes', 'levels' => ['Umum']],
+            ['name' => 'Persiapan UTBK', 'group' => 'Persiapan Tes', 'levels' => ['Umum']],
+            ['name' => 'Fotografi Dasar', 'group' => 'Keterampilan', 'levels' => ['Umum']],
         ];
     }
 
@@ -209,6 +211,8 @@ class CurriculumCatalogSeeder extends Seeder
             'Mengaji dan Tahsin' => ['Makharijul Huruf', 'Sifat Huruf', 'Hukum Tajwid', 'Kelancaran Bacaan', 'Praktik dan Evaluasi'],
             'Gitar' => ['Pengenalan Instrumen', 'Chord Dasar', 'Ritme dan Strumming', 'Melodi', 'Praktik Lagu'],
             'Persiapan Tes CPNS dan PPPK' => ['Seleksi Kompetensi Dasar', 'Kompetensi Teknis', 'Manajerial', 'Sosio-Kultural', 'Simulasi dan Evaluasi'],
+            'Persiapan UTBK' => ['Tes Potensi Skolastik', 'Literasi Bahasa Indonesia', 'Literasi Bahasa Inggris', 'Penalaran Matematika', 'Simulasi dan Evaluasi'],
+            'Fotografi Dasar' => ['Pengenalan Kamera', 'Eksposur', 'Komposisi', 'Pencahayaan', 'Praktik dan Evaluasi'],
         ];
 
         if (isset($specific[$subject])) {

@@ -1,6 +1,7 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  ArrowUpDown,
   BookOpen,
   CalendarDays,
   CheckCircle2,
@@ -8,6 +9,7 @@ import {
   ExternalLink,
   FileCheck2,
   FileWarning,
+  Filter,
   GraduationCap,
   Link2,
   Loader2,
@@ -80,6 +82,8 @@ interface TeacherClass {
 }
 
 type Action = "complete" | "absence" | "emergency";
+type MethodFilter = "all" | TeacherClass["method"];
+type ScheduleSort = "nearest" | "farthest";
 
 const statusLabels: Record<string, string> = {
   awaiting_payment: "Menunggu pembayaran",
@@ -199,8 +203,37 @@ export default function ManageClasses() {
   const [incidentLocation, setIncidentLocation] = useState("");
   const [impact, setImpact] = useState("");
   const [hubBookingId, setHubBookingId] = useState<number | null>(null);
+  const [methodFilter, setMethodFilter] = useState<MethodFilter>("all");
+  const [scheduleSort, setScheduleSort] = useState<ScheduleSort>("nearest");
 
   useEffect(() => { void loadClasses(); }, []);
+
+  const visibleClasses = useMemo(() => {
+    const now = Date.now();
+    const filtered = methodFilter === "all"
+      ? classes
+      : classes.filter((item) => item.method === methodFilter);
+
+    return [...filtered].sort((left, right) => {
+      const leftTime = parseDate(left.start_at)?.getTime();
+      const rightTime = parseDate(right.start_at)?.getTime();
+
+      if (leftTime === undefined && rightTime === undefined) return left.id - right.id;
+      if (leftTime === undefined) return 1;
+      if (rightTime === undefined) return -1;
+
+      const leftUpcoming = leftTime >= now;
+      const rightUpcoming = rightTime >= now;
+
+      if (leftUpcoming !== rightUpcoming) return leftUpcoming ? -1 : 1;
+
+      if (scheduleSort === "nearest") {
+        return leftUpcoming ? leftTime - rightTime : rightTime - leftTime;
+      }
+
+      return leftUpcoming ? rightTime - leftTime : leftTime - rightTime;
+    });
+  }, [classes, methodFilter, scheduleSort]);
 
   const loadClasses = async () => {
     setLoading(true);
@@ -336,6 +369,63 @@ export default function ManageClasses() {
           {["Check-in PIN", "Catat kehadiran", "Check-out & laporan", "Foto bukti selesai"].map((label, index) => <div key={label} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm"><span className="grid h-7 w-7 place-items-center rounded-lg bg-indigo-50 text-xs font-black text-indigo-700">{index + 1}</span><p className="mt-2 text-xs font-black leading-5 text-slate-700">{label}</p></div>)}
         </section>
 
+        {!loadError && classes.length > 0 && (
+          <section className="rounded-[1.7rem] border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-600">
+                  <Filter size={17} />
+                </span>
+                <div className="min-w-0">
+                  <p className="font-black text-slate-900">Filter kelas</p>
+                  <p className="truncate text-xs text-slate-500">{visibleClasses.length} dari {classes.length} kelas ditampilkan</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_230px] sm:items-end">
+              <div>
+                <p className="mb-2 text-xs font-black uppercase tracking-widest text-slate-500">Metode belajar</p>
+                <div className="grid grid-cols-3 gap-1.5 rounded-2xl bg-slate-100 p-1.5">
+                  {([
+                    { value: "all", label: "Semua" },
+                    { value: "online", label: "Online" },
+                    { value: "offline", label: "Offline" },
+                  ] as const).map((option) => {
+                    const active = methodFilter === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setMethodFilter(option.value)}
+                        aria-pressed={active}
+                        className={`min-h-10 rounded-xl px-2 text-xs font-black transition sm:text-sm ${active ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-800"}`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <Label className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-500">
+                  <ArrowUpDown size={14} /> Urutan jadwal
+                </Label>
+                <Select value={scheduleSort} onValueChange={(value) => setScheduleSort(value as ScheduleSort)}>
+                  <SelectTrigger className="h-12 w-full rounded-xl border-slate-200 bg-white text-left font-bold">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end" className="max-w-[calc(100vw-2rem)]">
+                    <SelectItem value="nearest">Jadwal paling dekat</SelectItem>
+                    <SelectItem value="farthest">Jadwal paling jauh</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </section>
+        )}
+
         {loadError ? (
           <div className="rounded-[2rem] border border-rose-100 bg-white px-5 py-12 text-center shadow-sm">
             <AlertTriangle className="mx-auto h-11 w-11 text-rose-400" />
@@ -345,11 +435,29 @@ export default function ManageClasses() {
           </div>
         ) : classes.length === 0 ? (
           <div className="rounded-[2rem] border-2 border-dashed border-slate-200 bg-white py-20 text-center"><BookOpen className="mx-auto h-11 w-11 text-slate-300" /><p className="mt-4 font-black text-slate-800">Belum ada kelas terkonfirmasi</p><p className="mt-1 text-sm text-slate-500">Permintaan baru tersedia pada menu Permintaan Bimbel.</p></div>
+        ) : visibleClasses.length === 0 ? (
+          <div className="rounded-[2rem] border-2 border-dashed border-slate-200 bg-white px-5 py-14 text-center">
+            <Filter className="mx-auto h-10 w-10 text-slate-300" />
+            <p className="mt-4 font-black text-slate-800">Tidak ada kelas sesuai filter</p>
+            <p className="mt-1 text-sm text-slate-500">Pilih metode lain atau tampilkan seluruh kelas.</p>
+            <Button type="button" variant="outline" className="mt-5 rounded-xl" onClick={() => setMethodFilter("all")}>Tampilkan semua kelas</Button>
+          </div>
         ) : (
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {classes.map((item) => (
+            {visibleClasses.map((item) => (
               <article key={item.id} className="flex flex-col rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
-                <div className="flex items-start justify-between gap-3"><div className="grid h-12 w-12 place-items-center rounded-2xl bg-indigo-50 text-indigo-600">{item.method === "online" ? <Monitor /> : <MapPin />}</div><span className="rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-700">{statusLabels[item.status] || item.status}</span></div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ${item.method === "online" ? "bg-indigo-50 text-indigo-600" : "bg-emerald-50 text-emerald-600"}`}>
+                    {item.method === "online" ? <Monitor /> : <MapPin />}
+                  </div>
+                  <div className="flex min-w-0 flex-wrap justify-end gap-2">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-black ${item.method === "online" ? "bg-indigo-50 text-indigo-700" : "bg-emerald-50 text-emerald-700"}`}>
+                      {item.method === "online" ? <Monitor size={13} /> : <MapPin size={13} />}
+                      {item.method === "online" ? "Online" : "Offline"}
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-700">{statusLabels[item.status] || item.status}</span>
+                  </div>
+                </div>
                 <p className="mt-5 text-xs font-black uppercase tracking-widest text-indigo-500">{item.subject} · {item.type === "group" ? "Kelompok" : "Privat"}</p><h2 className="mt-1 text-xl font-black text-slate-900">{item.chapter || item.topic || "Sesi belajar"}</h2>
                 <div className="mt-4 space-y-2 text-xs text-slate-600"><Info icon={CalendarDays} text={dateTime(item.start_at)} /><Info icon={Users} text={`${item.participants.length} murid`} /><Info icon={Clock3} text={`${item.duration_hours} jam`} /></div>
                 <div className="mt-auto pt-5"><Button variant="outline" onClick={() => { setSelected(item); setMeetingLink(item.meeting_link || ""); }} className="w-full rounded-xl">Kelola sesi</Button></div>

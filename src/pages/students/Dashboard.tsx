@@ -89,15 +89,30 @@ export default function Dashboard() {
         getCached<{ name: string }>("/user", { maxAgeMs: 60_000 }),
         getCached<DashboardData>("/student/dashboard-v2", { maxAgeMs: 10_000 }),
       ]);
-      setName(userResponse.data.name || "Murid");
-      const raw = dashboardResponse.data;
+      const rawName = userResponse.data?.name;
+      setName(typeof rawName === "string" && rawName.trim() ? rawName.trim() : "Murid");
+      const raw = dashboardResponse.data as Partial<DashboardData> | null | undefined;
+      const packages = Array.isArray(raw?.packages)
+        ? raw.packages.map((packageItem) => ({
+            ...packageItem,
+            plan: packageItem?.plan && typeof packageItem.plan.name === "string"
+              ? packageItem.plan
+              : { name: "Paket Belajar" },
+            subjects: Array.isArray(packageItem?.subjects)
+              ? packageItem.subjects.map((subject) => ({
+                  ...subject,
+                  sessions: Array.isArray(subject?.sessions) ? subject.sessions : [],
+                }))
+              : [],
+          }))
+        : [];
       setData({
-        packages: raw.packages ?? [],
-        voucher_count: raw.voucher_count ?? 0,
-        next_session: raw.next_session ?? null,
-        unread_messages_count: raw.unread_messages_count ?? 0,
-        recent_notifications: raw.recent_notifications ?? [],
-        active_disputes_count: raw.active_disputes_count ?? 0,
+        packages,
+        voucher_count: Number(raw?.voucher_count || 0),
+        next_session: raw?.next_session ?? null,
+        unread_messages_count: Number(raw?.unread_messages_count || 0),
+        recent_notifications: Array.isArray(raw?.recent_notifications) ? raw.recent_notifications : [],
+        active_disputes_count: Number(raw?.active_disputes_count || 0),
       });
       setError(null);
     } catch (error) {
@@ -136,9 +151,9 @@ export default function Dashboard() {
     () => data.packages.find((item) => activeStatuses.includes(item.status)),
     [data.packages],
   );
-  const allSubjects = data.packages.flatMap((item) => item.subjects);
+  const allSubjects = data.packages.flatMap((item) => Array.isArray(item.subjects) ? item.subjects : []);
   const nearestSubjectSessions = allSubjects
-    .flatMap((subject) => subject.sessions.map((session) => ({ ...session, subject: subject.name })))
+    .flatMap((subject) => (Array.isArray(subject.sessions) ? subject.sessions : []).map((session) => ({ ...session, subject: subject.name })))
     .filter((session) => new Date(session.start_at).getTime() >= Date.now())
     .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
     .slice(0, 3);

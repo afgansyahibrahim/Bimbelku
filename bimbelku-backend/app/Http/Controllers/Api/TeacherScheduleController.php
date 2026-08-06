@@ -3,7 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Booking;
 use App\Models\TeacherAvailability;
+use App\Models\TeacherAvailabilityException;
+use Carbon\Carbon;
 use App\Services\TeacherMatchingService;
 use App\Services\TeacherOfferReleaseService;
 use Illuminate\Http\Request;
@@ -31,6 +34,66 @@ class TeacherScheduleController extends Controller
                 'ranges' => $ranges,
             ];
         }));
+    }
+
+    public function exceptions(Request $request)
+    {
+        return response()->json(
+            TeacherAvailabilityException::query()
+                ->where('user_id', $request->user()->id)
+                ->orderBy('start_date')
+                ->get()
+                ->map(fn (TeacherAvailabilityException $item) => [
+                    'id' => $item->id,
+                    'start_date' => $item->start_date->toDateString(),
+                    'end_date' => $item->end_date->toDateString(),
+                    'reason' => $item->reason,
+                ])
+                ->values()
+        );
+    }
+
+    public function storeException(
+        Request $request,
+        TeacherOfferReleaseService $offerReleaseService,
+        TeacherMatchingService $matchingService
+    ) {
+        $validated = $request->validate([
+            'start_date' => ['required', 'date', 'after_or_equal:today'],
+            'end_date' => ['required', 'date', 'after_or_equal:start_date'],
+            'reason' => ['nullable', 'string', 'max:255'],
+        ]);
+        $startDate = Carbon::parse($validated['start_date'])->startOfDay();
+        $endDate = Carbon::parse($validated['end_date'])->endOfDay();
+        if ($startDate->diffInDays($endDate) > 180) {
+            return response()->json(['message' => 'Rentang tanggal tidak tersedia maksimal 180 hari.'], 422);
+        }
+        if (TeacherAvailabilityException::query()->where('user_id', $request->user()->id)
+            ->whereDate('start_date', '<=', $endDate->toDateString())
+            ->whereDate('end_date', '>=', $startDate->toDateString())->exists()) {
+            return response()->json(['message' => 'Rentang tanggal tidak tersedia bertabrakan dengan data sebelumnya.'], 422);
+        }
+        if (Booking::query()->where('teacher_id', $request->user()->id)
+            ->whereIn('status', ['confirmed', 'in_progress', 'awaiting_student_approval', 'disputed', 'absence_review', 'admin_review_required'])
+            ->whereDate('start_at', '>=', $startDate->toDateString())
+            ->whereDate('start_at', '<=', $endDate->toDateString())->exists()) {
+            return response()->json(['message' => 'Masih ada kelas aktif pada rentang tersebut. Ubah jadwal kelas terlebih dahulu.'], 422);
+        }
+        $exception = TeacherAvailabilityException::create([
+            ...$validated,
+            'user_id' => $request->user()->id,
+            'reason' => trim((string) ($validated['reason'] ?? '')) ?: null,
+        ]);
+        $offerReleaseService->releaseForTeacherDateRange($request->user()->id, $startDate, $endDate, 'Tutor menambahkan tanggal tidak tersedia')
+            ->each(fn ($bookingRequest) => $matchingService->dispatchNextOffer($bookingRequest));
+        return response()->json(['message' => 'Tanggal tidak tersedia berhasil ditambahkan.', 'data' => $exception], 201);
+    }
+
+    public function destroyException(Request $request, TeacherAvailabilityException $teacherAvailabilityException)
+    {
+        abort_unless((int) $teacherAvailabilityException->user_id === (int) $request->user()->id, 403);
+        $teacherAvailabilityException->delete();
+        return response()->json(['message' => 'Tanggal tidak tersedia berhasil dihapus.']);
     }
 
     public function update(

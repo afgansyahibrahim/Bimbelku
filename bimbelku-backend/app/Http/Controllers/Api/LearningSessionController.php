@@ -4,11 +4,15 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
+use App\Models\ClassroomConversationState;
 use App\Models\ClassroomMessage;
 use App\Models\ClassroomMessageRead;
 use App\Models\LearningPlan;
 use App\Models\LearningProgressReport;
 use App\Models\Notification;
+use App\Models\PackageLearningTopic;
+use App\Models\PackageSession;
+use App\Models\PackageSessionTopicLog;
 use App\Models\ParticipantAttendance;
 use App\Models\ScheduleChangeRequest;
 use App\Models\SessionAttendance;
@@ -34,83 +38,176 @@ class LearningSessionController extends Controller
         $user = $request->user();
         abort_unless(in_array($user->role, ['student', 'teacher'], true), 403);
 
-        $query = Booking::query()
-            ->whereIn('status', $this->interactiveStatuses())
+        $bookings = $this->conversationBookingsQuery($user)
             ->with([
                 'teacher:id,name',
                 'teacher.teacherProfile:id,user_id,photo',
                 'bookingRequest:id,subject_name,chapter,topic',
                 'participants.student:id,name',
                 'participants.order:id,status',
-                'latestClassroomMessage.sender:id,name',
-            ]);
-        if ($user->role === 'teacher') {
-            $query->where('teacher_id', $user->id)
-                ->whereHas('participants.order', fn ($orders) => $orders->where('status', 'paid'));
-        } else {
-            $query->whereHas('participants', function ($participants) use ($user) {
-                $participants->where('student_id', $user->id)
-                    ->whereHas('order', fn ($orders) => $orders->where('status', 'paid'));
-            });
+            ])
+            ->latest('start_at')
+            ->limit(200)
+            ->get();
+
+        if ($bookings->isEmpty()) {
+            return response()->json(['data' => []]);
         }
 
-        $bookings = $query->latest('start_at')->limit(100)->get();
         $this->systemMessages->ensureForBookings($bookings);
-        $bookings->load(['latestClassroomMessage.sender:id,name']);
 
-        $payload = $bookings->map(function (Booking $booking) use ($user) {
-            $latest = $booking->latestClassroomMessage;
-            $unread = $booking->classroomMessages()
-                // Badge percakapan hanya menghitung pesan dari lawan bicara.
-                // Pesan sistem tetap tampil dan ditandai dibaca saat ruang dibuka,
-                // tetapi tidak boleh menambah angka pesan baru untuk kedua pihak.
-                ->where('sender_id', '!=', $user->id)
-                ->where('message_type', '!=', 'system')
-                ->whereDoesntHave('reads', fn ($reads) => $reads->where('user_id', $user->id))
-                ->count();
-            $paidStudents = $booking->participants
-                ->filter(fn ($participant) => $participant->order?->status === 'paid');
-            $counterpartName = $user->role === 'teacher'
-                ? ($booking->class_type === 'group'
-                    ? $paidStudents->count().' murid'
-                    : ($paidStudents->first()?->student?->name ?? 'Murid BimbelKu'))
-                : ($booking->teacher?->name ?? 'Tutor BimbelKu');
+        $conversationKeys = $bookings
+            ->map(fn (Booking $booking) => $this->conversationKey($booking, $user))
+            ->unique()
+            ->values();
+        $states = ClassroomConversationState::query()
+            ->where('user_id', $user->id)
+            ->whereIn('conversation_key', $conversationKeys)
+            ->get()
+            ->keyBy('conversation_key');
 
-            return [
-                'booking_id' => $booking->id,
-                'subject' => $booking->bookingRequest?->subject_name ?? 'Bimbingan',
-                'title' => $booking->bookingRequest?->chapter
-                    ?: $booking->bookingRequest?->topic
-                    ?: 'Ruang belajar',
-                'counterpart_name' => $counterpartName,
-                'counterpart_avatar' => $user->role === 'student'
-                    ? ($booking->teacher?->teacherProfile?->photo
-                        ? asset('storage/'.$booking->teacher->teacherProfile->photo)
-                        : null)
-                    : null,
-                'class_type' => $booking->class_type,
-                'status' => $booking->status,
-                'start_at' => $booking->start_at,
-                'unread_count' => $unread,
-                'latest_message' => $latest ? [
-                    'body' => $latest->body ?: ($latest->attachment_path ? 'Mengirim lampiran' : ''),
-                    'sender_name' => $latest->message_type === 'system'
-                        ? 'BimbelKu'
-                        : ($latest->sender?->name ?? 'Pengguna BimbelKu'),
-                    'created_at' => $latest->created_at,
-                    'has_attachment' => (bool) $latest->attachment_path,
-                ] : null,
-            ];
-        })->sortByDesc(fn ($item) => $item['latest_message']['created_at'] ?? $item['start_at'])->values();
+        $payload = $bookings
+            ->groupBy(fn (Booking $booking) => $this->conversationKey($booking, $user))
+            ->map(function ($conversationBookings, string $conversationKey) use ($user, $states) {
+                $bookingIds = $conversationBookings->pluck('id')->map(fn ($id) => (int) $id)->values();
+                $state = $states->get($conversationKey);
+                $hiddenThrough = (int) ($state?->hidden_through_message_id ?? 0);
+
+                $latest = ClassroomMessage::query()
+                    ->with('sender:id,name')
+                    ->whereIn('booking_id', $bookingIds)
+                    ->when($hiddenThrough > 0, fn ($messages) => $messages->where('id', '>', $hiddenThrough))
+                    ->latest('id')
+                    ->first();
+
+                // Percakapan yang dihapus hanya disembunyikan untuk pengguna tersebut.
+                // Percakapan muncul kembali ketika ada pesan baru setelah titik penghapusan.
+                if (!$latest && $state) {
+                    return null;
+                }
+
+                $canonical = $latest
+                    ? $conversationBookings->firstWhere('id', $latest->booking_id)
+                    : null;
+                $canonical ??= $conversationBookings->sortByDesc('start_at')->first();
+                if (!$canonical) {
+                    return null;
+                }
+
+                $unread = ClassroomMessage::query()
+                    ->whereIn('booking_id', $bookingIds)
+                    ->when($hiddenThrough > 0, fn ($messages) => $messages->where('id', '>', $hiddenThrough))
+                    ->where('sender_id', '!=', $user->id)
+                    ->where('message_type', '!=', 'system')
+                    ->whereDoesntHave('reads', fn ($reads) => $reads->where('user_id', $user->id))
+                    ->count();
+
+                $subjects = $conversationBookings
+                    ->map(fn (Booking $booking) => $booking->bookingRequest?->subject_name)
+                    ->filter()
+                    ->unique()
+                    ->values();
+                $subjectLabel = $subjects->count() > 1
+                    ? $subjects->first().' +'.($subjects->count() - 1)
+                    : ($subjects->first() ?? 'Bimbingan');
+
+                $paidStudents = $canonical->participants
+                    ->filter(fn ($participant) => $participant->order?->status === 'paid');
+                $counterpartName = $user->role === 'teacher'
+                    ? ($canonical->class_type === 'group'
+                        ? $paidStudents->count().' murid'
+                        : ($paidStudents->first()?->student?->name ?? 'Murid BimbelKu'))
+                    : ($canonical->teacher?->name ?? 'Tutor BimbelKu');
+
+                return [
+                    'conversation_key' => $conversationKey,
+                    'booking_id' => (int) $canonical->id,
+                    'booking_ids' => $bookingIds,
+                    'booking_count' => $bookingIds->count(),
+                    'subject' => $subjectLabel,
+                    'subjects' => $subjects,
+                    'title' => $bookingIds->count() > 1
+                        ? $bookingIds->count().' sesi terhubung'
+                        : ($canonical->bookingRequest?->chapter
+                            ?: $canonical->bookingRequest?->topic
+                            ?: 'Ruang belajar'),
+                    'counterpart_name' => $counterpartName,
+                    'counterpart_avatar' => $user->role === 'student'
+                        ? ($canonical->teacher?->teacherProfile?->photo
+                            ? asset('storage/'.$canonical->teacher->teacherProfile->photo)
+                            : null)
+                        : null,
+                    'class_type' => $canonical->class_type,
+                    'status' => $canonical->status,
+                    'start_at' => $canonical->start_at,
+                    'unread_count' => $unread,
+                    'latest_message' => $latest ? [
+                        'body' => $latest->body ?: ($latest->attachment_path ? 'Mengirim lampiran' : ''),
+                        'sender_name' => $latest->message_type === 'system'
+                            ? 'BimbelKu'
+                            : ($latest->sender?->name ?? 'Pengguna BimbelKu'),
+                        'created_at' => $latest->created_at,
+                        'has_attachment' => (bool) $latest->attachment_path,
+                    ] : null,
+                ];
+            })
+            ->filter()
+            ->sortByDesc(fn ($item) => $item['latest_message']['created_at'] ?? $item['start_at'])
+            ->values();
 
         return response()->json(['data' => $payload]);
+    }
+
+    public function destroyConversation(Request $request, Booking $booking)
+    {
+        $role = $this->sessionRole($request->user(), $booking);
+        $this->ensurePaidAccess($request->user(), $booking, $role);
+        abort_unless(in_array($role, ['student', 'teacher'], true), 403);
+
+        $conversationBookings = $this->relatedConversationBookings($request->user(), $booking);
+        $this->systemMessages->ensureForBookings($conversationBookings);
+        $bookingIds = $conversationBookings->pluck('id');
+        $lastMessageId = (int) (ClassroomMessage::query()
+            ->whereIn('booking_id', $bookingIds)
+            ->max('id') ?? 0);
+        $conversationKey = $this->conversationKey($booking, $request->user());
+
+        ClassroomConversationState::updateOrCreate(
+            [
+                'user_id' => $request->user()->id,
+                'conversation_key' => $conversationKey,
+            ],
+            [
+                'hidden_through_message_id' => $lastMessageId,
+                'hidden_at' => now(),
+            ]
+        );
+        $this->markConversationBookingsRead($conversationBookings, $request->user());
+
+        return response()->json([
+            'message' => 'Percakapan dihapus dari daftar Anda. Chat akan muncul kembali jika ada pesan baru.',
+        ]);
     }
 
     public function show(Request $request, Booking $booking)
     {
         $role = $this->sessionRole($request->user(), $booking);
         $this->ensurePaidAccess($request->user(), $booking, $role);
-        $this->systemMessages->ensureOrderConnected($booking);
+
+        $conversationMode = $request->boolean('conversation')
+            && in_array($role, ['student', 'teacher'], true);
+        $conversationBookings = collect([$booking]);
+        $hiddenThrough = 0;
+        if ($conversationMode) {
+            $conversationBookings = $this->relatedConversationBookings($request->user(), $booking);
+            $this->systemMessages->ensureForBookings($conversationBookings);
+            $hiddenThrough = (int) (ClassroomConversationState::query()
+                ->where('user_id', $request->user()->id)
+                ->where('conversation_key', $this->conversationKey($booking, $request->user()))
+                ->value('hidden_through_message_id') ?? 0);
+        } else {
+            $this->systemMessages->ensureOrderConnected($booking);
+        }
 
         $booking->load([
             'teacher:id,name',
@@ -120,7 +217,7 @@ class LearningSessionController extends Controller
             'participants.order:id,status',
             'learningPlan',
             'learningProgressReports' => function ($query) use ($role, $request) {
-                $query->with('student:id,name')->oldest('session_number');
+                $query->with(['student:id,name', 'topicLogs.topic'])->oldest('session_number');
                 if ($role === 'student') {
                     $query->where('student_id', $request->user()->id);
                 }
@@ -132,21 +229,42 @@ class LearningSessionController extends Controller
                 ->latest()
                 ->limit(10),
         ]);
+        if ($sharedPlan = $this->resolveLearningPlan($booking)) {
+            $booking->setRelation('learningPlan', $sharedPlan);
+        }
 
-        $this->markConversationRead($booking, $request->user());
+        if ($conversationMode) {
+            $this->markConversationBookingsRead(
+                $conversationBookings,
+                $request->user(),
+                $hiddenThrough,
+            );
+        } else {
+            $this->markConversationRead($booking, $request->user());
+        }
 
-        $messages = $booking->classroomMessages()
+        $rawMessages = ClassroomMessage::query()
+            ->whereIn('booking_id', $conversationBookings->pluck('id'))
+            ->when($conversationMode && $hiddenThrough > 0, fn ($messages) => $messages
+                ->where('id', '>', $hiddenThrough))
             ->with(['sender:id,name,role', 'reads'])
             ->latest('id')
             ->limit(100)
             ->get()
             ->reverse()
-            ->values()
-            ->map(fn (ClassroomMessage $message) => $this->messagePayload(
-                $message,
-                (int) $request->user()->id,
-                $role,
-            ));
+            ->values();
+        if ($conversationMode) {
+            $rawMessages = $rawMessages
+                ->unique(fn (ClassroomMessage $message) => $message->message_type === 'system'
+                    ? 'system:'.($message->system_event_key ?: 'generic').':'.md5((string) $message->body)
+                    : 'message:'.$message->id)
+                ->values();
+        }
+        $messages = $rawMessages->map(fn (ClassroomMessage $message) => $this->messagePayload(
+            $message,
+            (int) $request->user()->id,
+            $role,
+        ));
 
         $participant = $booking->participants
             ->firstWhere('student_id', $request->user()->id)
@@ -183,6 +301,8 @@ class LearningSessionController extends Controller
                 'requested_by' => $change->requested_by,
                 'requester_name' => $change->requester?->name ?? 'Pengguna BimbelKu',
                 'requester_role' => $change->requester_role,
+                'scope' => $change->scope ?? 'single',
+                'affected_count' => count($change->affected_schedules ?? []) ?: 1,
                 'original_start_at' => $change->original_start_at,
                 'original_end_at' => $change->original_end_at,
                 'proposed_start_at' => $change->proposed_start_at,
@@ -202,6 +322,18 @@ class LearningSessionController extends Controller
                 ])->values(),
             ];
         })->values();
+
+        $packageSession = PackageSession::query()
+            ->where('booking_id', $booking->id)
+            ->with(['subject.learningTopics' => fn ($query) => $query->orderBy('sort_order')])
+            ->first();
+        $packageTopics = $packageSession?->subject?->learningTopics ?? collect();
+        $materialProgress = $packageTopics->isEmpty()
+            ? (int) ($booking->learningPlan?->progress_percent ?? 0)
+            : (int) round($packageTopics->where('status', 'completed')->count() / max(1, $packageTopics->count()) * 100);
+        $currentTopicLogs = $packageSession
+            ? PackageSessionTopicLog::query()->where('package_session_id', $packageSession->id)->get()->keyBy('package_learning_topic_id')
+            : collect();
 
         return response()->json([
             'booking' => [
@@ -240,7 +372,28 @@ class LearningSessionController extends Controller
                 'notes' => $report->notes,
                 'actual_duration_minutes' => $report->actual_duration_minutes,
                 'published_at' => $report->published_at,
+                'topics' => $report->topicLogs->map(fn (PackageSessionTopicLog $log) => [
+                    'topic_id' => $log->package_learning_topic_id,
+                    'chapter' => $log->topic?->chapter,
+                    'title' => $log->topic?->title,
+                    'activity_type' => $log->activity_type,
+                    'status_before' => $log->status_before,
+                    'status_after' => $log->status_after,
+                    'needs_review' => (bool) $log->needs_review_after,
+                    'notes' => $log->notes,
+                ])->values(),
             ])->values(),
+            'learning_topics' => $packageTopics->map(fn (PackageLearningTopic $topic) => [
+                'id' => $topic->id,
+                'chapter' => $topic->chapter,
+                'title' => $topic->title,
+                'status' => $topic->status,
+                'needs_review' => (bool) $topic->needs_review,
+                'session_status' => $currentTopicLogs->get($topic->id)?->status_after,
+                'session_activity' => $currentTopicLogs->get($topic->id)?->activity_type,
+                'session_needs_review' => $currentTopicLogs->get($topic->id)?->needs_review_after,
+            ])->values(),
+            'material_progress_percent' => $materialProgress,
             'attendance' => $teacherAttendance,
             'participants' => $participantPayload,
             'schedule_changes' => $scheduleChanges,
@@ -268,6 +421,15 @@ class LearningSessionController extends Controller
                 'can_request_schedule_change' => in_array($role, ['student', 'teacher'], true)
                     && $booking->status === 'confirmed'
                     && now()->lt($booking->start_at),
+                'can_request_future_schedule' => in_array($role, ['student', 'teacher'], true)
+                    && $booking->status === 'confirmed'
+                    && now()->lt($booking->start_at)
+                    && $packageSession
+                    && PackageSession::query()
+                        ->where('package_subject_id', $packageSession->package_subject_id)
+                        ->where('sequence', '>', $packageSession->sequence)
+                        ->whereHas('booking', fn ($query) => $query->where('status', 'confirmed'))
+                        ->exists(),
             ],
         ]);
     }
@@ -593,18 +755,26 @@ class LearningSessionController extends Controller
         ]);
         $studentId = $this->paidStudentId($booking);
 
-        $plan = LearningPlan::updateOrCreate(
-            ['booking_id' => $booking->id],
-            [
-                ...$validated,
+        $packageSession = PackageSession::query()->where('booking_id', $booking->id)->first();
+        $plan = $packageSession
+            ? LearningPlan::firstOrNew([
+                'package_subject_id' => $packageSession->package_subject_id,
                 'student_id' => $studentId,
-                'teacher_id' => $request->user()->id,
-                'progress_percent' => $booking->learningPlan?->progress_percent ?? 0,
-                'status' => 'waiting_student',
-                'assessed_at' => now(),
-                'student_acknowledged_at' => null,
-            ]
-        );
+            ])
+            : LearningPlan::firstOrNew(['booking_id' => $booking->id]);
+        if (!$plan->exists) {
+            $plan->booking_id = $booking->id;
+        }
+        $plan->fill([
+            ...$validated,
+            'package_subject_id' => $packageSession?->package_subject_id,
+            'student_id' => $studentId,
+            'teacher_id' => $request->user()->id,
+            'progress_percent' => $plan->progress_percent ?? 0,
+            'status' => 'waiting_student',
+            'assessed_at' => now(),
+            'student_acknowledged_at' => null,
+        ])->save();
         Notification::create([
             'user_id' => $studentId,
             'title' => 'Target belajar menunggu persetujuan',
@@ -624,7 +794,7 @@ class LearningSessionController extends Controller
         $this->ensurePaidAccess($request->user(), $booking, $role);
         abort_unless($role === 'student', 403);
 
-        $plan = $booking->learningPlan;
+        $plan = $this->resolveLearningPlan($booking);
         abort_unless($plan, 404, 'Rencana belajar belum dibuat tutor.');
         abort_unless($plan->student_id === $request->user()->id, 403);
 
@@ -647,7 +817,7 @@ class LearningSessionController extends Controller
         $this->ensurePaidAccess($request->user(), $booking, $role);
         abort_unless($role === 'teacher', 403);
 
-        $plan = $booking->learningPlan;
+        $plan = $this->resolveLearningPlan($booking);
         if ($booking->class_type === 'private') {
             abort_unless($plan?->student_acknowledged_at, 422, 'Target belajar harus disetujui murid terlebih dahulu.');
         }
@@ -668,9 +838,31 @@ class LearningSessionController extends Controller
             'difficulties' => ['nullable', 'string', 'max:3000'],
             'next_exercise' => ['required', 'string', 'min:10', 'max:3000'],
             'attendance' => ['nullable', Rule::in(['present', 'late', 'partial', 'excused'])],
-            'progress_percent' => ['required', 'integer', 'between:0,100'],
+            'progress_percent' => ['nullable', 'integer', 'between:0,100'],
+            'topic_updates' => ['nullable', 'array', 'max:40'],
+            'topic_updates.*.topic_id' => ['required', 'integer', 'distinct', 'exists:package_learning_topics,id'],
+            'topic_updates.*.activity_type' => ['required', Rule::in(['taught', 'continued', 'reviewed'])],
+            'topic_updates.*.status_after' => ['required', Rule::in(['in_progress', 'completed'])],
+            'topic_updates.*.needs_review' => ['nullable', 'boolean'],
+            'topic_updates.*.notes' => ['nullable', 'string', 'max:1000'],
             'notes' => ['nullable', 'string', 'max:3000'],
         ]);
+        $packageSession = PackageSession::query()
+            ->where('booking_id', $booking->id)
+            ->with('subject.learningTopics')
+            ->first();
+        $packageTopics = $packageSession?->subject?->learningTopics ?? collect();
+        if ($packageTopics->isNotEmpty() && empty($validated['topic_updates'])) {
+            throw ValidationException::withMessages([
+                'topic_updates' => 'Pilih sedikitnya satu subbab yang dibahas pada sesi ini.',
+            ]);
+        }
+        if ($packageTopics->isEmpty() && !isset($validated['progress_percent'])) {
+            throw ValidationException::withMessages([
+                'progress_percent' => 'Progres target wajib diisi untuk kelas lama yang belum memakai katalog subbab.',
+            ]);
+        }
+
         $studentId = $booking->class_type === 'group'
             ? (int) $validated['student_id']
             : (int) $plan->student_id;
@@ -701,7 +893,9 @@ class LearningSessionController extends Controller
             $plan,
             $validated,
             $durationMinutes,
-            $studentId
+            $studentId,
+            $packageSession,
+            $packageTopics
         ) {
             $existingReport = LearningProgressReport::query()
                 ->where('booking_id', $booking->id)
@@ -713,7 +907,40 @@ class LearningSessionController extends Controller
                     'student_id' => 'Laporan perkembangan untuk murid ini sudah diterbitkan pada sesi tersebut.',
                 ]);
             }
-            $sessionNumber = 1;
+            $sessionNumber = $packageSession?->sequence
+                ?? (LearningProgressReport::query()->where('teacher_id', $request->user()->id)->where('student_id', $studentId)->count() + 1);
+            $topicUpdates = collect($validated['topic_updates'] ?? []);
+            unset($validated['topic_updates']);
+            $progressPercent = (int) ($validated['progress_percent'] ?? 0);
+
+            if ($packageSession && $packageTopics->isNotEmpty()) {
+                $allowedTopics = $packageTopics->keyBy('id');
+                foreach ($topicUpdates as $update) {
+                    $topic = $allowedTopics->get((int) $update['topic_id']);
+                    if (!$topic) {
+                        throw ValidationException::withMessages(['topic_updates' => 'Subbab tidak termasuk dalam target paket ini.']);
+                    }
+                    $before = $topic->status;
+                    PackageSessionTopicLog::create([
+                        'package_session_id' => $packageSession->id,
+                        'package_learning_topic_id' => $topic->id,
+                        'activity_type' => $update['activity_type'],
+                        'status_before' => $before,
+                        'status_after' => $update['status_after'],
+                        'needs_review_after' => (bool) ($update['needs_review'] ?? false),
+                        'notes' => trim((string) ($update['notes'] ?? '')) ?: null,
+                    ]);
+                    $topic->update([
+                        'status' => $update['status_after'],
+                        'needs_review' => (bool) ($update['needs_review'] ?? false),
+                        'started_at' => $topic->started_at ?? now(),
+                        'completed_at' => $update['status_after'] === 'completed' ? ($topic->completed_at ?? now()) : null,
+                    ]);
+                }
+                $freshTopics = PackageLearningTopic::query()->where('package_subject_id', $packageSession->package_subject_id)->get();
+                $progressPercent = (int) round($freshTopics->where('status', 'completed')->count() / max(1, $freshTopics->count()) * 100);
+                $validated['progress_percent'] = $progressPercent;
+            }
 
             $report = LearningProgressReport::create([
                 ...$validated,
@@ -724,16 +951,19 @@ class LearningSessionController extends Controller
                 'actual_duration_minutes' => $durationMinutes,
                 'published_at' => now(),
             ]);
+            if ($packageSession) {
+                PackageSessionTopicLog::query()->where('package_session_id', $packageSession->id)->update(['learning_progress_report_id' => $report->id]);
+            }
             if ($plan && (int) $plan->student_id === $studentId) {
                 $plan->update([
-                    'progress_percent' => $validated['progress_percent'],
-                    'status' => $validated['progress_percent'] >= 100 ? 'completed' : 'active',
+                    'progress_percent' => $progressPercent,
+                    'status' => $progressPercent >= 100 ? 'completed' : 'active',
                 ]);
             }
             Notification::create([
                 'user_id' => $studentId,
                 'title' => 'Laporan perkembangan tersedia',
-                'message' => "Tutor menerbitkan laporan sesi {$sessionNumber}. Progres target tercatat {$validated['progress_percent']}%.",
+                'message' => "Tutor menerbitkan laporan sesi {$sessionNumber}. Progres materi tercatat {$progressPercent}%.",
                 'type' => 'success',
                 'target_url' => '/student/progress',
                 'unique_key' => "progress-report:{$booking->id}:{$studentId}:{$sessionNumber}",
@@ -814,6 +1044,91 @@ class LearningSessionController extends Controller
             'admin_review_required',
             'completed',
         ];
+    }
+
+    private function conversationBookingsQuery(User $user)
+    {
+        $query = Booking::query()
+            ->whereIn('status', $this->interactiveStatuses());
+
+        if ($user->role === 'teacher') {
+            $query->where('teacher_id', $user->id)
+                ->whereHas('participants.order', fn ($orders) => $orders->where('status', 'paid'));
+        } else {
+            $query->whereHas('participants', function ($participants) use ($user) {
+                $participants->where('student_id', $user->id)
+                    ->whereHas('order', fn ($orders) => $orders->where('status', 'paid'));
+            });
+        }
+
+        return $query;
+    }
+
+    private function relatedConversationBookings(User $user, Booking $booking)
+    {
+        $query = $this->conversationBookingsQuery($user)
+            ->with([
+                'teacher:id,name',
+                'teacher.teacherProfile:id,user_id,photo',
+                'bookingRequest:id,subject_name,chapter,topic',
+                'participants.student:id,name',
+                'participants.bookingRequest',
+                'participants.order:id,status',
+            ]);
+
+        if ($booking->class_type === 'group') {
+            $query->where('class_type', 'group');
+            if ($booking->group_pool_id) {
+                $query->where('group_pool_id', $booking->group_pool_id);
+            } else {
+                $query->whereKey($booking->id);
+            }
+        } else {
+            $studentId = $this->conversationStudentId($booking, $user);
+            abort_unless($studentId, 403, 'Peserta percakapan tidak ditemukan.');
+
+            $query->where('class_type', 'private')
+                ->where('teacher_id', $booking->teacher_id)
+                ->whereHas('participants', function ($participants) use ($studentId) {
+                    $participants->where('student_id', $studentId)
+                        ->whereHas('order', fn ($orders) => $orders->where('status', 'paid'));
+                });
+        }
+
+        $bookings = $query->latest('start_at')->limit(200)->get();
+        abort_unless(
+            $bookings->contains(fn (Booking $item) => (int) $item->id === (int) $booking->id),
+            403,
+            'Percakapan ini tidak dapat diakses.'
+        );
+
+        return $bookings;
+    }
+
+    private function conversationKey(Booking $booking, User $viewer): string
+    {
+        if ($booking->class_type === 'group') {
+            return 'group:'.($booking->group_pool_id ?: $booking->id);
+        }
+
+        $studentId = $this->conversationStudentId($booking, $viewer) ?: 0;
+
+        return 'private:'.(int) $booking->teacher_id.':'.(int) $studentId;
+    }
+
+    private function conversationStudentId(Booking $booking, User $viewer): ?int
+    {
+        if ($viewer->role === 'student') {
+            return (int) $viewer->id;
+        }
+
+        $booking->loadMissing('participants.order');
+        $participant = $booking->participants
+            ->first(fn ($item) => $item->order?->status === 'paid');
+
+        return $participant?->student_id
+            ? (int) $participant->student_id
+            : ($booking->student_id ? (int) $booking->student_id : null);
     }
 
     private function withinCheckInWindow(Booking $booking): bool
@@ -919,9 +1234,20 @@ class LearningSessionController extends Controller
         ];
     }
 
-    private function markConversationRead(Booking $booking, User $viewer): void
+    private function markConversationBookingsRead($bookings, User $viewer, int $afterMessageId = 0): void
     {
+        foreach ($bookings as $booking) {
+            $this->markConversationRead($booking, $viewer, $afterMessageId);
+        }
+    }
+
+    private function markConversationRead(
+        Booking $booking,
+        User $viewer,
+        int $afterMessageId = 0,
+    ): void {
         $booking->classroomMessages()
+            ->when($afterMessageId > 0, fn ($messages) => $messages->where('id', '>', $afterMessageId))
             ->where(function ($messages) use ($viewer) {
                 $messages->where('sender_id', '!=', $viewer->id)
                     ->orWhere('message_type', 'system');
@@ -939,6 +1265,25 @@ class LearningSessionController extends Controller
                     'updated_at' => $now,
                 ])->all());
             });
+    }
+
+    private function resolveLearningPlan(Booking $booking): ?LearningPlan
+    {
+        if ($booking->relationLoaded('learningPlan') && $booking->getRelation('learningPlan')) {
+            return $booking->getRelation('learningPlan');
+        }
+        if ($direct = $booking->learningPlan()->first()) {
+            return $direct;
+        }
+        $packageSubjectId = PackageSession::query()
+            ->where('booking_id', $booking->id)
+            ->value('package_subject_id');
+        if (!$packageSubjectId) return null;
+
+        return LearningPlan::query()
+            ->where('package_subject_id', $packageSubjectId)
+            ->latest('id')
+            ->first();
     }
 
     private function canReportProgress(

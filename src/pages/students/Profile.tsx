@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import StudentLayout from "../../components/StudentLayout";
 import { toast } from "sonner";
 import { 
   AlertCircle, User, Mail, Lock, Save, Loader2, Camera, ShieldCheck, ImagePlus, CalendarDays, UserRoundCheck, RefreshCw, WifiOff,
-  MapPin, FileText, HelpCircle, MessageCircle, Shield, ExternalLink,
+  MapPin, FileText, HelpCircle, MessageCircle, Shield, ExternalLink, LocateFixed, ArrowLeft,
 } from "lucide-react";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
+import { ResponsiveSelect } from "@/components/ResponsiveSelect";
 import { formatAccountDate, formatDateOnly } from "@/lib/date";
 import http, { getCached } from "@/lib/http";
 import {
@@ -20,6 +21,17 @@ import axios from "axios";
 import { EDUCATION_LEVELS, GRADES_BY_EDUCATION_LEVEL } from "@/lib/educationCatalog";
 
 export default function Profile() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const locationSectionRef = useRef<HTMLDivElement>(null);
+  const addressInputRef = useRef<HTMLTextAreaElement>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const locationSetupRequested = searchParams.get("section") === "location";
+  const requestedReturnTo = searchParams.get("returnTo");
+  const returnTo = requestedReturnTo?.startsWith("/") && !requestedReturnTo.startsWith("//")
+    ? requestedReturnTo
+    : null;
+
   // State User Data
   const [user, setUser] = useState({
     name: "",
@@ -63,7 +75,7 @@ export default function Profile() {
     const fetchUser = async () => {
       setError(null);
       try {
-        const response = await getCached("/user", { maxAgeMs: 60_000 });
+        const response = await getCached("/user", { maxAgeMs: 60_000, force: true });
         
         // Asumsi response backend mengembalikan { name, email, avatar_url }
         // Jika backend mengirim 'photo' atau 'avatar', sesuaikan di sini
@@ -170,6 +182,52 @@ export default function Profile() {
     void fetchUser();
   };
 
+  useEffect(() => {
+    if (isLoading || !locationSetupRequested) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      locationSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      window.setTimeout(() => addressInputRef.current?.focus(), 450);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [isLoading, locationSetupRequested]);
+
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Perangkat atau browser ini tidak mendukung pengambilan lokasi.");
+      return;
+    }
+
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const latitude = coords.latitude.toFixed(7);
+        const longitude = coords.longitude.toFixed(7);
+        setUser((current) => ({
+          ...current,
+          latitude,
+          longitude,
+          maps_link: `https://www.google.com/maps?q=${latitude},${longitude}`,
+          location_consent_at: current.location_consent_at || new Date().toISOString(),
+        }));
+        setIsLocating(false);
+        toast.success("Titik lokasi berhasil diambil. Lengkapi alamat sebelum menyimpan.");
+        window.setTimeout(() => addressInputRef.current?.focus(), 100);
+      },
+      (locationError) => {
+        setIsLocating(false);
+        const message = locationError.code === locationError.PERMISSION_DENIED
+          ? "Izin lokasi ditolak. Aktifkan izin lokasi browser, lalu coba lagi."
+          : locationError.code === locationError.TIMEOUT
+            ? "Pengambilan lokasi terlalu lama. Pastikan GPS atau lokasi perangkat aktif."
+            : "Titik lokasi belum berhasil diambil. Coba lagi atau isi koordinat secara manual.";
+        toast.error(message);
+      },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 },
+    );
+  };
+
   // 2. HANDLER GANTI FOTO (PREVIEW)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -227,6 +285,21 @@ export default function Profile() {
       toast.error("Nomor WhatsApp/telepon harus berisi 8–15 angka.");
       return;
     }
+    if (locationSetupRequested) {
+      if (!user.address.trim()) {
+        toast.error("Alamat lengkap wajib diisi untuk kelas offline.");
+        addressInputRef.current?.focus();
+        return;
+      }
+      if (!user.latitude.trim() || !user.longitude.trim() || !Number.isFinite(Number(user.latitude)) || !Number.isFinite(Number(user.longitude))) {
+        toast.error("Ambil titik lokasi perangkat atau isi latitude dan longitude dengan benar.");
+        return;
+      }
+      if (!user.location_consent_at) {
+        toast.error("Centang persetujuan penggunaan lokasi terlebih dahulu.");
+        return;
+      }
+    }
 
     setIsSaving(true);
 
@@ -261,8 +334,10 @@ export default function Profile() {
         }
       });
 
-      toast.success("Profil berhasil diperbarui!");
-      
+      const savedAddress = response.data?.data?.address ?? user.address;
+      const savedLatitude = response.data?.data?.latitude?.toString() ?? user.latitude;
+      const savedLongitude = response.data?.data?.longitude?.toString() ?? user.longitude;
+
       setSelectedFile(null);
       setSelectedCover(null);
       setUser((current) => ({
@@ -275,10 +350,10 @@ export default function Profile() {
         grade: response.data?.data?.grade ?? current.grade,
         school_name: response.data?.data?.school_name ?? current.school_name,
         learning_needs: response.data?.data?.learning_needs ?? current.learning_needs,
-        address: response.data?.data?.address ?? current.address,
+        address: savedAddress,
         maps_link: response.data?.data?.maps_link ?? current.maps_link,
-        latitude: response.data?.data?.latitude?.toString() ?? current.latitude,
-        longitude: response.data?.data?.longitude?.toString() ?? current.longitude,
+        latitude: savedLatitude,
+        longitude: savedLongitude,
         location_consent_at: response.data?.data?.location_consent_at ?? current.location_consent_at,
       }));
       if (avatarPreviewUrlRef.current) {
@@ -288,6 +363,20 @@ export default function Profile() {
       if (coverPreviewUrlRef.current) {
         URL.revokeObjectURL(coverPreviewUrlRef.current);
         coverPreviewUrlRef.current = null;
+      }
+
+      const locationReady = Boolean(
+        savedAddress?.trim()
+        && savedLatitude.trim()
+        && savedLongitude.trim()
+        && Number.isFinite(Number(savedLatitude))
+        && Number.isFinite(Number(savedLongitude)),
+      );
+      if (locationSetupRequested && returnTo && locationReady) {
+        toast.success("Lokasi tersimpan. Kamu dikembalikan ke pemesanan.");
+        navigate(returnTo, { replace: true });
+      } else {
+        toast.success("Profil berhasil diperbarui!");
       }
 
     } catch (error: any) {
@@ -457,15 +546,23 @@ export default function Profile() {
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-2">
                             <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Jenjang</label>
-                            <select value={user.student_education_level} onChange={(event) => { const next = event.target.value; setUser({ ...user, student_education_level: next, grade: GRADES_BY_EDUCATION_LEVEL[next][0] }); }} className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none focus:bg-white focus:ring-4 focus:ring-blue-50 border border-transparent focus:border-blue-200 transition-all">
-                              {EDUCATION_LEVELS.map((item) => <option key={item}>{item}</option>)}
-                            </select>
+                            <ResponsiveSelect
+                              value={user.student_education_level}
+                              ariaLabel="Pilih jenjang pendidikan"
+                              options={EDUCATION_LEVELS.map((item) => ({ value: item, label: item }))}
+                              className="border-transparent bg-slate-50 focus:border-blue-200 focus:bg-white focus:ring-blue-50"
+                              onValueChange={(next) => setUser({ ...user, student_education_level: next, grade: GRADES_BY_EDUCATION_LEVEL[next][0] })}
+                            />
                           </div>
                           <div className="space-y-2">
                             <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">{user.student_education_level === "Umum" ? "Tingkat" : "Kelas"}</label>
-                            <select value={user.grade} onChange={(event) => setUser({ ...user, grade: event.target.value })} className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none focus:bg-white focus:ring-4 focus:ring-blue-50 border border-transparent focus:border-blue-200 transition-all">
-                              {GRADES_BY_EDUCATION_LEVEL[user.student_education_level].map((item) => <option key={item}>{item}</option>)}
-                            </select>
+                            <ResponsiveSelect
+                              value={user.grade}
+                              ariaLabel={user.student_education_level === "Umum" ? "Pilih tingkat" : "Pilih kelas"}
+                              options={GRADES_BY_EDUCATION_LEVEL[user.student_education_level].map((item) => ({ value: item, label: item }))}
+                              className="border-transparent bg-slate-50 focus:border-blue-200 focus:bg-white focus:ring-blue-50"
+                              onValueChange={(next) => setUser({ ...user, grade: next })}
+                            />
                           </div>
                         </div>
 
@@ -552,20 +649,43 @@ export default function Profile() {
             </div>
 
             {/* === 3. LOKASI === */}
-            <div className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-lg shadow-slate-200/40 sm:p-8 md:rounded-[2.5rem]">
-              <div className="mb-5 flex items-center gap-3 sm:mb-6 sm:gap-4">
+            <div ref={locationSectionRef} id="student-location" className={`scroll-mt-24 rounded-[2rem] border bg-white p-5 shadow-lg shadow-slate-200/40 sm:p-8 md:rounded-[2.5rem] ${locationSetupRequested ? "border-emerald-300 ring-4 ring-emerald-100" : "border-slate-100"}`}>
+              {locationSetupRequested && (
+                <div className="mb-5 flex items-start gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-blue-900">
+                  <MapPin className="mt-0.5 shrink-0" size={19} />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-black">Lengkapi lokasi untuk melanjutkan pesanan offline</p>
+                    <p className="mt-1 text-sm leading-6 text-blue-700">Ambil titik perangkat, isi alamat lengkap, centang persetujuan, lalu simpan.</p>
+                  </div>
+                  {returnTo && (
+                    <button type="button" onClick={() => navigate(returnTo)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-blue-700" aria-label="Kembali ke pemesanan">
+                      <ArrowLeft size={18} />
+                    </button>
+                  )}
+                </div>
+              )}
+              <div className="mb-5 flex flex-wrap items-center gap-3 sm:mb-6 sm:gap-4">
                 <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center">
                   <MapPin size={24}/>
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <h3 className="text-lg font-black text-slate-800">Lokasi</h3>
                   <p className="text-xs text-slate-400 font-medium">Digunakan untuk sesi belajar offline</p>
                 </div>
+                <button
+                  type="button"
+                  onClick={useCurrentLocation}
+                  disabled={isLocating}
+                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                >
+                  {isLocating ? <Loader2 className="animate-spin" size={17} /> : <LocateFixed size={17} />}
+                  {isLocating ? "Mengambil lokasi…" : "Gunakan lokasi perangkat"}
+                </button>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-xs font-black uppercase tracking-widest text-slate-400">Alamat lengkap</label>
-                  <textarea value={user.address} onChange={(event) => setUser({ ...user, address: event.target.value })} rows={3} className="w-full resize-y rounded-2xl border border-transparent bg-slate-50 p-4 font-medium text-slate-700 outline-none transition focus:border-emerald-200 focus:bg-white focus:ring-4 focus:ring-emerald-50" placeholder="Alamat belajar untuk kelas offline" />
+                  <textarea ref={addressInputRef} value={user.address} onChange={(event) => setUser({ ...user, address: event.target.value })} rows={3} className="w-full resize-y rounded-2xl border border-transparent bg-slate-50 p-4 font-medium text-slate-700 outline-none transition focus:border-emerald-200 focus:bg-white focus:ring-4 focus:ring-emerald-50" placeholder="Alamat belajar untuk kelas offline" />
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-xs font-black uppercase tracking-widest text-slate-400">Tautan Google Maps</label>
@@ -594,6 +714,16 @@ export default function Profile() {
                 </div>
                 <p className="text-xs text-slate-400">Kosongkan kolom lokasi lalu simpan jika ingin menghapus data lokasi.</p>
               </div>
+              {locationSetupRequested && (
+                <button
+                  type="submit"
+                  disabled={isSaving || isLocating}
+                  className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 font-black text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                >
+                  {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                  {isSaving ? "Menyimpan lokasi…" : "Simpan lokasi & kembali ke pemesanan"}
+                </button>
+              )}
             </div>
 
             {/* === 4. KEBIJAKAN === */}

@@ -15,6 +15,11 @@ class LearningProgressReport extends Model
         'published_at' => 'datetime',
     ];
 
+    public function topicLogs()
+    {
+        return $this->hasMany(PackageSessionTopicLog::class);
+    }
+
     public function booking()
     {
         return $this->belongsTo(Booking::class);

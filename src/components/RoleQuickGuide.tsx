@@ -1,4 +1,4 @@
-import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, CSSProperties, ErrorInfo, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle2, ChevronLeft, ChevronRight, HelpCircle, X } from "lucide-react";
 import { useLocation } from "react-router-dom";
@@ -140,10 +140,29 @@ const findTargetElement = (selector: string) => {
   }
 };
 
+
+class TutorialBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    if (import.meta.env.DEV) {
+      console.error("Tutorial gagal dirender.", error, info);
+    }
+  }
+
+  render() {
+    return this.state.hasError ? null : this.props.children;
+  }
+}
+
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
 
-export default function RoleQuickGuide({ role }: { role: Role }) {
+function RoleQuickGuideContent({ role }: { role: Role }) {
   const location = useLocation();
   const context = useMemo(() => contextForPath(location.pathname), [location.pathname]);
   const [tutorial, setTutorial] = useState<Tutorial>(() => tutorialFor(role, context));
@@ -153,9 +172,23 @@ export default function RoleQuickGuide({ role }: { role: Role }) {
   const touchStart = useRef<number | null>(null);
   const dialogRef = useRef<HTMLElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const tutorialAccountKey = useMemo(() => {
+    try {
+      const storedUser = JSON.parse(localStorage.getItem("user") || "null") as {
+        id?: number | string;
+        email?: string;
+      } | null;
+      const identity = storedUser?.id ?? storedUser?.email;
+      return identity !== undefined && identity !== null && String(identity).trim()
+        ? String(identity).trim()
+        : "anonymous";
+    } catch {
+      return "anonymous";
+    }
+  }, [role]);
   const firstVisitKey = context === "package-builder"
-    ? "bimbelku.tutorial.student.multi-subject.v1"
-    : `bimbelku.tutorial.${role}.v5`;
+    ? `bimbelku.tutorial.student.${tutorialAccountKey}.multi-subject.v1`
+    : `bimbelku.tutorial.${role}.${tutorialAccountKey}.v5`;
   const dashboardPath = role === "student" ? "/student/dashboard" : "/guru";
   const activeStep = tutorial.steps[step] ?? fallback[role].steps[0];
   const selector = selectorForStep(activeStep, role);
@@ -171,16 +204,25 @@ export default function RoleQuickGuide({ role }: { role: Role }) {
   }, []);
 
   const closeGuide = useCallback(() => {
-    // Tutup portal lebih dahulu. Step baru direset saat tutorial dibuka kembali agar
-    // tidak ada pembaruan posisi yang beradu dengan proses unmount.
+    // Tutup portal lebih dahulu agar pengukuran spotlight berhenti sebelum fokus dikembalikan.
     setOpen(false);
     setSpotlight(null);
-    window.requestAnimationFrame(() => restoreFocusRef.current?.focus());
+    touchStart.current = null;
     try {
       localStorage.setItem(firstVisitKey, "seen");
     } catch {
       // Tutorial tetap dapat ditutup saat penyimpanan browser dibatasi.
     }
+
+    const previousFocus = restoreFocusRef.current;
+    restoreFocusRef.current = null;
+    window.requestAnimationFrame(() => {
+      try {
+        if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+      } catch {
+        // Kegagalan mengembalikan fokus tidak boleh menghentikan halaman utama.
+      }
+    });
   }, [firstVisitKey]);
 
   useEffect(() => {
@@ -218,7 +260,22 @@ export default function RoleQuickGuide({ role }: { role: Role }) {
 
   useEffect(() => {
     if (!open) return;
-    const frame = window.requestAnimationFrame(() => dialogRef.current?.focus());
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const frame = window.requestAnimationFrame(() => {
+      try {
+        dialogRef.current?.focus({ preventScroll: true });
+      } catch {
+        dialogRef.current?.focus();
+      }
+    });
     return () => window.cancelAnimationFrame(frame);
   }, [open, step]);
 
@@ -242,7 +299,7 @@ export default function RoleQuickGuide({ role }: { role: Role }) {
           }
         }
       }
-      if (event.key === "ArrowRight") setStep((value) => Math.min(tutorial.steps.length - 1, value + 1));
+      if (event.key === "ArrowRight") setStep((value) => Math.min(Math.max(0, tutorial.steps.length - 1), value + 1));
       if (event.key === "ArrowLeft") setStep((value) => Math.max(0, value - 1));
     };
     window.addEventListener("keydown", onKeyDown);
@@ -385,7 +442,7 @@ export default function RoleQuickGuide({ role }: { role: Role }) {
           if (touchStart.current !== null && end !== undefined && Math.abs(end - touchStart.current) > 45) {
             setStep((value) => end > touchStart.current!
               ? Math.max(0, value - 1)
-              : Math.min(tutorial.steps.length - 1, value + 1));
+              : Math.min(Math.max(0, tutorial.steps.length - 1), value + 1));
           }
           touchStart.current = null;
         }}
@@ -445,7 +502,15 @@ export default function RoleQuickGuide({ role }: { role: Role }) {
         <HelpCircle size={20} />
       </button>
 
-      {tutorialOverlay ? createPortal(tutorialOverlay, document.body) : null}
+      {tutorialOverlay && document.body ? createPortal(tutorialOverlay, document.body) : null}
     </>
+  );
+}
+
+export default function RoleQuickGuide({ role }: { role: Role }) {
+  return (
+    <TutorialBoundary>
+      <RoleQuickGuideContent role={role} />
+    </TutorialBoundary>
   );
 }

@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\CurriculumChapter;
 use App\Models\CurriculumSubject;
+use App\Models\LearningTopic;
 use App\Models\PackagePlan;
 use App\Models\Promotion;
 use App\Models\User;
@@ -157,7 +159,7 @@ class StageFivePackageExperienceTest extends TestCase
             ->assertJsonPath('message', 'Semua jadwal hanya boleh memakai menit 00.');
     }
 
-    public function test_package_quote_only_accepts_one_hour_sessions(): void
+    public function test_package_quote_accepts_one_or_two_hour_sessions(): void
     {
         $this->seed(CurriculumCatalogSeeder::class);
         $this->seed(StageFiveExperienceSeeder::class);
@@ -178,7 +180,7 @@ class StageFivePackageExperienceTest extends TestCase
             ]],
         ];
 
-        $this->postJson('/api/student/packages/quote', [
+        $oneHour = $this->postJson('/api/student/packages/quote', [
             ...$payload,
             'duration_hours' => 1,
         ])
@@ -187,9 +189,85 @@ class StageFivePackageExperienceTest extends TestCase
             ->assertJsonPath('total_learning_hours', $plan->session_count)
             ->assertJsonPath('lines.0.duration_hours', 1);
 
+        $twoHours = $this->postJson('/api/student/packages/quote', [
+            ...$payload,
+            'duration_hours' => 2,
+        ])
+            ->assertOk()
+            ->assertJsonPath('duration_hours', 2)
+            ->assertJsonPath('total_learning_hours', $plan->session_count * 2)
+            ->assertJsonPath('lines.0.duration_hours', 2);
+
+        $this->assertEquals(
+            (float) $oneHour->json('total_amount') * 2,
+            (float) $twoHours->json('total_amount')
+        );
+
         $this->postJson('/api/student/packages/quote', [
             ...$payload,
             'duration_hours' => 3,
         ])->assertUnprocessable();
+    }
+
+    public function test_two_hour_package_creates_two_hour_sessions(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-30 10:00:00', 'Asia/Jakarta'));
+        $this->seed(CurriculumCatalogSeeder::class);
+        $this->seed(StageFiveExperienceSeeder::class);
+        $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
+        Sanctum::actingAs($student);
+
+        $plan = PackagePlan::query()->where('slug', 'bulanan-dasar')->firstOrFail();
+        $subject = CurriculumSubject::query()
+            ->where('normalized_name', 'matematika')
+            ->firstOrFail();
+        $chapter = CurriculumChapter::query()
+            ->where('curriculum_subject_id', $subject->id)
+            ->where('education_level', 'SMP')
+            ->where('grade', 'Kelas 7')
+            ->where('is_active', true)
+            ->firstOrFail();
+        $topic = LearningTopic::query()
+            ->where('subject_name', $subject->name)
+            ->where('education_level', 'SMP')
+            ->where('grade', 'Kelas 7')
+            ->where('chapter', $chapter->title)
+            ->where('is_active', true)
+            ->firstOrFail();
+
+        $this->postJson('/api/student/packages', [
+            'package_plan_id' => $plan->id,
+            'education_level' => 'SMP',
+            'grade' => 'Kelas 7',
+            'learning_mode' => 'online',
+            'duration_hours' => 2,
+            'subjects' => [[
+                'curriculum_subject_id' => $subject->id,
+                'curriculum_chapter_ids' => [$chapter->id],
+                'learning_topic_ids' => [$topic->id],
+                'learning_goal' => 'Menguatkan aljabar dasar.',
+                'weekdays' => [1],
+                'schedules' => [
+                    '2026-08-03 15:00:00',
+                    '2026-08-10 15:00:00',
+                    '2026-08-17 15:00:00',
+                    '2026-08-24 15:00:00',
+                ],
+            ]],
+        ], ['Idempotency-Key' => 'stage5-two-hour-package'])
+            ->assertCreated()
+            ->assertJsonPath('data.duration_hours', 2)
+            ->assertJsonPath('data.total_learning_hours', $plan->session_count * 2)
+            ->assertJsonPath('order.duration_hours', 2);
+
+        $this->assertDatabaseHas('package_sessions', [
+            'scheduled_start_at' => '2026-08-03 15:00:00',
+            'scheduled_end_at' => '2026-08-03 17:00:00',
+        ]);
+        $this->assertDatabaseHas('booking_requests', [
+            'duration_hours' => 2,
+            'start_time' => '15:00:00',
+            'end_time' => '17:00:00',
+        ]);
     }
 }

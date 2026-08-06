@@ -16,6 +16,11 @@ class LearningPlan extends Model
         'student_acknowledged_at' => 'datetime',
     ];
 
+    public function packageSubject()
+    {
+        return $this->belongsTo(PackageSubject::class);
+    }
+
     public function booking()
     {
         return $this->belongsTo(Booking::class);

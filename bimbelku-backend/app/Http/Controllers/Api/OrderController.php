@@ -35,12 +35,14 @@ class OrderController extends Controller
             'file' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'sender_name' => ['required', 'string', 'max:150', 'regex:/\pL/u', 'not_regex:/\d/u'],
             'bank_name' => ['required', 'string', 'max:100', 'regex:/\pL/u'],
-            'sender_account_number' => ['required', 'string', 'max:50', 'regex:/^[0-9]{6,50}$/'],
+            'sender_account_number' => ['required', 'string', 'min:8', 'max:20', 'regex:/^[0-9]+$/'],
         ], [
             'sender_name.regex' => 'Nama pemilik rekening wajib mengandung huruf.',
             'sender_name.not_regex' => 'Nama pemilik rekening tidak boleh memuat angka.',
             'bank_name.regex' => 'Nama bank atau e-wallet wajib mengandung huruf.',
-            'sender_account_number.regex' => 'Nomor rekening atau e-wallet harus berisi 6–50 angka.',
+            'sender_account_number.min' => 'Nomor rekening atau e-wallet minimal 8 digit.',
+            'sender_account_number.max' => 'Nomor rekening atau e-wallet maksimal 20 digit.',
+            'sender_account_number.regex' => 'Nomor rekening atau e-wallet hanya boleh berisi angka.',
         ]);
 
         $order = Order::query()

@@ -288,8 +288,12 @@ function OfferCard({
   const request = offer.booking_request;
   const remaining = Math.max(0, new Date(offer.expires_at).getTime() - now);
   const totalSeconds = Math.floor(remaining / 1000);
-  const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
-  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const countdown = hours > 0
+    ? `${hours}j ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}d`
+    : `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
   const isPending = offer.status === "pending" && remaining > 0;
 
   return (
@@ -377,7 +381,7 @@ function OfferCard({
         {isPending && (
           <div className="text-right">
             <p className="text-[10px] font-bold uppercase tracking-widest text-rose-500">Sisa waktu</p>
-            <p className="mt-1 font-mono text-lg font-black text-rose-600">{minutes}:{seconds}</p>
+            <p className="mt-1 font-mono text-lg font-black text-rose-600">{countdown}</p>
           </div>
         )}
       </div>

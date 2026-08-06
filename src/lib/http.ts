@@ -196,13 +196,28 @@ axios.interceptors.response.use(
   handleRejectedResponse,
 );
 
+
+const validationMessageAliases: Record<string, string> = {
+  "validation.distinct": "Pilihan yang sama tidak boleh dikirim lebih dari sekali.",
+  "validation.required": "Data wajib belum lengkap.",
+  "validation.exists": "Pilihan sudah tidak tersedia. Muat ulang lalu pilih kembali.",
+  "validation.array": "Format pilihan tidak sesuai.",
+  "validation.date": "Tanggal yang dipilih tidak valid.",
+};
+
+const readableApiMessage = (message?: string): string | undefined => {
+  if (!message) return undefined;
+  return validationMessageAliases[message.trim()] || message;
+};
+
 const isTechnicalServerMessage = (message: string): boolean => /no query results for model|modelnotfoundexception|sqlstate\[|stack trace|undefined (?:property|variable|array key)|call to (?:a member function|undefined method)|too few arguments|class [^ ]+ not found|syntax error/i.test(message);
 
 export function getApiError(error: unknown, fallback = "Terjadi kesalahan. Silakan coba lagi."): string {
   if (axios.isAxiosError(error)) {
     const data = error.response?.data as { message?: string; errors?: Record<string, string[]> } | undefined;
     const firstError = data?.errors ? Object.values(data.errors).flat()[0] : undefined;
-    const message = data?.message || firstError;
+    const genericMessage = data?.message === "The given data was invalid." ? undefined : data?.message;
+    const message = readableApiMessage(firstError || genericMessage);
     if (message && !isTechnicalServerMessage(message)) return message;
   }
   return fallback;

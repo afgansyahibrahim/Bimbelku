@@ -88,11 +88,15 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
     Route::get('/refunds/{refund}/proof', [ProtectedFileController::class, 'refundProof']);
     Route::get('/ticket-replies/{ticketReply}/attachment', [ProtectedFileController::class, 'ticketAttachment']);
     Route::get('/bookings/{booking}/learning-session', [LearningSessionController::class, 'show']);
+    Route::get('/payment-settings/qris', [AdminController::class, 'qrisImage']);
     Route::get('/conversations', [LearningSessionController::class, 'conversations']);
+    Route::delete('/conversations/{booking}', [LearningSessionController::class, 'destroyConversation']);
     Route::post('/bookings/{booking}/messages', [LearningSessionController::class, 'storeMessage'])
         ->middleware('throttle:30,1');
     Route::get('/classroom-messages/{classroomMessage}/attachment', [ProtectedFileController::class, 'classroomMessageAttachment']);
     Route::get('/teacher-appeals/{teacherAppeal}/evidence', [ProtectedFileController::class, 'teacherAppealEvidence']);
+    Route::get('/bookings/{booking}/schedule-options', [ScheduleChangeController::class, 'options'])
+        ->middleware('throttle:30,1');
     Route::post('/bookings/{booking}/schedule-changes', [ScheduleChangeController::class, 'store'])
         ->middleware('throttle:5,1');
     Route::post('/bookings/{booking}/schedule-changes/{scheduleChangeRequest}/respond', [ScheduleChangeController::class, 'respond'])
@@ -180,6 +184,9 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         Route::post('/bookings/{booking}/progress-reports', [LearningSessionController::class, 'storeProgressReport']);
         Route::get('/schedule', [TeacherScheduleController::class, 'index']);
         Route::post('/schedule', [TeacherScheduleController::class, 'update']);
+        Route::get('/schedule-exceptions', [TeacherScheduleController::class, 'exceptions']);
+        Route::post('/schedule-exceptions', [TeacherScheduleController::class, 'storeException']);
+        Route::delete('/schedule-exceptions/{teacherAvailabilityException}', [TeacherScheduleController::class, 'destroyException']);
     });
 
     Route::prefix('admin')->middleware(['role:admin', 'admin.audit', 'admin.permission'])->group(function () {

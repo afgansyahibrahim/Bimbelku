@@ -27,28 +27,62 @@ export default function PaymentSettings() {
   const [accountName, setAccountName] = useState("");
   
   // State Gambar
-  const [qrisImage, setQrisImage] = useState<string | null>(null); 
-  const [qrisFile, setQrisFile] = useState<File | null>(null); 
-  
+  const [qrisImage, setQrisImage] = useState<string | null>(null);
+  const [qrisFile, setQrisFile] = useState<File | null>(null);
+  const [qrisAvailable, setQrisAvailable] = useState(false);
+  const [qrisLoadFailed, setQrisLoadFailed] = useState(false);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
+  const replaceQrisPreview = (nextUrl: string | null) => {
+    setQrisImage((current) => {
+      if (current?.startsWith("blob:")) URL.revokeObjectURL(current);
+      return nextUrl;
+    });
+  };
+
+  const loadQrisPreview = async (endpoint = "/payment-settings/qris") => {
+    try {
+      const response = await http.get(endpoint, { responseType: "blob" });
+      replaceQrisPreview(URL.createObjectURL(response.data as Blob));
+      setQrisAvailable(true);
+      setQrisLoadFailed(false);
+      return true;
+    } catch {
+      replaceQrisPreview(null);
+      setQrisAvailable(false);
+      setQrisLoadFailed(true);
+      return false;
+    }
+  };
+
   // 1. FETCH DATA SAAT LOAD
   useEffect(() => {
-    fetchSettings();
+    void fetchSettings();
   }, []);
+
+  useEffect(() => () => {
+    if (qrisImage?.startsWith("blob:")) URL.revokeObjectURL(qrisImage);
+  }, [qrisImage]);
 
   const fetchSettings = async () => {
     try {
       const response = await http.get("/admin/payment-settings");
       const data = response.data;
-      
+
       setMerchantName(data.merchant_name || "");
       setBankName(data.bank_name || "");
       setAccountNumber(sanitizeDigits(data.account_number || "", 50));
       setAccountName(sanitizePersonName(data.account_name || "", 150));
-      setQrisImage(data.qris_url || null);
-      
+
+      if (data.qris_available) {
+        await loadQrisPreview(data.qris_endpoint || "/payment-settings/qris");
+      } else {
+        replaceQrisPreview(null);
+        setQrisAvailable(false);
+        setQrisLoadFailed(false);
+      }
     } catch (error) {
       console.error("Gagal load settings:", error);
       toast.error(getApiError(error, "Gagal memuat pengaturan."));
@@ -71,9 +105,10 @@ export default function PaymentSettings() {
         e.target.value = "";
         return;
       }
-      setQrisFile(file); 
-      setQrisImage(URL.createObjectURL(file)); 
-      toast.success("Gambar dipilih. Klik simpan untuk menerapkan.");
+      setQrisFile(file);
+      replaceQrisPreview(URL.createObjectURL(file));
+      setQrisLoadFailed(false);
+      toast.success("Gambar dipilih. QRIS belum aktif sebelum tombol Simpan Perubahan ditekan.");
     }
   };
 
@@ -102,9 +137,11 @@ export default function PaymentSettings() {
     }
 
     const approved = await confirm({
-      title: "Ubah rekening pembayaran?",
-      description: "Rekening ini langsung menjadi tujuan transfer pada tagihan murid. Periksa kembali seluruh datanya.",
-      confirmText: "Simpan rekening",
+      title: qrisFile ? "Aktifkan QRIS pembayaran?" : "Ubah rekening pembayaran?",
+      description: qrisFile
+        ? "Gambar QRIS ini langsung tersedia pada halaman pembayaran murid setelah disimpan."
+        : "Rekening ini langsung menjadi tujuan transfer pada tagihan murid. Periksa kembali seluruh datanya.",
+      confirmText: qrisFile ? "Simpan dan aktifkan QRIS" : "Simpan rekening",
       tone: "warning",
     });
     if (!approved) return;
@@ -122,19 +159,13 @@ export default function PaymentSettings() {
         formData.append('qris_image', qrisFile);
       }
 
-      const response = await http.post("/admin/payment-settings", formData);
-      const saved = response.data?.data;
-      if (saved) {
-        setMerchantName(saved.merchant_name || "");
-        setBankName(saved.bank_name || "");
-        setAccountNumber(sanitizeDigits(saved.account_number || "", 50));
-        setAccountName(sanitizePersonName(saved.account_name || "", 150));
-        setQrisImage(saved.qris_url || qrisImage);
-      }
+      await http.post("/admin/payment-settings", formData);
+      const hadNewQris = Boolean(qrisFile);
       setQrisFile(null);
+      await fetchSettings();
 
-      toast.success("Pengaturan Disimpan!", {
-        description: "Metode pembayaran telah diperbarui.",
+      toast.success("Pengaturan disimpan!", {
+        description: hadNewQris ? "QRIS telah aktif dan akan tampil pada halaman pembayaran murid." : "Metode pembayaran telah diperbarui.",
         icon: <CheckCircle2 className="text-green-600" />,
       });
 
@@ -193,7 +224,15 @@ export default function PaymentSettings() {
                       <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center">
                         <QrCode size={20} />
                       </div>
-                      <h3 className="text-xl font-bold text-slate-800">QRIS / E-Wallet</h3>
+                      <div>
+                        <h3 className="text-xl font-bold text-slate-800">QRIS / E-Wallet</h3>
+                        <p className="mt-1 text-xs font-semibold text-slate-500">Gambar ini ditampilkan langsung kepada murid saat pembayaran.</p>
+                      </div>
+                   </div>
+
+                   <div className={`mb-4 rounded-2xl border p-4 ${qrisFile ? "border-amber-200 bg-amber-50 text-amber-800" : qrisAvailable ? "border-emerald-200 bg-emerald-50 text-emerald-800" : qrisLoadFailed ? "border-rose-200 bg-rose-50 text-rose-800" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                     <p className="text-sm font-black">{qrisFile ? "QRIS baru belum disimpan" : qrisAvailable ? "QRIS aktif di halaman pembayaran" : qrisLoadFailed ? "File QRIS gagal dibaca" : "QRIS belum diaktifkan"}</p>
+                     <p className="mt-1 text-xs leading-5">{qrisFile ? "Tekan Simpan Perubahan agar murid dapat melihat QRIS ini." : qrisAvailable ? "Backend telah memeriksa file dan QRIS dapat dimuat tanpa bergantung pada storage:link." : qrisLoadFailed ? "Unggah ulang gambar QRIS, lalu simpan kembali." : "Unggah gambar QRIS dan simpan agar opsi QRIS muncul untuk murid."}</p>
                    </div>
 
                    <div className="flex flex-col items-center justify-center bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200 p-8 mb-6 transition-colors hover:border-orange-300 hover:bg-orange-50/30">

@@ -78,7 +78,7 @@ expect(routes.includes("['throttle:5,1', 'idempotency']"), "pembuatan paket waji
 expect(studentController.includes("Jumlah jadwal harus tepat"), "jumlah sesi paket wajib sama dengan paket");
 expect(studentController.includes("slot jam penuh yang aktif"), "slot paket wajib berasal dari daftar jam penuh aktif admin");
 expect(studentController.includes("Gunakan satu voucher atau satu kode promo"), "satu transaksi hanya boleh memakai satu promo");
-expect(studentController.includes("Rule::in([1])") && studentController.includes("addHours($durationHours)"), "setiap sesi paket wajib memakai durasi satu jam");
+expect(studentController.includes("Rule::in([1, 2])") && studentController.includes("addHours($durationHours)"), "setiap sesi paket memakai durasi satu atau dua jam yang tervalidasi");
 expect(studentController.includes("subDays(7)"), "perpanjangan wajib dibuka tujuh hari sebelum paket berakhir");
 expect(checkout.includes("createInvoiceBeforeMatching"), "tagihan paket wajib dibuat sebelum pencarian tutor");
 expect(studentController.includes("Selesaikan pembayaran agar pencarian tutor dapat dimulai"), "pembuatan paket wajib mengarahkan murid ke pembayaran");

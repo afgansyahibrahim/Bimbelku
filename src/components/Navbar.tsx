@@ -56,7 +56,7 @@ const Navbar = () => {
       setUser(null);
       setIsOpen(false);
       toast.success("Anda telah keluar dari akun.");
-      navigate("/login", { replace: true });
+      navigate("/", { replace: true });
     }
   };
 

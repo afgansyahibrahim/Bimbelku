@@ -11,6 +11,7 @@ import {
   FileCheck2,
   HelpCircle,
   Loader2,
+  MapPin,
   Minus,
   Plus,
   RefreshCw,
@@ -41,7 +42,7 @@ type Voucher = {
   status: string;
   promotion?: { id: number; title: string; discount_type: "percentage" | "fixed"; discount_value: number; ends_at?: string | null } | null;
 };
-type DurationHours = 1;
+type DurationHours = 1 | 2;
 type DraftSubject = {
   key: string;
   curriculum_subject_id: number | "";
@@ -51,6 +52,8 @@ type DraftSubject = {
   schedule_start_date: string;
   schedule_time: string;
   weekdays: number[];
+  curriculum_chapter_ids: number[];
+  learning_topic_ids: number[];
   chapter: string;
   learning_goal: string;
   preferred_teacher_id?: number;
@@ -65,7 +68,17 @@ type Quote = {
   promotion?: { title: string } | null;
 };
 type ErrorType = "network" | "unauthorized" | "forbidden" | "not_found" | "generic" | null;
-type StudentProfile = { id?: number; address?: string | null; maps_link?: string | null };
+type StudentProfile = {
+  id?: number;
+  address?: string | null;
+  maps_link?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  location_consent_at?: string | null;
+};
+type CurriculumChapterOption = { id: number; subject_id: number; subject_name: string; education_level: string; grade: string; title: string; sort_order: number };
+type LearningTopicOption = { id: number; subject_name: string; education_level: string; grade: string; chapter: string; name: string };
+type MaterialCatalog = { chapters: CurriculumChapterOption[]; topics: LearningTopicOption[] };
 type SavedDraft = {
   saved_at: string;
   plan_id: number | "";
@@ -80,6 +93,7 @@ type SavedDraft = {
 
 const DRAFT_KEY = "bimbelku.package-builder.stage-6a";
 const MULTI_SUBJECT_TUTORIAL_KEY = "bimbelku.tutorial.student.multi-subject.v1";
+const MAX_WEEKDAYS_PER_SUBJECT = 4;
 
 const rupiah = (value: number) =>
   new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
@@ -87,6 +101,32 @@ const rupiah = (value: number) =>
 const dateInput = (date: Date) => {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 10);
+};
+
+const earliestScheduleDate = (time: string) => {
+  const threshold = new Date(Date.now() + 72 * 60 * 60 * 1000);
+  const [hour] = time.split(":").map(Number);
+  const candidate = new Date(threshold);
+  candidate.setHours(hour || 0, 0, 0, 0);
+  if (candidate < threshold) candidate.setDate(candidate.getDate() + 1);
+  return dateInput(candidate);
+};
+
+const normalizeDurationHours = (value: unknown): DurationHours => Number(value) === 2 ? 2 : 1;
+
+const slotSupportsDuration = (time: string, durationHours: DurationHours) => {
+  const hour = Number(time.slice(0, 2));
+  return Number.isInteger(hour) && hour >= 0 && hour + durationHours <= 23;
+};
+
+const slotsForDuration = (slots: TimeSlot[], durationHours: DurationHours) =>
+  slots.filter((slot) => slotSupportsDuration(slot.start_time.slice(0, 5), durationHours));
+
+const preferredSlotTime = (slots: TimeSlot[], durationHours: DurationHours) => {
+  const compatible = slotsForDuration(slots, durationHours);
+  return compatible.find((slot) => slot.start_time.slice(0, 5) === "18:00")?.start_time.slice(0, 5)
+    || compatible[0]?.start_time.slice(0, 5)
+    || "18:00";
 };
 
 const timeRange = (value: string, durationHours: DurationHours) => {
@@ -109,6 +149,14 @@ const WEEKDAYS = [
 ];
 
 const isoWeekday = (date: Date) => ((date.getDay() + 6) % 7) + 1;
+
+const normalizeWeekdays = (values: unknown): number[] => {
+  if (!Array.isArray(values)) return [];
+  return [...new Set(values.map(Number))]
+    .filter((value) => Number.isInteger(value) && value >= 1 && value <= 7)
+    .sort((a, b) => a - b)
+    .slice(0, MAX_WEEKDAYS_PER_SUBJECT);
+};
 
 const nextSlots = (count: number, time = "18:00", startDate?: string, weekdays: number[] = [1, 3, 5]) => {
   const result: string[] = [];
@@ -143,6 +191,8 @@ const createSubject = (sessionCount = 1, time = "18:00", offsetDays = 0): DraftS
     schedule_time: time,
     weekdays,
     schedules: nextSlots(sessionCount, time, scheduleStartDate, weekdays),
+    curriculum_chapter_ids: [],
+    learning_topic_ids: [],
     chapter: "",
     learning_goal: "",
   };
@@ -167,13 +217,15 @@ export default function PackageBuilder() {
   const renewalSubjectId = Number(searchParams.get("subject") || 0) || undefined;
   const [plans, setPlans] = useState<Plan[]>([]);
   const [catalog, setCatalog] = useState<SubjectOption[]>([]);
+  const [materialCatalogs, setMaterialCatalogs] = useState<Record<number, MaterialCatalog>>({});
+  const [materialsLoading, setMaterialsLoading] = useState<Record<number, boolean>>({});
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [planId, setPlanId] = useState<number | "">("");
   const [level, setLevel] = useState("SD");
   const [grade, setGrade] = useState("Kelas 1");
   const [mode, setMode] = useState<"online" | "offline">("online");
-  const durationHours: DurationHours = 1;
+  const [durationHours, setDurationHours] = useState<DurationHours>(1);
   const [subjects, setSubjects] = useState<DraftSubject[]>([createSubject()]);
   const [promoCode, setPromoCode] = useState("");
   const [voucherId, setVoucherId] = useState<number | "">("");
@@ -192,9 +244,11 @@ export default function PackageBuilder() {
   const multiSubjectGuideOpened = useRef(false);
 
   const plan = plans.find((item) => item.id === planId);
-  const defaultSlotTime = timeSlots.find((slot) => slot.start_time.slice(0, 5) === "18:00")?.start_time.slice(0, 5)
-    || timeSlots[0]?.start_time.slice(0, 5)
-    || "18:00";
+  const availableTimeSlots = useMemo(
+    () => slotsForDuration(timeSlots, durationHours),
+    [durationHours, timeSlots],
+  );
+  const defaultSlotTime = preferredSlotTime(timeSlots, durationHours);
   const selectedSessions = subjects.reduce((sum, item) => sum + item.session_count, 0);
   const selectedSubjectIds = subjects.map((item) => item.curriculum_subject_id).filter(Boolean);
   const subjectsAreUnique = new Set(selectedSubjectIds).size === selectedSubjectIds.length;
@@ -215,15 +269,34 @@ export default function PackageBuilder() {
       && (!item.grades?.length || item.grades.includes(grade))),
     [catalog, grade, level],
   );
+  const hasOfflineLocation = Boolean(
+    studentProfile?.address?.trim()
+    && studentProfile?.latitude !== null
+    && studentProfile?.latitude !== undefined
+    && String(studentProfile.latitude).trim() !== ""
+    && Number.isFinite(Number(studentProfile.latitude))
+    && studentProfile?.longitude !== null
+    && studentProfile?.longitude !== undefined
+    && String(studentProfile.longitude).trim() !== ""
+    && Number.isFinite(Number(studentProfile.longitude)),
+  );
   const draftValid = Boolean(
     plan
-    && timeSlots.length
+    && availableTimeSlots.length
     && selectedSessions === plan.session_count
     && subjectsAreUnique
     && schedulesDoNotOverlap
     && scheduleRangeDays <= plan.validity_days
-    && (mode === "online" || Boolean(studentProfile?.address))
-    && subjects.every((item) => item.curriculum_subject_id && item.subject_name && item.weekdays.length > 0 && item.schedules.length === item.session_count && item.schedules.every(Boolean)),
+    && (mode === "online" || hasOfflineLocation)
+    && subjects.every((item) => item.curriculum_subject_id
+      && item.subject_name
+      && item.curriculum_chapter_ids.length > 0
+      && item.learning_topic_ids.length > 0
+      && item.weekdays.length > 0
+      && item.weekdays.length <= MAX_WEEKDAYS_PER_SUBJECT
+      && item.schedules.length === item.session_count
+      && item.schedules.every(Boolean)
+      && availableTimeSlots.some((slot) => slot.start_time.slice(0, 5) === item.schedule_time)),
   );
 
   useEffect(() => {
@@ -236,7 +309,7 @@ export default function PackageBuilder() {
           getCached<{ subject_options: SubjectOption[] }>("/learning-catalog", { params: { compact: 1 }, maxAgeMs: 60_000 }),
           getCached<{ data: Voucher[] }>("/student/vouchers", { maxAgeMs: 20_000 }),
           getCached<TimeSlot[]>("/learning-time-slots", { maxAgeMs: 60_000 }),
-          getCached<StudentProfile>("/user", { maxAgeMs: 60_000 }),
+          getCached<StudentProfile>("/user", { maxAgeMs: 60_000, force: true }),
           getCached<{ has_multi_subject_package: boolean }>("/student/packages/tutorial-status", { maxAgeMs: 60_000 }),
         ]);
         setPlans(plansResponse.data);
@@ -251,11 +324,10 @@ export default function PackageBuilder() {
         setTimeSlots(fullHourSlots);
         setStudentProfile(profileResponse.data);
         setHasMultiSubjectPackage(Boolean(tutorialStatusResponse.data.has_multi_subject_package));
-        const defaultTime = fullHourSlots.find((slot) => slot.start_time.slice(0, 5) === "18:00")?.start_time.slice(0, 5)
-          || fullHourSlots[0]?.start_time.slice(0, 5)
-          || "18:00";
+        const defaultTime = preferredSlotTime(fullHourSlots, 1);
         const defaultPlan = plansResponse.data.find((item) => item.session_count === 4) || plansResponse.data[0];
         if (defaultPlan) {
+          setDurationHours(1);
           setPlanId(defaultPlan.id);
           setSubjects([createSubject(defaultPlan.session_count, defaultTime)]);
         }
@@ -266,6 +338,9 @@ export default function PackageBuilder() {
           setLevel(previous.education_level);
           setGrade(previous.grade);
           setMode(previous.learning_mode);
+          const renewalDuration = normalizeDurationHours(previous.duration_hours);
+          const renewalDefaultTime = preferredSlotTime(fullHourSlots, renewalDuration);
+          setDurationHours(renewalDuration);
           const selectedOld = renewalSubjectId
             ? previous.subjects.filter((item: any) => item.id === renewalSubjectId)
             : previous.subjects;
@@ -278,10 +353,12 @@ export default function PackageBuilder() {
                 ? renewalPlan.session_count - allocation * index
                 : allocation;
               return {
-                ...createSubject(count, defaultTime),
+                ...createSubject(count, renewalDefaultTime),
                 curriculum_subject_id: item.curriculum_subject_id,
                 subject_name: item.subject_name || item.name || "",
                 preferred_teacher_id: item.teacher?.id,
+                curriculum_chapter_ids: Array.isArray(item.curriculum_chapter_ids) ? item.curriculum_chapter_ids : [],
+                learning_topic_ids: Array.isArray(item.learning_topic_ids) ? item.learning_topic_ids : [],
                 chapter: item.chapter || "",
                 learning_goal: item.learning_goal || "",
               };
@@ -293,21 +370,44 @@ export default function PackageBuilder() {
             const saved = raw ? JSON.parse(raw) as SavedDraft : null;
             const savedPlan = plansResponse.data.find((item) => item.id === saved?.plan_id);
             if (saved && savedPlan && saved.subjects.length && saved.subjects.length <= savedPlan.maximum_subjects) {
+              const restoredDuration = normalizeDurationHours(saved.duration_hours);
+              const restoredDefaultTime = preferredSlotTime(fullHourSlots, restoredDuration);
               setPlanId(saved.plan_id);
               setLevel(saved.level);
               setGrade(saved.grade);
               setMode(saved.mode);
+              setDurationHours(restoredDuration);
               setSubjects(saved.subjects.map((item, index) => {
-                const restoredDays = Array.isArray(item.weekdays) && item.weekdays.length
-                  ? item.weekdays
-                  : [...new Set((item.schedules || []).map((schedule) => isoWeekday(new Date(schedule))))];
-                return rebuildSchedules({
+                const restoredDays = normalizeWeekdays(
+                  Array.isArray(item.weekdays) && item.weekdays.length
+                    ? item.weekdays
+                    : (item.schedules || []).map((schedule) => isoWeekday(new Date(schedule))),
+                );
+                const candidateTime = item.schedule_time?.slice(3, 5) === "00" ? item.schedule_time : restoredDefaultTime;
+                const restoredTime = fullHourSlots.some((slot) => slot.start_time.slice(0, 5) === candidateTime)
+                  && slotSupportsDuration(candidateTime, restoredDuration)
+                  ? candidateTime
+                  : restoredDefaultTime;
+                const restored: DraftSubject = {
                   ...item,
                   key: item.key || `${Date.now()}-${index}`,
-                  schedule_start_date: item.schedule_start_date || item.schedules[0]?.slice(0, 10) || dateInput(new Date()),
-                  schedule_time: item.schedule_time?.slice(3, 5) === "00" ? item.schedule_time : defaultTime,
+                  schedule_start_date: item.schedule_start_date || item.schedules[0]?.slice(0, 10) || earliestScheduleDate(restoredTime),
+                  schedule_time: restoredTime,
                   weekdays: restoredDays.length ? restoredDays : [1, 3, 5],
-                });
+                  curriculum_chapter_ids: Array.isArray(item.curriculum_chapter_ids) ? item.curriculum_chapter_ids : [],
+                  learning_topic_ids: Array.isArray(item.learning_topic_ids) ? item.learning_topic_ids : [],
+                  schedules: Array.isArray(item.schedules) ? item.schedules : [],
+                };
+                const savedSchedulesAreValid = restored.schedules.length === restored.session_count
+                  && restored.schedules.every((schedule) => {
+                    const date = new Date(schedule);
+                    return Number.isFinite(date.getTime())
+                      && schedule.slice(11, 16) === restoredTime
+                      && restored.weekdays.includes(isoWeekday(date));
+                  });
+                return savedSchedulesAreValid
+                  ? { ...restored, schedules: [...restored.schedules].sort((a, b) => new Date(a).getTime() - new Date(b).getTime()) }
+                  : rebuildSchedules(restored);
               }));
               setPromoCode(saved.promo_code || "");
               setVoucherId(saved.voucher_id || "");
@@ -336,6 +436,10 @@ export default function PackageBuilder() {
   }, [renewalId, renewalSubjectId, retryKey]);
 
   const handleRetry = () => { setLoadError(null); setLoading(true); setRetryKey((k) => k + 1); };
+  const openLocationSetup = () => {
+    const returnTo = `${window.location.pathname}${window.location.search}`;
+    navigate(`/student/profile?section=location&returnTo=${encodeURIComponent(returnTo)}`);
+  };
 
   useEffect(() => {
     if (!catalog.length) return;
@@ -345,9 +449,32 @@ export default function PackageBuilder() {
       const eligible = option
         && (!option.education_levels?.length || option.education_levels.includes(level))
         && (!option.grades?.length || option.grades.includes(grade));
-      return eligible ? item : { ...item, curriculum_subject_id: "", subject_name: "" };
+      return eligible ? item : { ...item, curriculum_subject_id: "", subject_name: "", curriculum_chapter_ids: [], learning_topic_ids: [], chapter: "" };
     }));
   }, [catalog, grade, level]);
+
+  useEffect(() => {
+    const selected = subjects
+      .filter((item): item is DraftSubject & { curriculum_subject_id: number } => typeof item.curriculum_subject_id === "number")
+      .map((item) => ({ id: item.curriculum_subject_id, name: item.subject_name }));
+    selected.forEach(({ id, name }) => {
+      if (materialCatalogs[id] || materialsLoading[id]) return;
+      setMaterialsLoading((current) => ({ ...current, [id]: true }));
+      void getCached<{ chapters: CurriculumChapterOption[]; topics: LearningTopicOption[] }>("/learning-catalog", {
+        params: { subject_name: name, education_level: level, grade },
+        maxAgeMs: 60_000,
+      }).then((response) => {
+        setMaterialCatalogs((current) => ({ ...current, [id]: {
+          chapters: response.data.chapters || [],
+          topics: response.data.topics || [],
+        } }));
+      }).catch((error) => {
+        toast.error(getApiError(error, `Bab dan subbab ${name} gagal dimuat.`));
+      }).finally(() => {
+        setMaterialsLoading((current) => ({ ...current, [id]: false }));
+      });
+    });
+  }, [grade, level, materialCatalogs, materialsLoading, subjects]);
 
   useEffect(() => {
     if (loading || !planId || renewalId) return;
@@ -372,7 +499,7 @@ export default function PackageBuilder() {
       }
     }, 600);
     return () => window.clearTimeout(timer);
-  }, [grade, level, loading, mode, planId, promoCode, renewalId, subjects, voucherId]);
+  }, [durationHours, grade, level, loading, mode, planId, promoCode, renewalId, subjects, voucherId]);
 
   const openMultiSubjectGuide = () => {
     window.dispatchEvent(new Event("bimbelku:open-tutorial"));
@@ -444,6 +571,22 @@ export default function PackageBuilder() {
     return () => window.clearTimeout(timer);
   }, [draftValid, durationHours, level, mode, planId, promoCode, subjects, voucherId]);
 
+  const changeDuration = (nextDuration: DurationHours) => {
+    if (nextDuration === durationHours) return;
+    const compatibleSlots = slotsForDuration(timeSlots, nextDuration);
+    if (!compatibleSlots.length) {
+      toast.error(`Belum ada jam aktif yang dapat dipakai untuk sesi ${nextDuration} jam.`);
+      return;
+    }
+    const fallbackTime = preferredSlotTime(timeSlots, nextDuration);
+    setDurationHours(nextDuration);
+    setSubjects((current) => current.map((item) => {
+      const isStillAvailable = compatibleSlots.some((slot) => slot.start_time.slice(0, 5) === item.schedule_time);
+      return isStillAvailable ? item : rebuildSchedules({ ...item, schedule_time: fallbackTime });
+    }));
+    setQuote(null);
+  };
+
   const choosePlan = (selected: Plan) => {
     setPlanId(selected.id);
     setSubjects([createSubject(selected.session_count, defaultSlotTime)]);
@@ -452,7 +595,10 @@ export default function PackageBuilder() {
   const updateSubject = (key: string, patch: Partial<DraftSubject>) => {
     setSubjects((current) => current.map((item) => {
       if (item.key !== key) return item;
-      const next = { ...item, ...patch };
+      const normalizedPatch = patch.weekdays !== undefined
+        ? { ...patch, weekdays: normalizeWeekdays(patch.weekdays) }
+        : patch;
+      const next = { ...item, ...normalizedPatch };
       if (patch.session_count !== undefined || patch.schedule_start_date !== undefined || patch.schedule_time !== undefined || patch.weekdays !== undefined) {
         return rebuildSchedules(next);
       }
@@ -501,6 +647,7 @@ export default function PackageBuilder() {
     setLevel("SD");
     setGrade("Kelas 1");
     setMode("online");
+    setDurationHours(1);
     setPromoCode("");
     setVoucherId("");
     setQuote(null);
@@ -525,7 +672,8 @@ export default function PackageBuilder() {
         renewal_of_id: renewalId,
         subjects: subjects.map((item) => ({
           curriculum_subject_id: item.curriculum_subject_id,
-          chapter: item.chapter || undefined,
+          curriculum_chapter_ids: item.curriculum_chapter_ids,
+          learning_topic_ids: item.learning_topic_ids,
           learning_goal: item.learning_goal || undefined,
           preferred_teacher_id: item.preferred_teacher_id,
           weekdays: item.weekdays,
@@ -566,9 +714,9 @@ export default function PackageBuilder() {
 
   const completedSteps = [
     Boolean(plan),
-    subjects.every((item) => item.curriculum_subject_id),
+    subjects.every((item) => item.curriculum_subject_id && item.curriculum_chapter_ids.length > 0 && item.learning_topic_ids.length > 0),
     Boolean(plan && selectedSessions === plan.session_count),
-    subjects.every((item) => item.weekdays.length > 0 && item.schedules.length === item.session_count && item.schedules.every(Boolean)) && schedulesDoNotOverlap,
+    subjects.every((item) => item.weekdays.length > 0 && item.weekdays.length <= MAX_WEEKDAYS_PER_SUBJECT && item.schedules.length === item.session_count && item.schedules.every(Boolean)) && schedulesDoNotOverlap,
     Boolean(draftValid && quote),
   ];
   const firstIncomplete = completedSteps.findIndex((done) => !done);
@@ -598,7 +746,7 @@ export default function PackageBuilder() {
         <section className="min-w-0 overflow-hidden rounded-[1.5rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-blue-900 p-5 text-white sm:rounded-[2rem] sm:p-8">
           <p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">{renewalId ? "Tutor lama diprioritaskan" : "Langkah 1"}</p>
           <h1 className="mt-3 break-words text-2xl font-black sm:text-3xl">Susun paket belajarmu</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Pilih jumlah sesi, hari, dan satu jam tetap. Periksa ringkasan, bayar, lalu sistem mencari tutor.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Pilih jumlah sesi, durasi pertemuan, hari, dan jam mulai. Periksa ringkasan, bayar, lalu sistem mencari tutor.</p>
         </section>
 
         <nav aria-label="Tahapan pemesanan" className="rounded-3xl border border-slate-100 bg-white p-3 shadow-sm">
@@ -655,25 +803,46 @@ export default function PackageBuilder() {
         <section data-tour="package-duration-picker" className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-7">
           <div className="flex min-w-0 items-start gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600"><Clock3 size={20} /></div>
-            <div className="min-w-0"><h2 className="break-words text-lg font-black text-slate-900">2. Durasi setiap pertemuan</h2><p className="mt-1 text-sm leading-6 text-slate-500">Setiap sesi berdurasi satu jam dan tidak dapat diubah.</p></div>
+            <div className="min-w-0">
+              <h2 className="break-words text-lg font-black text-slate-900">2. Durasi setiap pertemuan</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500">Pilih lama belajar untuk setiap sesi dalam paket ini.</p>
+            </div>
           </div>
-          <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-600 px-5 py-5 text-white shadow-lg shadow-indigo-100">
-            <span className="text-3xl font-black">1 jam</span>
-            <p className="mt-1 text-xs font-bold text-indigo-100">Semua sesi memakai jam mulai tepat pada menit 00.</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {([1, 2] as DurationHours[]).map((hours) => {
+              const active = durationHours === hours;
+              return (
+                <button
+                  key={hours}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => changeDuration(hours)}
+                  className={`min-h-28 rounded-2xl border px-5 py-4 text-left transition ${active ? "border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-100" : "border-slate-200 bg-white text-slate-800 hover:border-indigo-300 hover:bg-indigo-50"}`}
+                >
+                  <span className="text-3xl font-black">{hours} jam</span>
+                  <p className={`mt-1 text-xs font-bold leading-5 ${active ? "text-indigo-100" : "text-slate-500"}`}>
+                    {hours === 1 ? "Cocok untuk sesi rutin yang lebih ringan." : "Cocok untuk pembahasan dan latihan yang lebih panjang."}
+                  </p>
+                </button>
+              );
+            })}
           </div>
-          <p className="mt-3 rounded-2xl bg-indigo-50 px-4 py-3 text-xs font-bold leading-5 text-indigo-800">{plan ? `${plan.session_count} sesi = ${plan.session_count} jam belajar` : "Pilih paket untuk melihat total jam belajar."}</p>
+          <p className="mt-3 rounded-2xl bg-indigo-50 px-4 py-3 text-xs font-bold leading-5 text-indigo-800">
+            {plan ? `${plan.session_count} sesi × ${durationHours} jam = ${plan.session_count * durationHours} jam belajar` : "Pilih paket untuk melihat total jam belajar."}
+          </p>
+          <p className="mt-2 text-xs font-medium leading-5 text-slate-500">Jam mulai tetap memakai menit 00. Sistem otomatis menghitung jam selesai dan memeriksa benturan.</p>
         </section>
 
         <section className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-7">
           <h2 className="text-lg font-black text-slate-900">3. Jenjang dan metode</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-3">
             <Field label="Jenjang">
-              <select value={level} onChange={(event) => { const next = event.target.value; setLevel(next); setGrade(GRADES_BY_EDUCATION_LEVEL[next][0]); }} className="form-field">
+              <select value={level} onChange={(event) => { const next = event.target.value; setLevel(next); setGrade(GRADES_BY_EDUCATION_LEVEL[next][0]); setMaterialCatalogs({}); setSubjects((current) => current.map((item) => ({ ...item, curriculum_chapter_ids: [], learning_topic_ids: [], chapter: "" }))); }} className="form-field">
                 {EDUCATION_LEVELS.map((item) => <option key={item}>{item}</option>)}
               </select>
             </Field>
             <Field label={level === "Umum" ? "Tingkat" : "Kelas"}>
-              <select value={grade} onChange={(event) => setGrade(event.target.value)} className="form-field">
+              <select value={grade} onChange={(event) => { setGrade(event.target.value); setMaterialCatalogs({}); setSubjects((current) => current.map((item) => ({ ...item, curriculum_chapter_ids: [], learning_topic_ids: [], chapter: "" }))); }} className="form-field">
                 {GRADES_BY_EDUCATION_LEVEL[level].map((item) => <option key={item}>{item}</option>)}
               </select>
             </Field>
@@ -684,6 +853,33 @@ export default function PackageBuilder() {
               </select>
             </Field>
           </div>
+
+          {mode === "offline" && (
+            <div className={`mt-5 rounded-2xl border p-4 sm:p-5 ${hasOfflineLocation ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+              <div className="flex min-w-0 items-start gap-3">
+                <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${hasOfflineLocation ? "bg-emerald-600 text-white" : "bg-amber-100 text-amber-700"}`}>
+                  <MapPin size={20} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className={`font-black ${hasOfflineLocation ? "text-emerald-900" : "text-amber-900"}`}>
+                    {hasOfflineLocation ? "Lokasi kelas offline sudah siap" : "Tambahkan lokasi untuk kelas offline"}
+                  </p>
+                  <p className={`mt-1 break-words text-sm leading-6 ${hasOfflineLocation ? "text-emerald-700" : "text-amber-800"}`}>
+                    {hasOfflineLocation
+                      ? studentProfile?.address
+                      : "Alamat dan titik lokasi diperlukan agar sistem dapat mencari tutor di sekitar kamu."}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={openLocationSetup}
+                    className={`mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black transition ${hasOfflineLocation ? "border border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-100" : "bg-amber-700 text-white hover:bg-amber-800"}`}
+                  >
+                    <MapPin size={17} /> {hasOfflineLocation ? "Ubah lokasi" : "Tambahkan lokasi sekarang"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-7">
@@ -727,6 +923,9 @@ export default function PackageBuilder() {
                         updateSubject(item.key, {
                           subject_name: name,
                           curriculum_subject_id: option?.id ?? "",
+                          curriculum_chapter_ids: [],
+                          learning_topic_ids: [],
+                          chapter: "",
                         })
                       }
                     />
@@ -741,12 +940,26 @@ export default function PackageBuilder() {
                   </div>
                 </div>
                 {subjects.length > 1 && <p className="mt-2 text-xs font-medium leading-5 text-slate-500">Tombol + memindahkan satu sesi dari mapel lain. Total paket selalu tetap {plan?.session_count} sesi.</p>}
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <Field label="Bab atau topik">
-                    <input value={item.chapter} onChange={(event) => updateSubject(item.key, { chapter: event.target.value })} className="form-field" placeholder="Contoh: Pecahan" />
-                  </Field>
-                  <Field label="Target belajar">
-                    <input value={item.learning_goal} onChange={(event) => updateSubject(item.key, { learning_goal: event.target.value })} className="form-field" placeholder="Contoh: Mampu mengerjakan soal cerita" />
+                <div className="mt-4 grid gap-4">
+                  <MaterialSelector
+                    catalog={typeof item.curriculum_subject_id === "number" ? materialCatalogs[item.curriculum_subject_id] : undefined}
+                    loading={typeof item.curriculum_subject_id === "number" && Boolean(materialsLoading[item.curriculum_subject_id])}
+                    chapterIds={item.curriculum_chapter_ids}
+                    topicIds={item.learning_topic_ids}
+                    disabled={!item.curriculum_subject_id}
+                    onChange={(chapterIds, topicIds, chapterLabel) => updateSubject(item.key, {
+                      curriculum_chapter_ids: chapterIds,
+                      learning_topic_ids: topicIds,
+                      chapter: chapterLabel,
+                    })}
+                  />
+                  <MaterialCapacityWarning
+                    topicCount={item.learning_topic_ids.length}
+                    sessionCount={item.session_count}
+                    durationHours={durationHours}
+                  />
+                  <Field label="Target belajar atau kesulitan murid">
+                    <input value={item.learning_goal} onChange={(event) => updateSubject(item.key, { learning_goal: event.target.value })} className="form-field" placeholder="Contoh: Mampu mengerjakan soal cerita pecahan" />
                   </Field>
                 </div>
                 <div className="mt-5 rounded-2xl border border-indigo-100 bg-white p-4">
@@ -759,7 +972,7 @@ export default function PackageBuilder() {
                       <span className="mb-2 block text-xs font-black uppercase tracking-wider text-slate-500">Jam belajar</span>
                       <ScheduleTimePicker
                         value={item.schedule_time}
-                        options={timeSlots}
+                        options={availableTimeSlots}
                         onChange={(value) => updateSubject(item.key, { schedule_time: value })}
                       />
                     </div>
@@ -768,15 +981,34 @@ export default function PackageBuilder() {
                       <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
                         {WEEKDAYS.map((day) => {
                           const active = item.weekdays.includes(day.value);
-                          return <button key={day.value} type="button" onClick={() => {
-                            const weekdays = active
-                              ? item.weekdays.filter((value) => value !== day.value)
-                              : [...item.weekdays, day.value].sort((a, b) => a - b);
-                            if (weekdays.length) updateSubject(item.key, { weekdays });
-                          }} className={`min-h-11 rounded-xl border px-2 text-xs font-black ${active ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-200 bg-white text-slate-600"}`} title={day.label}>{day.short}</button>;
+                          const limitReached = item.weekdays.length >= MAX_WEEKDAYS_PER_SUBJECT;
+                          const disabled = !active && limitReached;
+                          return <button
+                            key={day.value}
+                            type="button"
+                            disabled={disabled}
+                            aria-disabled={disabled}
+                            onClick={() => {
+                              if (disabled) return;
+                              const weekdays = active
+                                ? item.weekdays.filter((value) => value !== day.value)
+                                : [...item.weekdays, day.value].sort((a, b) => a - b);
+                              if (weekdays.length) updateSubject(item.key, { weekdays });
+                            }}
+                            className={`min-h-11 rounded-xl border px-2 text-xs font-black transition ${active ? "border-indigo-600 bg-indigo-600 text-white" : disabled ? "cursor-not-allowed border-slate-100 bg-slate-100 text-slate-300" : "border-slate-200 bg-white text-slate-600 hover:border-indigo-300 hover:text-indigo-700"}`}
+                            title={disabled ? `Maksimal ${MAX_WEEKDAYS_PER_SUBJECT} hari belajar` : day.label}
+                          >
+                            {day.short}
+                          </button>;
                         })}
                       </div>
-                      <p className="mt-2 text-xs font-medium text-slate-500">Jam yang dipilih berlaku sama pada seluruh hari.</p>
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-1.5 text-xs font-medium">
+                        <p className={item.weekdays.length >= MAX_WEEKDAYS_PER_SUBJECT ? "font-bold text-amber-700" : "text-slate-500"}>
+                          Maksimal {MAX_WEEKDAYS_PER_SUBJECT} hari per mapel · {item.weekdays.length}/{MAX_WEEKDAYS_PER_SUBJECT} dipilih
+                        </p>
+                        {item.weekdays.length >= MAX_WEEKDAYS_PER_SUBJECT && <span className="rounded-full bg-amber-100 px-2 py-1 font-black text-amber-800">Batas tercapai</span>}
+                      </div>
+                      <p className="mt-1 text-xs font-medium text-slate-500">Jam yang dipilih berlaku sama pada seluruh hari. Tanggal tertentu dapat digeser sebelum tutor dicari.</p>
                     </div>
                   </div>
                   <div className="mt-4 rounded-2xl bg-indigo-50 p-4 text-sm text-indigo-900">
@@ -785,9 +1017,26 @@ export default function PackageBuilder() {
                       {item.schedules.length ? `${item.weekdays.map((day) => WEEKDAYS.find((option) => option.value === day)?.label).filter(Boolean).join(", ")} · ${new Date(item.schedules[0]).toLocaleDateString("id-ID", { dateStyle: "medium" })} sampai ${new Date(item.schedules[item.schedules.length - 1]).toLocaleDateString("id-ID", { dateStyle: "medium" })} · ${timeRange(item.schedules[0], durationHours)} WIB` : "Jadwal belum terbentuk."}
                     </p>
                     <details className="mt-3">
-                      <summary className="cursor-pointer text-xs font-black">Lihat semua tanggal</summary>
+                      <summary className="cursor-pointer text-xs font-black">Lihat atau ubah tanggal tertentu</summary>
                       <ol className="mt-2 grid gap-1.5 sm:grid-cols-2">
-                        {item.schedules.map((schedule, index) => <li key={`${item.key}-${schedule}-${index}`} className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-700">{index + 1}. {fullSchedule(schedule, durationHours)}</li>)}
+                        {item.schedules.map((schedule, index) => (
+                          <li key={`${item.key}-${index}`} className="grid min-w-0 gap-2 rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-700 sm:grid-cols-[1fr_150px] sm:items-center">
+                            <span className="min-w-0 break-words">{index + 1}. {fullSchedule(schedule, durationHours)}</span>
+                            <input
+                              type="date"
+                              aria-label={`Ubah tanggal sesi ${index + 1}`}
+                              min={earliestScheduleDate(item.schedule_time)}
+                              value={schedule.slice(0, 10)}
+                              onChange={(event) => {
+                                const nextSchedules = [...item.schedules];
+                                nextSchedules[index] = `${event.target.value}T${item.schedule_time}`;
+                                nextSchedules.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+                                updateSubject(item.key, { schedules: nextSchedules });
+                              }}
+                              className="min-h-10 min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs font-bold text-slate-700"
+                            />
+                          </li>
+                        ))}
                       </ol>
                     </details>
                   </div>
@@ -798,7 +1047,7 @@ export default function PackageBuilder() {
           {!schedulesDoNotOverlap && <div className="mt-4 flex gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700"><AlertCircle className="shrink-0" size={19} />Ada jadwal yang bertumpang tindih. Ubah tanggal atau jam salah satunya.</div>}
           {!subjectsAreUnique && <div className="mt-4 flex gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700"><AlertCircle className="shrink-0" size={19} />Satu mata pelajaran tidak boleh dipilih dua kali.</div>}
           {Boolean(plan && scheduleRangeDays > plan.validity_days) && <div className="mt-4 flex gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700"><AlertCircle className="shrink-0" size={19} />Rentang jadwal melebihi masa paket {plan?.validity_days} hari. Tingkatkan frekuensi belajar atau ubah tanggal mulai.</div>}
-          {mode === "offline" && !studentProfile?.address && <div className="mt-4 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800"><AlertCircle className="shrink-0" size={19} />Lengkapi alamat dan titik lokasi dari halaman Saya sebelum memesan kelas offline.</div>}
+          
         </section>
 
         <section className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -836,7 +1085,7 @@ export default function PackageBuilder() {
                 <div className="mt-5 space-y-3 text-sm">
                   {quote.lines.map((line) => (
                     <div key={line.curriculum_subject_id} className="flex min-w-0 items-start justify-between gap-3 text-slate-300">
-                      <span className="min-w-0 break-words">{line.subject_name} · {line.session_count} sesi × 1 jam</span>
+                      <span className="min-w-0 break-words">{line.subject_name} · {line.session_count} sesi × {line.duration_hours} jam</span>
                       <span className="shrink-0 text-right">{rupiah(line.subtotal_amount)}</span>
                     </div>
                   ))}
@@ -874,7 +1123,7 @@ export default function PackageBuilder() {
               <div className="min-h-0 space-y-5 overflow-y-auto p-5 sm:p-7">
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <SummaryItem label="Paket" value={`${plan.name} · ${plan.session_count} sesi`} />
-                  <SummaryItem label="Durasi" value="1 jam/pertemuan" />
+                  <SummaryItem label="Durasi" value={`${durationHours} jam/pertemuan`} />
                   <SummaryItem label="Jenjang" value={`${level} · ${grade}`} />
                   <SummaryItem label="Metode" value={mode === "online" ? "Online" : "Offline"} />
                 </div>
@@ -885,6 +1134,12 @@ export default function PackageBuilder() {
                     {subjects.map((item) => (
                       <div key={item.key} className="rounded-2xl border border-slate-200 p-4">
                         <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-black text-slate-900">{item.subject_name}</p>{item.chapter && <p className="mt-1 text-xs font-medium text-slate-500">{item.chapter}{item.learning_goal ? ` · ${item.learning_goal}` : ""}</p>}</div><span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">{item.session_count} sesi</span></div>
+                        <MaterialCapacityWarning
+                          topicCount={item.learning_topic_ids.length}
+                          sessionCount={item.session_count}
+                          durationHours={durationHours}
+                          compact
+                        />
                         <ol className="mt-3 grid gap-1.5 sm:grid-cols-2">
                           {item.schedules.map((schedule, index) => <li key={`${item.key}-summary-${schedule}-${index}`} className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">{index + 1}. {fullSchedule(schedule, durationHours)}</li>)}
                         </ol>
@@ -1004,6 +1259,96 @@ function ScheduleTimePicker({ value, options, onChange }: { value: string; optio
         </div>
       )}
     </>
+  );
+}
+
+function MaterialSelector({ catalog, loading, chapterIds, topicIds, disabled, onChange }: {
+  catalog?: MaterialCatalog;
+  loading: boolean;
+  chapterIds: number[];
+  topicIds: number[];
+  disabled: boolean;
+  onChange: (chapterIds: number[], topicIds: number[], chapterLabel: string) => void;
+}) {
+  const chapters = catalog?.chapters || [];
+  const availableTopics = (catalog?.topics || []).filter((topic) => {
+    const chapter = chapters.find((item) => item.title === topic.chapter);
+    return Boolean(chapter && chapterIds.includes(chapter.id));
+  });
+  const toggleChapter = (chapter: CurriculumChapterOption) => {
+    const nextChapterIds = chapterIds.includes(chapter.id)
+      ? chapterIds.filter((id) => id !== chapter.id)
+      : [...chapterIds, chapter.id];
+    const allowedChapterTitles = chapters.filter((item) => nextChapterIds.includes(item.id)).map((item) => item.title);
+    const nextTopicIds = topicIds.filter((id) => (catalog?.topics || []).some((topic) => topic.id === id && allowedChapterTitles.includes(topic.chapter)));
+    onChange(nextChapterIds, nextTopicIds, allowedChapterTitles.join(", "));
+  };
+  const toggleTopic = (topicId: number) => {
+    const next = topicIds.includes(topicId) ? topicIds.filter((id) => id !== topicId) : [...topicIds, topicId];
+    const labels = chapters.filter((item) => chapterIds.includes(item.id)).map((item) => item.title);
+    onChange(chapterIds, next, labels.join(", "));
+  };
+  const selectAllTopics = () => {
+    const ids = availableTopics.map((topic) => topic.id);
+    const allSelected = ids.length > 0 && ids.every((id) => topicIds.includes(id));
+    const next = allSelected ? topicIds.filter((id) => !ids.includes(id)) : [...new Set([...topicIds, ...ids])];
+    const labels = chapters.filter((item) => chapterIds.includes(item.id)).map((item) => item.title);
+    onChange(chapterIds, next, labels.join(", "));
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div><p className="text-xs font-black uppercase tracking-wider text-slate-500">Bab dan subbab</p><p className="mt-1 text-xs leading-5 text-slate-500">Pilih target materi. Progres akan dihitung dari subbab unik yang selesai.</p></div>
+        {loading && <Loader2 className="animate-spin text-indigo-600" size={18} />}
+      </div>
+      {disabled ? <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs font-semibold text-slate-500">Pilih mata pelajaran terlebih dahulu.</p> : !loading && !chapters.length ? <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">Bab belum tersedia untuk kelas ini. Admin perlu menjalankan seeder katalog.</p> : (
+        <>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {chapters.map((chapter) => {
+              const active = chapterIds.includes(chapter.id);
+              return <button key={chapter.id} type="button" onClick={() => toggleChapter(chapter)} className={`min-h-10 rounded-xl border px-3 py-2 text-xs font-black ${active ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-200 bg-slate-50 text-slate-700"}`}>{chapter.title}</button>;
+            })}
+          </div>
+          {chapterIds.length > 0 && (
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <div className="flex items-center justify-between gap-3"><p className="text-xs font-black text-slate-700">Subbab target</p><button type="button" onClick={selectAllTopics} className="text-xs font-black text-indigo-600">{availableTopics.length > 0 && availableTopics.every((topic) => topicIds.includes(topic.id)) ? "Kosongkan" : "Pilih semua"}</button></div>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {availableTopics.map((topic) => <label key={topic.id} className={`flex min-h-11 cursor-pointer items-start gap-2 rounded-xl border p-3 text-xs font-bold ${topicIds.includes(topic.id) ? "border-indigo-300 bg-indigo-50 text-indigo-900" : "border-slate-200 text-slate-600"}`}><input type="checkbox" checked={topicIds.includes(topic.id)} onChange={() => toggleTopic(topic.id)} className="mt-0.5 h-4 w-4" /><span>{topic.name}</span></label>)}
+              </div>
+              {!availableTopics.length && <p className="mt-2 rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">Subbab untuk bab ini belum tersedia.</p>}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function MaterialCapacityWarning({ topicCount, sessionCount, durationHours, compact = false }: {
+  topicCount: number;
+  sessionCount: number;
+  durationHours: DurationHours;
+  compact?: boolean;
+}) {
+  const estimatedCapacity = Math.max(1, sessionCount * durationHours);
+  if (topicCount <= estimatedCapacity) return null;
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={`${compact ? "mt-3" : "-mt-1"} flex min-w-0 items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900`}
+    >
+      <AlertCircle className="mt-0.5 shrink-0 text-amber-700" size={18} aria-hidden="true" />
+      <div className="min-w-0">
+        <p className="text-sm font-black">Target materi mungkin terlalu banyak</p>
+        <p className="mt-1 break-words text-xs font-medium leading-5 text-amber-800">
+          Kamu memilih {topicCount} subbab untuk {sessionCount} sesi ({estimatedCapacity} jam belajar).
+          Perkiraan awal sistem memakai sekitar satu subbab per jam. Tambah sesi atau kurangi subbab agar target lebih realistis.
+        </p>
+      </div>
+    </div>
   );
 }
 

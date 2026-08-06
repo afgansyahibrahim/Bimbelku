@@ -69,7 +69,7 @@ expect(builder.includes("DRAFT_KEY") && builder.includes("localStorage.setItem")
 expect(builder.includes("Periksa Pesanan") && builder.includes("Konfirmasi & Bayar"), "ringkasan tampil sebelum pembayaran");
 expect(builder.includes('navigate("/payment"'), "konfirmasi ringkasan menuju pembayaran");
 expect(builder.includes('onClick={() => setSummaryOpen(true)}') && builder.includes('onClick={submit}'), "pembuatan pesanan hanya tersedia dari konfirmasi ringkasan");
-expect(builder.includes("Durasi setiap pertemuan") && builder.includes("Setiap sesi berdurasi satu jam"), "durasi paket dikunci satu jam per sesi");
+expect(builder.includes("Durasi setiap pertemuan") && builder.includes("([1, 2] as DurationHours[])"), "durasi paket dapat dipilih satu atau dua jam per sesi");
 expect(builder.includes("ScheduleTimePicker") && builder.includes('role="dialog"'), "pemilih jam memakai panel responsif, bukan daftar native yang keluar layar");
 expect(!builder.includes('<Field label="Jam belajar">\n                      <select'), "pemilih jam native yang terlalu besar sudah dihapus");
 expect(builder.includes("duration_hours: durationHours"), "durasi ikut dikirim saat menghitung dan membuat paket");
@@ -94,7 +94,7 @@ expect(subjectPicker.includes('event.key === "ArrowDown"') && subjectPicker.incl
 
 expect(studentController.includes("'status' => 'awaiting_payment'"), "paket baru menunggu pembayaran");
 expect(studentController.includes("createInvoiceBeforeMatching"), "invoice dibuat saat paket disimpan");
-expect(studentController.includes("Rule::in([1])"), "backend hanya menerima durasi satu jam");
+expect(studentController.includes("Rule::in([1, 2])"), "backend menerima durasi satu atau dua jam");
 expect(studentController.includes("addHours($durationHours)"), "waktu selesai dan konflik memakai durasi pilihan");
 expect(durationMigration.includes("duration_hours") && durationMigration.includes("default(1)"), "migrasi durasi aman untuk paket lama");
 expect(!studentController.includes("Paket dibuat. Sistem mulai mencari tutor"), "pencarian tidak dimulai sebelum pembayaran");
@@ -107,6 +107,6 @@ expect(order.includes("payment_submitted") && order.includes("bookingRequest?->u
 for (const field of ["student_education_level", "learning_needs", "location_consent_at"]) {
   expect(profile.includes(field), `profil murid mendukung ${field}`);
 }
-expect(packageTest.includes("test_package_quote_only_accepts_one_hour_sessions"), "aturan durasi satu jam memiliki pengujian backend");
+expect(packageTest.includes("test_package_quote_accepts_one_or_two_hour_sessions") && packageTest.includes("test_two_hour_package_creates_two_hour_sessions"), "durasi satu dan dua jam memiliki pengujian backend");
 
 console.log("Kontrak Tahap 6A lulus (navigasi, tutorial, durasi, mobile, pembayaran, tanggal lahir, Pesan, Perkembangan, dan profil).");

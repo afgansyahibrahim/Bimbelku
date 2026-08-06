@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner";
 import AdminLayout from "@/components/AdminLayout";
 import ProtectedImage from "@/components/ProtectedImage";
+import { ResponsiveSelect } from "@/components/ResponsiveSelect";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -174,13 +175,19 @@ export default function PaymentVerification() {
                 <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari invoice atau murid" className="h-11 rounded-xl pl-9" />
               </label>
               {tab === "history" && (
-                <select value={status} onChange={(event) => setStatus(event.target.value)} className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-600">
-                  <option value="all">Semua status</option>
-                  <option value="paid">Diterima</option>
-                  <option value="rejected">Ditolak</option>
-                  <option value="refund_pending">Menunggu refund</option>
-                  <option value="refunded">Sudah direfund</option>
-                </select>
+                <ResponsiveSelect
+                  value={status}
+                  ariaLabel="Filter status pembayaran"
+                  className="h-11 min-w-44 rounded-xl border-slate-200 bg-white text-sm text-slate-600"
+                  options={[
+                    { value: "all", label: "Semua status" },
+                    { value: "paid", label: "Diterima" },
+                    { value: "rejected", label: "Ditolak" },
+                    { value: "refund_pending", label: "Menunggu refund" },
+                    { value: "refunded", label: "Sudah direfund" },
+                  ]}
+                  onValueChange={setStatus}
+                />
               )}
               <Button type="button" variant="outline" onClick={() => void load()} disabled={loading} className="h-11 rounded-xl"><RefreshCw size={16} className={loading ? "mr-2 animate-spin" : "mr-2"} />Muat ulang</Button>
             </div>

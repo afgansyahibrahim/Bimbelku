@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import AdminLayout from "@/components/AdminLayout";
+import { ResponsiveSelect } from "@/components/ResponsiveSelect";
 import http, { getApiError } from "@/lib/http";
 
 type PermissionDefinition = { code: string; label: string; description: string };
@@ -166,25 +167,47 @@ export default function AdminAuditLog() {
                 className="form-input pl-11"
               />
             </label>
-            <select value={filters.actor_id} onChange={(event) => setFilters({ ...filters, actor_id: event.target.value })} className="form-input">
-              <option value="">Semua admin</option>
-              {data?.filters.actors.map((actor) => <option key={actor.id} value={actor.id}>{actor.name}</option>)}
-            </select>
-            <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })} className="form-input">
-              <option value="">Semua hasil</option>
-              <option value="success">Berhasil</option>
-              <option value="failed">Gagal / ditolak</option>
-            </select>
-            <select value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })} className="form-input">
-              <option value="">Semua kategori</option>
-              {["operations", "matching", "finance", "teachers", "cases", "users", "classes", "content", "support", "settings", "admins", "audit"].map((category) => (
-                <option key={category} value={category}>{category}</option>
-              ))}
-            </select>
-            <select value={filters.permission} onChange={(event) => setFilters({ ...filters, permission: event.target.value })} className="form-input">
-              <option value="">Semua kewenangan</option>
-              {permissions.map((permission) => <option key={permission.code} value={permission.code}>{permission.label}</option>)}
-            </select>
+            <ResponsiveSelect
+              value={filters.actor_id}
+              ariaLabel="Filter admin"
+              className="form-input"
+              options={[
+                { value: "", label: "Semua admin" },
+                ...(data?.filters.actors || []).map((actor) => ({ value: actor.id, label: actor.name })),
+              ]}
+              onValueChange={(next) => setFilters({ ...filters, actor_id: next })}
+            />
+            <ResponsiveSelect
+              value={filters.status}
+              ariaLabel="Filter hasil tindakan"
+              className="form-input"
+              options={[
+                { value: "", label: "Semua hasil" },
+                { value: "success", label: "Berhasil" },
+                { value: "failed", label: "Gagal / ditolak" },
+              ]}
+              onValueChange={(next) => setFilters({ ...filters, status: next })}
+            />
+            <ResponsiveSelect
+              value={filters.category}
+              ariaLabel="Filter kategori audit"
+              className="form-input"
+              options={[
+                { value: "", label: "Semua kategori" },
+                ...["operations", "matching", "finance", "teachers", "cases", "users", "classes", "content", "support", "settings", "admins", "audit"].map((category) => ({ value: category, label: category })),
+              ]}
+              onValueChange={(next) => setFilters({ ...filters, category: next })}
+            />
+            <ResponsiveSelect
+              value={filters.permission}
+              ariaLabel="Filter kewenangan"
+              className="form-input"
+              options={[
+                { value: "", label: "Semua kewenangan" },
+                ...permissions.map((permission) => ({ value: permission.code, label: permission.label })),
+              ]}
+              onValueChange={(next) => setFilters({ ...filters, permission: next })}
+            />
             <input type="date" aria-label="Tanggal mulai" value={filters.date_from} onChange={(event) => setFilters({ ...filters, date_from: event.target.value })} className="form-input" />
             <input type="date" aria-label="Tanggal akhir" value={filters.date_to} onChange={(event) => setFilters({ ...filters, date_to: event.target.value })} className="form-input" />
           </div>

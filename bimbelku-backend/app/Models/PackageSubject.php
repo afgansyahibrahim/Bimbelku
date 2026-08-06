@@ -12,11 +12,23 @@ class PackageSubject extends Model
         'allocated_sessions' => 'integer',
         'unit_price' => 'decimal:2',
         'subtotal_amount' => 'decimal:2',
+        'curriculum_chapter_ids' => 'array',
+        'learning_topic_ids' => 'array',
     ];
 
     public function package()
     {
         return $this->belongsTo(LearningPackage::class, 'learning_package_id');
+    }
+
+    public function curriculumChapter()
+    {
+        return $this->belongsTo(CurriculumChapter::class);
+    }
+
+    public function learningTopics()
+    {
+        return $this->hasMany(PackageLearningTopic::class);
     }
 
     public function curriculumSubject()

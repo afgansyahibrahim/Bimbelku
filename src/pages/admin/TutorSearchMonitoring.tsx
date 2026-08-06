@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import AdminLayout from "@/components/AdminLayout";
+import { ResponsiveSelect } from "@/components/ResponsiveSelect";
 import {
   Dialog,
   DialogContent,
@@ -1039,17 +1040,16 @@ function SummaryBox({ label, value, alert = false }: { label: string; value: num
 
 function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) {
   return (
-    <label>
+    <div>
       <span className="sr-only">{label}</span>
-      <select
-        aria-label={label}
+      <ResponsiveSelect
+        ariaLabel={label}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none transition focus:border-orange-400 focus:bg-white focus:ring-4 focus:ring-orange-100"
-      >
-        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-      </select>
-    </label>
+        options={options}
+        onValueChange={onChange}
+        className="h-11 rounded-xl border-slate-200 bg-slate-50 text-sm focus:border-orange-400 focus:bg-white focus:ring-orange-100"
+      />
+    </div>
   );
 }
 

@@ -10,8 +10,10 @@ import {
   Copy,
   CreditCard,
   FileImage,
+  ImageOff,
   Loader2,
   RefreshCw,
+  QrCode,
   ShieldCheck,
   Upload,
   UserRound,
@@ -40,7 +42,8 @@ interface PaymentSettings {
   bank_name: string;
   account_number: string;
   account_name: string;
-  qris_url?: string;
+  qris_available?: boolean;
+  qris_endpoint?: string | null;
 }
 
 interface OrderData {
@@ -63,6 +66,8 @@ interface OrderData {
 type State = "loading" | "pending" | "submitted" | "paid" | "expired" | "cancelled" | "refund_pending" | "refunded";
 
 const rupiah = (value: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
+const PAYMENT_ACCOUNT_MIN_DIGITS = 8;
+const PAYMENT_ACCOUNT_MAX_DIGITS = 20;
 
 export default function PaymentPage() {
   const location = useLocation();
@@ -78,6 +83,10 @@ export default function PaymentPage() {
   const [proof, setProof] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [paymentMethod, setPaymentMethod] = useState<"qris" | "bank">("bank");
+  const [qrisObjectUrl, setQrisObjectUrl] = useState<string | null>(null);
+  const [qrisLoading, setQrisLoading] = useState(false);
+  const [qrisLoadFailed, setQrisLoadFailed] = useState(false);
 
   const checkStatus = useCallback(async (orderId: number, notify = true) => {
     try {
@@ -152,6 +161,47 @@ export default function PaymentPage() {
   }, [checkStatus, location.state]);
 
   useEffect(() => { void initialize(); }, [initialize]);
+
+  const fetchQris = useCallback(async () => {
+    if (!settings?.qris_available) {
+      setQrisObjectUrl(null);
+      setQrisLoadFailed(false);
+      setPaymentMethod("bank");
+      return;
+    }
+
+    setQrisLoading(true);
+    setQrisLoadFailed(false);
+    try {
+      const response = await http.get(settings.qris_endpoint || "/payment-settings/qris", {
+        responseType: "blob",
+      });
+      const nextUrl = URL.createObjectURL(response.data as Blob);
+      setQrisObjectUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return nextUrl;
+      });
+      setPaymentMethod("qris");
+    } catch {
+      setQrisObjectUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return null;
+      });
+      setQrisLoadFailed(true);
+      setPaymentMethod("bank");
+    } finally {
+      setQrisLoading(false);
+    }
+  }, [settings?.qris_available, settings?.qris_endpoint]);
+
+  useEffect(() => {
+    void fetchQris();
+  }, [fetchQris]);
+
+  useEffect(() => () => {
+    if (qrisObjectUrl) URL.revokeObjectURL(qrisObjectUrl);
+  }, [qrisObjectUrl]);
+
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
@@ -169,11 +219,13 @@ export default function PaymentPage() {
     return Math.max(0, Math.floor((new Date(order.paymentDueAt).getTime() - now) / 1000));
   }, [order?.paymentDueAt, now]);
   const timeText = `${String(Math.floor(secondsLeft / 3600)).padStart(2, "0")}:${String(Math.floor((secondsLeft % 3600) / 60)).padStart(2, "0")}:${String(secondsLeft % 60).padStart(2, "0")}`;
-  const paymentAccountReady = Boolean(
+  const bankPaymentReady = Boolean(
     settings?.bank_name?.trim()
       && settings?.account_number?.trim()
       && settings?.account_name?.trim(),
   );
+  const qrisPaymentReady = Boolean(settings?.qris_available && qrisObjectUrl && !qrisLoadFailed);
+  const paymentDestinationReady = bankPaymentReady || qrisPaymentReady;
   const paymentExpired = Boolean(order?.paymentDueAt && secondsLeft === 0);
 
   const copy = async (value: string, label: string) => {
@@ -196,12 +248,16 @@ export default function PaymentPage() {
       toast.error("Nama bank atau e-wallet wajib mengandung huruf.");
       return;
     }
-    if (!isValidAccountNumber(senderAccountNumber)) {
-      toast.error("Nomor rekening atau e-wallet harus berisi 6–50 angka.");
+    if (
+      !isValidAccountNumber(senderAccountNumber)
+      || senderAccountNumber.length < PAYMENT_ACCOUNT_MIN_DIGITS
+      || senderAccountNumber.length > PAYMENT_ACCOUNT_MAX_DIGITS
+    ) {
+      toast.error(`Nomor rekening atau e-wallet harus berisi ${PAYMENT_ACCOUNT_MIN_DIGITS}–${PAYMENT_ACCOUNT_MAX_DIGITS} digit.`);
       return;
     }
-    if (!paymentAccountReady) {
-      toast.error("Rekening pembayaran belum dikonfigurasi admin.");
+    if (!paymentDestinationReady) {
+      toast.error("Metode pembayaran belum dikonfigurasi admin.");
       return;
     }
     const payload = new FormData();
@@ -291,7 +347,7 @@ export default function PaymentPage() {
         <button onClick={() => navigate(order.packageName ? "/student/packages" : "/search")} className="inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-slate-900"><ArrowLeft size={17} />Kembali</button>
         {order.packageName && <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm"><OrderProgress status="awaiting_payment" /></div>}
         {reason && <div className="flex gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-5 text-rose-800"><AlertCircle className="shrink-0" /><div><p className="font-black">Bukti sebelumnya ditolak</p><p className="mt-1 text-sm leading-6">{reason}</p></div></div>}
-        {!paymentAccountReady && <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900"><AlertCircle className="shrink-0" /><div><p className="font-black">Rekening pembayaran belum tersedia</p><p className="mt-1 text-sm leading-6">Admin perlu mengisi rekening tujuan terlebih dahulu. Jangan melakukan transfer sebelum informasi rekening tampil lengkap.</p></div></div>}
+        {!paymentDestinationReady && !qrisLoading && <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900"><AlertCircle className="shrink-0" /><div><p className="font-black">Metode pembayaran belum tersedia</p><p className="mt-1 text-sm leading-6">Admin perlu mengaktifkan QRIS atau melengkapi rekening tujuan. Jangan membayar sebelum salah satu metode tampil lengkap.</p></div></div>}
         {paymentExpired && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm font-bold text-rose-700">Batas waktu telah berakhir. Muat ulang status untuk menutup tagihan.</div>}
 
         <div className="grid items-start gap-7 lg:grid-cols-[.9fr_1.1fr]">
@@ -315,21 +371,89 @@ export default function PaymentPage() {
                 </div>
               </div>
               {order.paymentDueAt && <div className="flex items-center justify-between rounded-2xl border border-amber-100 bg-amber-50 p-4 text-amber-800"><span className="flex items-center gap-2 text-sm font-bold"><Clock3 size={17} />Sisa waktu</span><span className="font-mono text-lg font-black">{timeText}</span></div>}
-              <div className="rounded-2xl border border-slate-100 p-4"><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Rekening admin</p><div className="mt-4 space-y-3 text-sm"><Row icon={Building2} label="Bank" value={settings.bank_name} /><Row icon={UserRound} label="Atas nama" value={settings.account_name} /><div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3"><div><p className="text-xs text-slate-400">Nomor rekening</p><p className="mt-1 font-mono font-black text-slate-900">{settings.account_number}</p></div><Button type="button" aria-label="Salin nomor rekening" variant="ghost" size="icon" onClick={() => copy(settings.account_number, "Nomor rekening")}><Copy size={17} /></Button></div></div></div>
-              {settings.qris_url && <div className="rounded-2xl border border-slate-100 p-4 text-center"><p className="text-xs font-bold uppercase tracking-widest text-slate-400">QRIS admin</p><img src={settings.qris_url} alt="QRIS pembayaran" loading="lazy" decoding="async" className="mx-auto mt-3 max-h-60 rounded-xl object-contain" /></div>}
+              <div className="rounded-2xl border border-slate-100 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Pilih cara bayar</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-700">Bayar memakai QRIS atau transfer bank.</p>
+                  </div>
+                  {qrisPaymentReady && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700">QRIS aktif</span>}
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    disabled={!qrisPaymentReady}
+                    onClick={() => setPaymentMethod("qris")}
+                    className={`rounded-xl border p-3 text-left transition ${paymentMethod === "qris" && qrisPaymentReady ? "border-indigo-500 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-600"} disabled:cursor-not-allowed disabled:opacity-55`}
+                  >
+                    <span className="flex items-center gap-2 text-sm font-black"><QrCode size={17} />QRIS</span>
+                    <span className="mt-1 block text-[11px] font-semibold">{qrisLoading ? "Sedang dimuat" : qrisPaymentReady ? "Scan dari aplikasi pembayaran" : qrisLoadFailed ? "Gagal dimuat" : "Belum diaktifkan admin"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!bankPaymentReady}
+                    onClick={() => setPaymentMethod("bank")}
+                    className={`rounded-xl border p-3 text-left transition ${paymentMethod === "bank" && bankPaymentReady ? "border-indigo-500 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-600"} disabled:cursor-not-allowed disabled:opacity-55`}
+                  >
+                    <span className="flex items-center gap-2 text-sm font-black"><Building2 size={17} />Transfer bank</span>
+                    <span className="mt-1 block text-[11px] font-semibold">{bankPaymentReady ? settings.bank_name : "Belum tersedia"}</span>
+                  </button>
+                </div>
+
+                {paymentMethod === "qris" && qrisPaymentReady && qrisObjectUrl ? (
+                  <div className="mt-4 rounded-2xl border-2 border-indigo-100 bg-indigo-50/40 p-4 text-center">
+                    <div className="rounded-xl bg-white p-3 shadow-sm">
+                      <img src={qrisObjectUrl} alt={`QRIS ${settings.merchant_name}`} className="mx-auto max-h-[22rem] w-full object-contain" />
+                    </div>
+                    <p className="mt-3 text-base font-black text-slate-900">Scan QRIS {settings.merchant_name}</p>
+                    <p className="mt-1 text-sm font-bold text-indigo-700">Bayar tepat {rupiah(order.price)}</p>
+                    <Button type="button" variant="outline" className="mt-3 w-full rounded-xl bg-white" onClick={() => window.open(qrisObjectUrl, "_blank", "noopener,noreferrer")}>
+                      <QrCode size={16} className="mr-2" />Buka QRIS ukuran penuh
+                    </Button>
+                    <ol className="mt-4 space-y-2 text-left text-xs leading-5 text-slate-600">
+                      <li><strong>1.</strong> Buka aplikasi bank atau e-wallet yang mendukung QRIS.</li>
+                      <li><strong>2.</strong> Scan gambar QRIS di atas.</li>
+                      <li><strong>3.</strong> Masukkan nominal tepat sesuai tagihan.</li>
+                      <li><strong>4.</strong> Simpan bukti pembayaran, lalu unggah pada formulir di sebelahnya.</li>
+                    </ol>
+                  </div>
+                ) : paymentMethod === "bank" && bankPaymentReady ? (
+                  <div className="mt-4 rounded-2xl border border-slate-100 p-4">
+                    <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Rekening admin</p>
+                    <div className="mt-4 space-y-3 text-sm">
+                      <Row icon={Building2} label="Bank" value={settings.bank_name} />
+                      <Row icon={UserRound} label="Atas nama" value={settings.account_name} />
+                      <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3">
+                        <div><p className="text-xs text-slate-400">Nomor rekening</p><p className="mt-1 font-mono font-black text-slate-900">{settings.account_number}</p></div>
+                        <Button type="button" aria-label="Salin nomor rekening" variant="ghost" size="icon" onClick={() => copy(settings.account_number, "Nomor rekening")}><Copy size={17} /></Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {qrisLoading && <div className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-slate-50 p-4 text-sm font-bold text-slate-600"><Loader2 size={17} className="animate-spin" />Memuat QRIS pembayaran…</div>}
+                {qrisLoadFailed && (
+                  <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-left">
+                    <div className="flex gap-3 text-rose-800"><ImageOff className="shrink-0" size={19} /><div><p className="text-sm font-black">QRIS gagal dimuat</p><p className="mt-1 text-xs leading-5">Gunakan transfer bank sementara atau muat ulang gambar QRIS.</p></div></div>
+                    <Button type="button" variant="outline" size="sm" className="mt-3 w-full rounded-lg border-rose-200 bg-white text-rose-700" onClick={() => void fetchQris()}><RefreshCw size={14} className="mr-2" />Muat ulang QRIS</Button>
+                  </div>
+                )}
+                {!settings.qris_available && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-800">QRIS belum diaktifkan admin. Pembayaran tetap dapat dilakukan melalui transfer bank.</p>}
+              </div>
               <p className="flex gap-2 text-xs leading-5 text-slate-500"><ShieldCheck className="shrink-0 text-emerald-600" size={17} />Dana dicatat oleh admin. Sistem tidak menjalankan payment gateway atau transfer otomatis.</p>
             </div>
           </section>
 
           <form onSubmit={upload} className="rounded-[1.75rem] border border-slate-100 bg-white p-5 shadow-sm sm:rounded-[2rem] md:p-8">
-            <p className="text-xs font-black uppercase tracking-[.2em] text-indigo-500">Konfirmasi transfer</p><h2 className="mt-2 text-2xl font-black text-slate-900">{reason ? "Unggah bukti pengganti" : "Kirim bukti pembayaran"}</h2><p className="mt-2 text-sm leading-6 text-slate-500">Pastikan nama pengirim, tujuan rekening, waktu, dan nominal terlihat jelas.</p>
+            <p className="text-xs font-black uppercase tracking-[.2em] text-indigo-500">Konfirmasi transfer</p><h2 className="mt-2 text-2xl font-black text-slate-900">{reason ? "Unggah bukti pengganti" : "Kirim bukti pembayaran"}</h2><p className="mt-2 text-sm leading-6 text-slate-500">Pastikan nama pengirim, tujuan pembayaran, waktu, dan nominal terlihat jelas.</p>
             <div className="mt-7 space-y-5">
               <div><Label className="flex items-center gap-2 font-bold"><UserRound size={16} />Nama pemilik rekening</Label><Input required className="mt-2 h-12 rounded-xl" value={senderName} onChange={(event) => setSenderName(sanitizePersonName(event.target.value, 150))} /></div>
               <div><Label className="flex items-center gap-2 font-bold"><WalletCards size={16} />Bank/e-wallet asal</Label><Input required className="mt-2 h-12 rounded-xl" value={bankName} onChange={(event) => setBankName(event.target.value)} /></div>
-              <div><Label className="flex items-center gap-2 font-bold"><CreditCard size={16} />Nomor rekening/e-wallet asal</Label><Input required inputMode="numeric" className="mt-2 h-12 rounded-xl" value={senderAccountNumber} maxLength={50} onChange={(event) => setSenderAccountNumber(sanitizeDigits(event.target.value, 50))} /><p className="mt-2 text-xs leading-5 text-slate-500">Disimpan sebagai tujuan pengembalian dana jika refund disetujui.</p></div>
-              <label className={`block cursor-pointer rounded-2xl border-2 border-dashed p-6 text-center transition ${proof ? "border-emerald-300 bg-emerald-50" : "border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40"}`}><Input required type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={(event) => selectProof(event.target.files?.[0])} />{proof ? <><FileImage className="mx-auto text-emerald-600" /><p className="mt-3 truncate text-sm font-black text-emerald-800">{proof.name}</p><p className="mt-1 text-xs text-emerald-600">Klik untuk mengganti</p></> : <><Upload className="mx-auto text-indigo-500" /><p className="mt-3 text-sm font-black text-slate-800">Pilih foto bukti transfer</p><p className="mt-1 text-xs text-slate-400">JPG, PNG, atau WebP · maks. 5 MB</p></>}</label>
+              <div><Label className="flex items-center gap-2 font-bold"><CreditCard size={16} />Nomor rekening/e-wallet asal</Label><Input required inputMode="numeric" minLength={PAYMENT_ACCOUNT_MIN_DIGITS} maxLength={PAYMENT_ACCOUNT_MAX_DIGITS} className="mt-2 h-12 rounded-xl" value={senderAccountNumber} onChange={(event) => setSenderAccountNumber(sanitizeDigits(event.target.value, PAYMENT_ACCOUNT_MAX_DIGITS))} /><p className="mt-2 text-xs leading-5 text-slate-500">Masukkan {PAYMENT_ACCOUNT_MIN_DIGITS}–{PAYMENT_ACCOUNT_MAX_DIGITS} digit. Nomor ini dipakai sebagai tujuan pengembalian dana jika refund disetujui.</p></div>
+              <label className={`block cursor-pointer rounded-2xl border-2 border-dashed p-6 text-center transition ${proof ? "border-emerald-300 bg-emerald-50" : "border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40"}`}><Input required type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={(event) => selectProof(event.target.files?.[0])} />{proof ? <><FileImage className="mx-auto text-emerald-600" /><p className="mt-3 truncate text-sm font-black text-emerald-800">{proof.name}</p><p className="mt-1 text-xs text-emerald-600">Klik untuk mengganti</p></> : <><Upload className="mx-auto text-indigo-500" /><p className="mt-3 text-sm font-black text-slate-800">Pilih foto bukti pembayaran</p><p className="mt-1 text-xs text-slate-400">JPG, PNG, atau WebP · maks. 5 MB</p></>}</label>
             </div>
-            <Button disabled={submitting || paymentExpired || !proof || !paymentAccountReady} className="mt-7 h-12 w-full rounded-xl bg-indigo-600 font-black hover:bg-indigo-700">{submitting ? <Loader2 size={18} className="mr-2 animate-spin" /> : <CreditCard size={18} className="mr-2" />}Kirim untuk diperiksa</Button>
+            <Button disabled={submitting || paymentExpired || !proof || !paymentDestinationReady} className="mt-7 h-12 w-full rounded-xl bg-indigo-600 font-black hover:bg-indigo-700">{submitting ? <Loader2 size={18} className="mr-2 animate-spin" /> : <CreditCard size={18} className="mr-2" />}Kirim untuk diperiksa</Button>
             <Button type="button" variant="ghost" onClick={cancel} className="mt-2 w-full rounded-xl text-rose-600 hover:bg-rose-50 hover:text-rose-700">Batalkan tagihan</Button>
           </form>
         </div>

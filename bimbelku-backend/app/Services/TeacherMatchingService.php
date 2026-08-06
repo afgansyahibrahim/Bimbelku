@@ -8,6 +8,7 @@ use App\Models\MatchingOperationLog;
 use App\Models\Notification;
 use App\Models\Setting;
 use App\Models\TeacherOffer;
+use App\Models\TeacherAvailabilityException;
 use App\Models\TeacherProfile;
 use App\Models\User;
 use Carbon\Carbon;
@@ -124,8 +125,7 @@ class TeacherMatchingService
             return null;
         }
 
-        $configuredDeadline = now()->addHours($this->teacherResponseHours());
-        $expiresAt = $configuredDeadline->min($acceptanceCutoff)->min($maximumSearchDeadline);
+        $expiresAt = $this->offerResponseDeadline($bookingRequest, $maximumSearchDeadline);
 
         $offerResult = DB::transaction(function () use (
             $bookingRequest,
@@ -179,6 +179,20 @@ class TeacherMatchingService
         ]);
 
         return $offer;
+    }
+
+    public function offerResponseDeadline(
+        BookingRequest $bookingRequest,
+        ?Carbon $maximumSearchDeadline = null
+    ): Carbon {
+        $deadline = now()->addMinutes($this->teacherResponseMinutes($bookingRequest));
+        $deadline = $deadline->min($this->startAt($bookingRequest));
+
+        $searchDeadline = $maximumSearchDeadline
+            ?? $bookingRequest->search_expires_at
+            ?? $bookingRequest->search_started_at?->copy()->addHours($this->maximumSearchHours());
+
+        return $searchDeadline ? $deadline->min($searchDeadline) : $deadline;
     }
 
     public function expireOfferAndContinue(TeacherOffer $offer, bool $continue = true): void
@@ -562,6 +576,14 @@ class TeacherMatchingService
             return false;
         }
 
+        if (TeacherAvailabilityException::query()
+            ->where('user_id', $teacher->id)
+            ->whereDate('start_date', '<=', $startAt->toDateString())
+            ->whereDate('end_date', '>=', $startAt->toDateString())
+            ->exists()) {
+            return false;
+        }
+
         $teacher->loadMissing('availabilities');
         $dayName = $this->indonesianDayName($startAt->dayOfWeekIso);
         $availability = $teacher->availabilities->first(
@@ -825,9 +847,18 @@ class TeacherMatchingService
             ->update($attributes);
     }
 
-    private function teacherResponseHours(): int
+    private function teacherResponseMinutes(BookingRequest $bookingRequest): int
     {
-        return max(1, (int) (Setting::where('key', 'teacher_response_hours')->value('value') ?? 12));
+        $isOffline = $bookingRequest->learning_mode === 'offline';
+        $settingKey = $isOffline
+            ? 'teacher_response_offline_minutes'
+            : 'teacher_response_online_minutes';
+        $defaultMinutes = $isOffline ? 120 : 30;
+
+        return max(
+            5,
+            min(240, (int) (Setting::where('key', $settingKey)->value('value') ?? $defaultMinutes))
+        );
     }
 
     private function maximumSearchHours(): int

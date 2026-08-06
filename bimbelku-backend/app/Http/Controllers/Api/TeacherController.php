@@ -384,12 +384,14 @@ class TeacherController extends Controller
     public function updateBank(Request $request) {
         $validated = $request->validate([
             'bank_name' => ['required', 'string', 'max:100', 'regex:/\pL/u'],
-            'account_number' => ['required', 'string', 'max:50', 'regex:/^[0-9]{6,50}$/'],
+            'account_number' => ['required', 'string', 'min:8', 'max:20', 'regex:/^[0-9]+$/'],
             'account_name' => ['required', 'string', 'max:150', 'regex:/\pL/u', 'not_regex:/\d/u'],
             'current_password' => ['required', 'string', 'max:200'],
         ], [
             'bank_name.regex' => 'Nama bank atau e-wallet wajib mengandung huruf.',
-            'account_number.regex' => 'Nomor rekening atau e-wallet harus berisi 6–50 angka.',
+            'account_number.min' => 'Nomor rekening atau e-wallet minimal 8 digit.',
+            'account_number.max' => 'Nomor rekening atau e-wallet maksimal 20 digit.',
+            'account_number.regex' => 'Nomor rekening atau e-wallet hanya boleh berisi angka.',
             'account_name.regex' => 'Nama pemilik rekening wajib mengandung huruf.',
             'account_name.not_regex' => 'Nama pemilik rekening tidak boleh memuat angka.',
         ]);

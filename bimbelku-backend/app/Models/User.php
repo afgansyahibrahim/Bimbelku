@@ -179,6 +179,11 @@ class User extends Authenticatable
     }
 
     // Relasi Mapel (Lewat Profile)
+    public function availabilityExceptions()
+    {
+        return $this->hasMany(TeacherAvailabilityException::class);
+    }
+
     public function subjects()
     {
         return $this->hasManyThrough(

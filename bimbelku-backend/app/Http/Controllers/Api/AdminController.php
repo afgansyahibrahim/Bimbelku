@@ -826,14 +826,30 @@ class AdminController extends Controller
             'account_number' => '',
             'account_name' => '',
         ]);
-        
-        if ($settings->qris_image) {
-            $settings->qris_url = asset('storage/' . $settings->qris_image);
-        } else {
-            $settings->qris_url = null;
-        }
 
-        return response()->json($settings);
+        return response()->json($this->paymentSettingsPayload($settings));
+    }
+
+    public function qrisImage()
+    {
+        $settings = PaymentSetting::query()->where('singleton_key', 1)->first();
+        $path = $settings?->qris_image;
+
+        abort_if(
+            blank($path) || !Storage::disk('public')->exists($path),
+            404,
+            'QRIS pembayaran belum tersedia.'
+        );
+
+        $contents = Storage::disk('public')->get($path);
+        $mimeType = Storage::disk('public')->mimeType($path) ?: 'image/png';
+
+        return response($contents, 200, [
+            'Content-Type' => $mimeType,
+            'Content-Disposition' => 'inline; filename="qris-bimbelku.' . pathinfo($path, PATHINFO_EXTENSION) . '"',
+            'Cache-Control' => 'private, max-age=300',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 
     public function updatePaymentSettings(Request $request)
@@ -876,6 +892,12 @@ class AdminController extends Controller
                 $paymentDestinationIsConfigured = filled($lockedSettings->bank_name)
                     && filled($lockedSettings->account_number)
                     && filled($lockedSettings->account_name);
+                $bankDestinationChanged = $paymentDestinationIsConfigured && (
+                    $lockedSettings->merchant_name !== $request->merchant_name
+                    || $lockedSettings->bank_name !== $request->bank_name
+                    || $lockedSettings->account_number !== $request->account_number
+                    || $lockedSettings->account_name !== $request->account_name
+                );
                 $hasOpenPayments = Order::query()
                     ->where(function ($query) {
                         $query->where('status', 'submitted')
@@ -894,8 +916,8 @@ class AdminController extends Controller
                     })
                     ->exists();
 
-                if ($paymentDestinationIsConfigured && $hasOpenPayments) {
-                    abort(422, 'Rekening tidak dapat diubah saat masih ada tagihan aktif atau bukti transfer yang belum diperiksa.');
+                if ($bankDestinationChanged && $hasOpenPayments) {
+                    abort(422, 'Rekening tidak dapat diubah saat masih ada tagihan aktif atau bukti pembayaran yang belum diperiksa. QRIS tetap dapat diunggah tanpa mengubah data rekening.');
                 }
 
                 $oldQrisImage = $lockedSettings->qris_image;
@@ -920,14 +942,30 @@ class AdminController extends Controller
         }
 
         $settings = $settings->fresh();
-        if ($settings->qris_image) {
-            $settings->qris_url = asset('storage/' . $settings->qris_image);
-        }
 
         return response()->json([
-            'message' => 'Pengaturan pembayaran berhasil disimpan.', 
-            'data' => $settings
+            'message' => 'Pengaturan pembayaran berhasil disimpan.',
+            'data' => $this->paymentSettingsPayload($settings),
         ]);
+    }
+
+    private function paymentSettingsPayload(PaymentSetting $settings): array
+    {
+        $qrisAvailable = filled($settings->qris_image)
+            && Storage::disk('public')->exists($settings->qris_image);
+
+        return [
+            'id' => $settings->id,
+            'merchant_name' => $settings->merchant_name,
+            'bank_name' => $settings->bank_name,
+            'account_number' => $settings->account_number,
+            'account_name' => $settings->account_name,
+            'qris_available' => $qrisAvailable,
+            'qris_endpoint' => $qrisAvailable
+                ? '/payment-settings/qris?v=' . optional($settings->updated_at)->timestamp
+                : null,
+            'updated_at' => $settings->updated_at,
+        ];
     }
 
     // =========================================================================

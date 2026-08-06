@@ -29,6 +29,32 @@ class TeacherOfferReleaseService
     }
 
     /**
+     * @return Collection<int, BookingRequest>
+     */
+    public function releaseForTeacherDateRange(
+        int $teacherId,
+        Carbon $startDate,
+        Carbon $endDate,
+        string $reason
+    ): Collection {
+        return $this->releaseQuery(
+            TeacherOffer::query()
+                ->where('teacher_id', $teacherId)
+                ->where('status', 'pending')
+                ->whereHas('bookingRequest', function (Builder $requests) use ($startDate, $endDate) {
+                    $requests->where(function (Builder $dates) use ($startDate, $endDate) {
+                        $dates->whereBetween('scheduled_date', [$startDate->toDateString(), $endDate->toDateString()])
+                            ->orWhereHas('packageSubject.sessions', fn (Builder $sessions) => $sessions
+                                ->whereDate('scheduled_start_at', '>=', $startDate->toDateString())
+                                ->whereDate('scheduled_start_at', '<=', $endDate->toDateString()));
+                    });
+                }),
+            $teacherId,
+            $reason
+        );
+    }
+
+    /**
      * Membebaskan penawaran lain yang waktunya bertabrakan setelah tutor
      * menerima sebuah sesi. Penawaran ini bukan kelalaian tutor.
      *

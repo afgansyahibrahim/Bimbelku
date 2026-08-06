@@ -156,7 +156,7 @@ class PackageCheckoutService
                         ->first();
                 }
 
-                $expiresAt = now()->addHours(48)->min($this->matchingService->startAt($lockedRequest));
+                $expiresAt = $this->matchingService->offerResponseDeadline($lockedRequest);
                 if ($expiresAt->lte(now())) {
                     return null;
                 }

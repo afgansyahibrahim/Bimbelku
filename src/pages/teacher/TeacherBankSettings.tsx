@@ -18,6 +18,9 @@ import {
   sanitizePersonName,
 } from "@/lib/validation";
 
+const PAYOUT_ACCOUNT_MIN_DIGITS = 8;
+const PAYOUT_ACCOUNT_MAX_DIGITS = 20;
+
 export default function TeacherBankSettings() {
   const confirm = useConfirmDialog();
   const [bankName, setBankName] = useState("");
@@ -60,8 +63,12 @@ export default function TeacherBankSettings() {
         toast.error("Nama bank atau e-wallet wajib mengandung huruf.");
         return;
     }
-    if (!isValidAccountNumber(accountNumber)) {
-        toast.error("Nomor rekening atau e-wallet harus berisi 6–50 angka.");
+    if (
+        !isValidAccountNumber(accountNumber)
+        || accountNumber.length < PAYOUT_ACCOUNT_MIN_DIGITS
+        || accountNumber.length > PAYOUT_ACCOUNT_MAX_DIGITS
+    ) {
+        toast.error(`Nomor rekening atau e-wallet harus berisi ${PAYOUT_ACCOUNT_MIN_DIGITS}–${PAYOUT_ACCOUNT_MAX_DIGITS} digit.`);
         return;
     }
     if (!isValidPersonName(accountHolder)) {
@@ -172,12 +179,16 @@ export default function TeacherBankSettings() {
                      <Input 
                         placeholder="Contoh: 1234567890"
                         inputMode="numeric"
-                        maxLength={50}
+                        minLength={PAYOUT_ACCOUNT_MIN_DIGITS}
+                        maxLength={PAYOUT_ACCOUNT_MAX_DIGITS}
                         autoComplete="off"
                         value={accountNumber}
-                        onChange={(e) => setAccountNumber(sanitizeDigits(e.target.value, 50))}
+                        onChange={(e) => setAccountNumber(sanitizeDigits(e.target.value, PAYOUT_ACCOUNT_MAX_DIGITS))}
                         className="h-12 rounded-xl border-slate-200 focus:bg-white bg-slate-50 transition font-mono tracking-wide text-lg"
                      />
+                     <p className="text-xs leading-5 text-slate-500">
+                        Masukkan {PAYOUT_ACCOUNT_MIN_DIGITS}–{PAYOUT_ACCOUNT_MAX_DIGITS} digit tanpa spasi atau tanda baca.
+                     </p>
                   </div>
 
                   <div className="space-y-2">

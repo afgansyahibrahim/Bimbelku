@@ -155,7 +155,7 @@ export default function SubjectCombobox({
       </div>
 
       {open && !disabled && (
-        <div id={listboxId} role="listbox" className="absolute z-[120] mt-2 max-h-72 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl">
+        <div id={listboxId} role="listbox" className="absolute left-0 right-0 z-[220] mt-2 max-h-[min(18rem,calc(100dvh-7rem))] min-w-0 max-w-[calc(100vw-1.5rem)] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl">
           {filtered.map((option, index) => (
             <button
               id={`${listboxId}-option-${option.id}`}

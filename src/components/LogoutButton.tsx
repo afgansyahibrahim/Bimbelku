@@ -31,7 +31,7 @@ export default function LogoutButton({ accent = "student" }: LogoutButtonProps) 
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       toast.success("Anda telah keluar dari akun.");
-      navigate("/login", { replace: true });
+      navigate("/", { replace: true });
     }
   };
 

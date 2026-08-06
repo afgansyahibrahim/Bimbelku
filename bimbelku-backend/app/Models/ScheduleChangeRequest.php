@@ -13,6 +13,7 @@ class ScheduleChangeRequest extends Model
         'original_end_at' => 'datetime',
         'proposed_start_at' => 'datetime',
         'proposed_end_at' => 'datetime',
+        'affected_schedules' => 'array',
         'decided_at' => 'datetime',
         'expires_at' => 'datetime',
     ];

@@ -213,8 +213,8 @@ class BookingRequestController extends Controller
             ? $request->file('attachment')->store('learning_requests', 'local')
             : null;
         $initialSearchHours = min(
-            12,
-            max(1, (int) (Setting::where('key', 'teacher_response_hours')->value('value') ?? 12))
+            48,
+            max(1, (int) (Setting::where('key', 'maximum_search_hours')->value('value') ?? 48))
         );
 
         try {

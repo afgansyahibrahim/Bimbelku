@@ -1,24 +1,16 @@
 import {
   createContext,
+  lazy,
   type ReactNode,
+  Suspense,
   useCallback,
   useContext,
-  useMemo,
   useRef,
   useState,
 } from "react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import type { ConfirmTone } from "@/components/ConfirmDialogView";
 
-type ConfirmTone = "danger" | "warning" | "primary";
+const ConfirmDialogView = lazy(() => import("@/components/ConfirmDialogView"));
 
 interface ConfirmOptions {
   title: string;
@@ -32,7 +24,7 @@ type ConfirmFn = (options: ConfirmOptions) => Promise<boolean>;
 
 const ConfirmDialogContext = createContext<ConfirmFn | null>(null);
 
-const defaultOptions: ConfirmOptions = {
+const defaultOptions: Required<ConfirmOptions> = {
   title: "Konfirmasi tindakan",
   description: "Pastikan tindakan ini memang ingin dilanjutkan.",
   confirmText: "Lanjutkan",
@@ -41,7 +33,7 @@ const defaultOptions: ConfirmOptions = {
 };
 
 export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
-  const [options, setOptions] = useState<ConfirmOptions>(defaultOptions);
+  const [options, setOptions] = useState<Required<ConfirmOptions>>(defaultOptions);
   const [open, setOpen] = useState(false);
   const resolverRef = useRef<((confirmed: boolean) => void) | null>(null);
 
@@ -52,10 +44,7 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const confirm = useCallback<ConfirmFn>((nextOptions) => {
-    if (resolverRef.current) {
-      resolverRef.current(false);
-    }
-
+    resolverRef.current?.(false);
     setOptions({ ...defaultOptions, ...nextOptions });
     setOpen(true);
 
@@ -64,52 +53,23 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const actionClassName = useMemo(() => {
-    if (options.tone === "danger") return "bg-rose-600 text-white hover:bg-rose-700";
-    if (options.tone === "warning") return "bg-amber-500 text-white hover:bg-amber-600";
-    return "bg-indigo-600 text-white hover:bg-indigo-700";
-  }, [options.tone]);
-
   return (
     <ConfirmDialogContext.Provider value={confirm}>
       {children}
-      <AlertDialog
-        open={open}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen && open) settle(false);
-        }}
-      >
-        <AlertDialogContent className="rounded-[2rem] border-slate-100 sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-xl font-black text-slate-900">
-              {options.title}
-            </AlertDialogTitle>
-            <AlertDialogDescription className="leading-6 text-slate-500">
-              {options.description}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2 sm:gap-2">
-            <AlertDialogCancel
-              className="rounded-xl"
-              onClick={(event) => {
-                event.preventDefault();
-                settle(false);
-              }}
-            >
-              {options.cancelText}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className={`rounded-xl ${actionClassName}`}
-              onClick={(event) => {
-                event.preventDefault();
-                settle(true);
-              }}
-            >
-              {options.confirmText}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {open ? (
+        <Suspense fallback={null}>
+          <ConfirmDialogView
+            open={open}
+            title={options.title}
+            description={options.description}
+            confirmText={options.confirmText}
+            cancelText={options.cancelText}
+            tone={options.tone}
+            onConfirm={() => settle(true)}
+            onCancel={() => settle(false)}
+          />
+        </Suspense>
+      ) : null}
     </ConfirmDialogContext.Provider>
   );
 }

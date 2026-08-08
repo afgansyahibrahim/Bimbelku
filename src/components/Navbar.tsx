@@ -1,14 +1,26 @@
+import { notify } from "@/lib/notify";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Menu, X, User, LogOut, LayoutDashboard } from "lucide-react";
-import { toast } from "sonner";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
-import http from "@/lib/http";
+
+const readStoredUser = () => {
+  const storedUser = localStorage.getItem("user");
+  if (!storedUser) return null;
+
+  try {
+    return JSON.parse(storedUser);
+  } catch {
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
+    return null;
+  }
+};
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<any>(() => readStoredUser());
   const location = useLocation();
   const navigate = useNavigate();
   const confirm = useConfirmDialog();
@@ -20,20 +32,6 @@ const Navbar = () => {
     { href: "/search", label: "Cari Bimbingan" },
     { href: "/why-us", label: "Kenapa Harus Belajar?" },
   ];
-
-  // 1. Cek User Login saat Website Dimuat
-  useEffect(() => {
-    const storedUser = localStorage.getItem("user");
-    if (!storedUser) return;
-
-    try {
-      setUser(JSON.parse(storedUser));
-    } catch {
-      localStorage.removeItem("user");
-      localStorage.removeItem("token");
-      setUser(null);
-    }
-  }, []);
 
   // 2. Fungsi Logout
   const handleLogout = async () => {
@@ -47,6 +45,7 @@ const Navbar = () => {
     if (!approved) return;
 
     try {
+      const { default: http } = await import("@/lib/http");
       await http.post("/logout");
     } catch {
       // Token lokal tetap dibersihkan jika sesi server sudah berakhir.
@@ -55,7 +54,7 @@ const Navbar = () => {
       localStorage.removeItem("user");
       setUser(null);
       setIsOpen(false);
-      toast.success("Anda telah keluar dari akun.");
+      notify.success("Anda telah keluar dari akun.");
       navigate("/", { replace: true });
     }
   };

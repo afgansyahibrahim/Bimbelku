@@ -16,6 +16,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
+use App\Models\PaymentSetting;
 
 class StageFivePackageExperienceTest extends TestCase
 {
@@ -214,6 +215,15 @@ class StageFivePackageExperienceTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-30 10:00:00', 'Asia/Jakarta'));
         $this->seed(CurriculumCatalogSeeder::class);
         $this->seed(StageFiveExperienceSeeder::class);
+        PaymentSetting::updateOrCreate(
+        ['singleton_key' => 1],
+        [
+            'merchant_name' => 'BimbelKu Official',
+            'bank_name' => 'Bank Pengujian',
+            'account_number' => '1234567890',
+            'account_name' => 'BimbelKu',
+        ]
+    );
         $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
         Sanctum::actingAs($student);
 

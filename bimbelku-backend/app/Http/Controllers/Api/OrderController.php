@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\Notification;
 use App\Models\Order;
+use App\Models\LearningPackage;
+use App\Models\PackageSession;
 use App\Models\PackageRenewal;
 use App\Models\PaymentSetting;
 use App\Models\User;
@@ -26,9 +28,11 @@ class OrderController extends Controller
             || blank($paymentSettings->account_number)
             || blank($paymentSettings->account_name)
         ) {
-            return response()->json([
-                'message' => 'Rekening pembayaran belum dikonfigurasi admin.',
-            ], 503);
+            return $this->paymentError(
+                'Metode pembayaran belum siap. Admin perlu melengkapi rekening tujuan sebelum bukti dapat dikirim.',
+                503,
+                'payment_settings_unavailable'
+            );
         }
 
         $validated = $request->validate([
@@ -51,7 +55,7 @@ class OrderController extends Controller
             ->findOrFail($id);
 
         if (!in_array($order->status, ['pending', 'rejected'], true)) {
-            return response()->json(['message' => 'Tagihan ini sudah tidak dapat dibayar.'], 422);
+            return $this->paymentError('Tagihan ini sudah tidak dapat dibayar. Periksa status tagihan sebelum mencoba lagi.', 422, 'invoice_not_payable');
         }
 
         if ($order->learning_package_id) {
@@ -60,12 +64,16 @@ class OrderController extends Controller
 
         $booking = $order->booking;
         if (!$booking || !$this->bookingAcceptsPayment($booking)) {
-            return response()->json(['message' => 'Data sesi pada tagihan tidak lagi aktif.'], 422);
+            return $this->paymentError('Kelas pada tagihan ini sudah tidak aktif. Periksa Kelas Saya sebelum mengirim bukti pembayaran.', 422, 'session_inactive');
         }
 
         if ($booking->payment_due_at?->isPast()) {
             $this->expireUnpaidOrder($order, $groupService);
-            return response()->json(['message' => 'Batas pembayaran sudah berakhir.'], 422);
+            return $this->paymentError('Batas pembayaran sudah berakhir. Tagihan tidak lagi menerima bukti transfer.', 422, 'payment_expired');
+        }
+
+        if ($conflict = $this->findBookingPaymentConflict($booking)) {
+            return $this->scheduleConflictResponse($conflict);
         }
 
         $path = $request->file('file')->store('payment_proofs', 'local');
@@ -79,11 +87,15 @@ class OrderController extends Controller
                 }
 
                 $lockedBooking = $lockedOrder->booking()->lockForUpdate()->firstOrFail();
+                User::query()->lockForUpdate()->findOrFail($lockedOrder->user_id);
                 if (!$this->bookingAcceptsPayment($lockedBooking)) {
-                    abort(422, 'Data sesi pada tagihan tidak lagi aktif.');
+                    abort(422, 'Kelas pada tagihan ini sudah tidak aktif. Periksa Kelas Saya sebelum mengirim bukti pembayaran.');
                 }
                 if ($lockedBooking->payment_due_at?->isPast()) {
-                    abort(422, 'Batas pembayaran sudah berakhir.');
+                    abort(422, 'Batas pembayaran sudah berakhir. Tagihan tidak lagi menerima bukti transfer.');
+                }
+                if ($conflict = $this->findBookingPaymentConflict($lockedBooking)) {
+                    abort(422, $conflict['message']);
                 }
 
                 $previousProof = $lockedOrder->payment_proof;
@@ -130,6 +142,7 @@ class OrderController extends Controller
                 'title' => 'Bukti pembayaran baru',
                 'message' => "Tagihan {$order->order_id} sudah diunggah murid dan menunggu pemeriksaan.",
                 'type' => 'info',
+                'target_url' => '/admin/pembayaran',
             ]);
         });
         if ($order->booking?->teacher_id) {
@@ -138,6 +151,7 @@ class OrderController extends Controller
                 'title' => 'Pembayaran murid sedang diperiksa',
                 'message' => "Bukti untuk tagihan {$order->order_id} sudah masuk ke admin. Jadwal tetap ditahan selama pemeriksaan.",
                 'type' => 'info',
+                'target_url' => '/guru/kelas',
             ]);
         }
 
@@ -367,6 +381,7 @@ class OrderController extends Controller
                 'title' => 'Batas pembayaran berakhir',
                 'message' => 'Tagihan dibatalkan karena bukti transfer tidak dikirim tepat waktu.',
                 'type' => 'warning',
+                'target_url' => '/student/history',
             ]);
         });
     }
@@ -391,11 +406,15 @@ class OrderController extends Controller
             !$package
             || !in_array($package->status, ['awaiting_payment', 'payment_rejected'], true)
         ) {
-            return response()->json(['message' => 'Paket tidak lagi menunggu pembayaran.'], 422);
+            return $this->paymentError('Paket tidak lagi menunggu pembayaran. Periksa status paket sebelum mencoba lagi.', 422, 'package_not_payable');
         }
         if ($package->payment_due_at?->isPast()) {
             $this->expirePackageOrder($order);
-            return response()->json(['message' => 'Batas pembayaran paket sudah berakhir.'], 422);
+            return $this->paymentError('Batas pembayaran paket sudah berakhir. Buat tagihan baru sebelum membayar.', 422, 'payment_expired');
+        }
+
+        if ($conflict = $this->findPackagePaymentConflict($package)) {
+            return $this->scheduleConflictResponse($conflict);
         }
 
         $path = $request->file('file')->store('payment_proofs', 'local');
@@ -403,6 +422,7 @@ class OrderController extends Controller
         try {
             DB::transaction(function () use ($order, $path, $validated, &$previousProof) {
                 $lockedOrder = Order::query()->lockForUpdate()->findOrFail($order->id);
+                User::query()->lockForUpdate()->findOrFail($lockedOrder->user_id);
                 $package = $lockedOrder->learningPackage()->lockForUpdate()->firstOrFail();
                 abort_unless(
                     in_array($lockedOrder->status, ['pending', 'rejected'], true)
@@ -410,7 +430,10 @@ class OrderController extends Controller
                     422,
                     'Tagihan paket sudah tidak dapat dibayar.'
                 );
-                abort_if($package->payment_due_at?->isPast(), 422, 'Batas pembayaran paket sudah berakhir.');
+                abort_if($package->payment_due_at?->isPast(), 422, 'Batas pembayaran paket sudah berakhir. Tagihan tidak lagi menerima bukti transfer.');
+                if ($conflict = $this->findPackagePaymentConflict($package)) {
+                    abort(422, $conflict['message']);
+                }
 
                 $previousProof = $lockedOrder->payment_proof;
                 $lockedOrder->update([
@@ -452,10 +475,121 @@ class OrderController extends Controller
                 'title' => 'Bukti pembayaran paket',
                 'message' => "Tagihan {$order->order_id} menunggu pemeriksaan.",
                 'type' => 'info',
+                'target_url' => '/admin/pembayaran',
             ])
         );
 
         return response()->json(['message' => 'Bukti transfer paket berhasil dikirim.']);
+    }
+
+    private function paymentError(string $message, int $status, string $code, array $extra = [])
+    {
+        return response()->json([
+            'message' => $message,
+            'error_code' => $code,
+            ...$extra,
+        ], $status);
+    }
+
+    private function scheduleConflictResponse(array $conflict)
+    {
+        return $this->paymentError(
+            $conflict['message'],
+            422,
+            'schedule_conflict',
+            ['conflict' => $conflict['conflict']]
+        );
+    }
+
+    private function findBookingPaymentConflict(Booking $booking): ?array
+    {
+        if (!$booking->start_at || !$booking->end_at) {
+            return null;
+        }
+
+        $hasConflict = Booking::query()
+            ->where('student_id', $booking->student_id)
+            ->where('id', '!=', $booking->id)
+            ->whereIn('status', [
+                'awaiting_payment', 'payment_submitted', 'confirmed', 'in_progress',
+                'awaiting_student_approval', 'disputed', 'admin_review_required',
+            ])
+            ->where('start_at', '<', $booking->end_at)
+            ->where('end_at', '>', $booking->start_at)
+            ->exists();
+
+        if (!$hasConflict) {
+            return null;
+        }
+
+        return $this->scheduleConflictPayload(
+            'Kelas',
+            $booking->start_at,
+            $booking->end_at
+        );
+    }
+
+    private function findPackagePaymentConflict(LearningPackage $package): ?array
+    {
+        $package->loadMissing('subjects.sessions');
+
+        foreach ($package->subjects as $subject) {
+            foreach ($subject->sessions as $session) {
+                if (!$session->scheduled_start_at || !$session->scheduled_end_at) {
+                    continue;
+                }
+
+                $bookingConflict = Booking::query()
+                    ->where('student_id', $package->student_id)
+                    ->whereIn('status', [
+                        'awaiting_payment', 'payment_submitted', 'confirmed', 'in_progress',
+                        'awaiting_student_approval', 'disputed', 'admin_review_required',
+                    ])
+                    ->where('start_at', '<', $session->scheduled_end_at)
+                    ->where('end_at', '>', $session->scheduled_start_at)
+                    ->whereDoesntHave('bookingRequest.packageSubject', fn ($query) => $query
+                        ->where('learning_package_id', $package->id))
+                    ->exists();
+
+                $packageConflict = PackageSession::query()
+                    ->where('id', '!=', $session->id)
+                    ->whereHas('subject.package', fn ($query) => $query
+                        ->where('student_id', $package->student_id)
+                        ->where('id', '!=', $package->id)
+                        ->whereNotIn('status', ['cancelled', 'payment_expired', 'completed']))
+                    ->where('scheduled_start_at', '<', $session->scheduled_end_at)
+                    ->where('scheduled_end_at', '>', $session->scheduled_start_at)
+                    ->exists();
+
+                if ($bookingConflict || $packageConflict) {
+                    return $this->scheduleConflictPayload(
+                        $subject->subject_name ?: 'Sesi paket',
+                        $session->scheduled_start_at,
+                        $session->scheduled_end_at
+                    );
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function scheduleConflictPayload(string $subject, $start, $end): array
+    {
+        $timezone = config('app.timezone', 'Asia/Jakarta');
+        $localStart = $start->copy()->timezone($timezone);
+        $localEnd = $end->copy()->timezone($timezone);
+        $startLabel = $localStart->format('d/m/Y H.i');
+        $endLabel = $localEnd->format('H.i');
+
+        return [
+            'message' => "Jadwal {$subject} pada {$startLabel}–{$endLabel} bertabrakan dengan kelas atau paket lain yang masih aktif. Jika belum transfer, jangan lanjutkan pembayaran dan atur ulang jadwal. Jika sudah transfer, jangan membayar ulang; hubungi admin melalui Bantuan agar pembayaran dapat ditindaklanjuti.",
+            'conflict' => [
+                'subject' => $subject,
+                'start_at' => $localStart->toIso8601String(),
+                'end_at' => $localEnd->toIso8601String(),
+            ],
+        ];
     }
 
     private function expirePackageOrder(Order $order): void
@@ -503,6 +637,7 @@ class OrderController extends Controller
                 'title' => 'Batas pembayaran paket berakhir',
                 'message' => 'Tagihan dibatalkan karena pembayaran tidak diselesaikan dalam 48 jam.',
                 'type' => 'warning',
+                'target_url' => '/student/history',
             ]);
         }, 3);
     }

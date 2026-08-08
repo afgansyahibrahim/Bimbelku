@@ -23,6 +23,7 @@ import {
 
 import StudentLayout from "@/components/StudentLayout";
 import { getCached } from "@/lib/http";
+import { NAVIGATION_ATTENTION_CHANGED_EVENT, pageGroupForPath, type AttentionNotification } from "@/lib/navigationAttention";
 
 type Student = {
   name?: string;
@@ -43,18 +44,20 @@ type Shortcut = {
   icon: typeof UserRound;
   action?: () => void;
   state?: { from: string };
+  attention?: boolean;
+  attentionCount?: number;
 };
 
 const Group = ({ title, items }: { title: string; items: Shortcut[] }) => (
   <section className="overflow-hidden rounded-[1.75rem] border border-slate-100 bg-white shadow-sm">
     <h2 className="border-b border-slate-100 px-5 py-4 text-sm font-black text-slate-900 sm:px-6">{title}</h2>
     <div className="divide-y divide-slate-100">
-      {items.map(({ label, description, to, icon: Icon, action, state }) => {
+      {items.map(({ label, description, to, icon: Icon, action, state, attention, attentionCount }) => {
         const content = (
           <>
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-blue-50 text-blue-600"><Icon size={20} /></span>
             <span className="min-w-0 flex-1 text-left">
-              <span className="block text-sm font-black text-slate-800">{label}</span>
+              <span className="flex flex-wrap items-center gap-2 text-sm font-black text-slate-800">{label}{attention && <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-black text-rose-600 ring-1 ring-rose-100"><span className="h-1.5 w-1.5 rounded-full bg-rose-500" />{attentionCount && attentionCount > 1 ? `${attentionCount} baru` : "Baru"}</span>}</span>
               <span className="mt-0.5 block text-xs font-medium leading-5 text-slate-500">{description}</span>
             </span>
             <ChevronRight size={18} className="shrink-0 text-slate-300" />
@@ -70,14 +73,50 @@ const Group = ({ title, items }: { title: string; items: Shortcut[] }) => (
 export default function Account() {
   const [student, setStudent] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
+  const [attentionNotifications, setAttentionNotifications] = useState<AttentionNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     void getCached<Student>("/user", { maxAgeMs: 60_000 })
       .then((response) => setStudent(response.data))
       .finally(() => setLoading(false));
+
+    const loadAttention = (force = false) => {
+      void getCached<{ attention_notifications?: AttentionNotification[]; unread_count?: number }>("/notifications", { maxAgeMs: 15_000, force })
+        .then((response) => {
+          setAttentionNotifications(Array.isArray(response.data.attention_notifications) ? response.data.attention_notifications : []);
+          setUnreadCount(Number(response.data.unread_count || 0));
+        })
+        .catch(() => {
+          if (!force) {
+            setAttentionNotifications([]);
+            setUnreadCount(0);
+          }
+        });
+    };
+
+    loadAttention(false);
+    const sync = () => loadAttention(true);
+    window.addEventListener(NAVIGATION_ATTENTION_CHANGED_EVENT, sync);
+    return () => window.removeEventListener(NAVIGATION_ATTENTION_CHANGED_EVENT, sync);
   }, []);
 
   const openTutorial = () => window.dispatchEvent(new Event("bimbelku:open-tutorial"));
+
+  const attentionCountFor = (...groupKeys: string[]) => attentionNotifications.filter((notification) => {
+    if (notification.is_read) return false;
+    if (!notification.target_url) return false;
+    const group = pageGroupForPath("student", notification.target_url);
+    return Boolean(group && groupKeys.includes(group.key));
+  }).length;
+
+  const packageAttention = attentionCountFor("student-packages");
+  const classAttention = attentionCountFor("student-classes");
+  const progressAttention = attentionCountFor("student-progress");
+  const historyAttention = attentionCountFor("student-history");
+  const voucherAttention = attentionCountFor("student-vouchers");
+  const helpAttention = attentionCountFor("student-help");
+  const profileAttention = attentionCountFor("student-profile");
 
   return (
     <StudentLayout title="Saya">
@@ -107,23 +146,23 @@ export default function Account() {
 
         <div className="grid gap-5 lg:grid-cols-2">
           <Group title="Belajar dan paket" items={[
-            { label: "Paket Saya", description: "Pantau pembayaran, pencarian tutor, dan paket aktif.", to: "/student/packages", icon: BookOpenCheck },
-            { label: "Jadwal dan riwayat sesi", description: "Lihat sesi mendatang serta pembelajaran yang selesai.", to: "/student/my-classes", icon: CalendarDays },
-            { label: "Perkembangan Belajar", description: "Buka catatan materi dan perkembangan tiap sesi.", to: "/student/progress", icon: GraduationCap },
+            { label: "Paket Saya", description: "Pantau pembayaran, pencarian tutor, dan paket aktif.", to: "/student/packages", icon: BookOpenCheck, attention: packageAttention > 0, attentionCount: packageAttention },
+            { label: "Jadwal dan riwayat sesi", description: "Lihat sesi mendatang serta pembelajaran yang selesai.", to: "/student/my-classes", icon: CalendarDays, attention: classAttention > 0, attentionCount: classAttention },
+            { label: "Perkembangan Belajar", description: "Buka catatan materi dan perkembangan tiap sesi.", to: "/student/progress", icon: GraduationCap, attention: progressAttention > 0, attentionCount: progressAttention },
             { label: "Tutor Saya", description: "Lihat tutor pada paket yang sudah aktif.", to: "/student/packages", icon: Star },
             { label: "Perpanjang Paket", description: "Perpanjangan tersedia menjelang masa paket berakhir.", to: "/student/packages", icon: RefreshCw },
           ]} />
           <Group title="Transaksi dan penawaran" items={[
-            { label: "Voucher Saya", description: "Lihat voucher yang sudah diklaim dan masa berlakunya.", to: "/student/vouchers", icon: BadgePercent },
-            { label: "Pembayaran dan tagihan", description: "Periksa tagihan aktif dan riwayat transfer.", to: "/student/history", icon: CreditCard },
+            { label: "Voucher Saya", description: "Lihat voucher yang sudah diklaim dan masa berlakunya.", to: "/student/vouchers", icon: BadgePercent, attention: voucherAttention > 0, attentionCount: voucherAttention },
+            { label: "Pembayaran dan tagihan", description: "Periksa tagihan aktif dan riwayat transfer.", to: "/student/history", icon: CreditCard, attention: historyAttention > 0, attentionCount: historyAttention },
             { label: "Riwayat transaksi", description: "Pantau status pembayaran, refund, dan bukti transfer.", to: "/student/history", icon: History },
-            { label: "Refund dan keberatan", description: "Lihat status pengembalian dana atau minta bantuan kasus.", to: "/student/help", icon: WalletCards },
+            { label: "Refund dan keberatan", description: "Lihat status pengembalian dana atau minta bantuan kasus.", to: "/student/help", icon: WalletCards, attention: helpAttention > 0, attentionCount: helpAttention },
             { label: "Catatan tutor", description: "Buka ringkasan dan bukti pembelajaran dari tutor.", to: "/student/progress", icon: ClipboardList },
           ]} />
           <Group title="Pengaturan akun" items={[
-            { label: "Profil dan lokasi belajar", description: "Atur identitas, pendidikan, alamat, dan persetujuan lokasi.", to: "/student/profile", icon: UserRound },
+            { label: "Profil dan lokasi belajar", description: "Atur identitas, pendidikan, alamat, dan persetujuan lokasi.", to: "/student/profile", icon: UserRound, attention: profileAttention > 0, attentionCount: profileAttention },
             { label: "Keamanan akun", description: "Ubah kata sandi dan periksa perlindungan akun.", to: "/student/profile", icon: LockKeyhole },
-            { label: "Notifikasi", description: "Notifikasi terbaru tersedia dari ikon lonceng di bagian atas.", to: "/student/dashboard", icon: Bell },
+            { label: "Notifikasi", description: unreadCount > 0 ? `${unreadCount} notifikasi belum dibaca. Buka untuk melihat isi dan tujuan yang jelas.` : "Lihat seluruh pemberitahuan akun di satu tempat.", to: "/student/notifications", icon: Bell, attention: unreadCount > 0, attentionCount: unreadCount },
             { label: "Privasi", description: "Baca kebijakan penggunaan dan perlindungan data.", to: "/privacy", state: { from: "/student/account" }, icon: ShieldCheck },
           ]} />
           <Group title="Bantuan dan informasi" items={[

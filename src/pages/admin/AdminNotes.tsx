@@ -1,8 +1,8 @@
+import { notify } from "@/lib/notify";
 import { API_BASE_URL } from "@/lib/http";
 import { useState, useEffect } from "react";
 import AdminLayout from "../../components/AdminLayout";
 import axios from "axios";
-import { toast } from "sonner";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { 
   Plus, Search, Pin, Trash2, X, Palette, Loader2, Save
@@ -76,7 +76,7 @@ export default function AdminNotes() {
 
   const handleSave = async () => {
     if (!title.trim() && !content.trim()) {
-      toast.error("Isi judul atau catatan terlebih dahulu.");
+      notify.error("Isi judul atau catatan terlebih dahulu.");
       return;
     }
 
@@ -91,18 +91,18 @@ export default function AdminNotes() {
           headers: { Authorization: `Bearer ${token}` }
         });
         setNotes(prev => prev.map(n => n.id === editingNote.id ? res.data.data : n));
-        toast.success("Catatan diperbarui!");
+        notify.success("Catatan diperbarui!");
       } else {
         // Create
         const res = await axios.post(`${API_BASE_URL}/admin/notes`, payload, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setNotes(prev => [res.data.data, ...prev]);
-        toast.success("Catatan disimpan!");
+        notify.success("Catatan disimpan!");
       }
       setIsModalOpen(false);
     } catch (e) {
-      toast.error("Gagal menyimpan catatan.");
+      notify.error("Gagal menyimpan catatan.");
     } finally {
       setIsSaving(false);
     }
@@ -124,9 +124,9 @@ export default function AdminNotes() {
         headers: { Authorization: `Bearer ${token}` }
       });
       setNotes(prev => prev.filter(n => n.id !== id));
-      toast.success("Catatan dihapus.");
+      notify.success("Catatan dihapus.");
     } catch (e) {
-      toast.error("Gagal menghapus.");
+      notify.error("Gagal menghapus.");
     }
   };
 

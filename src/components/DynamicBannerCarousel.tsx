@@ -71,6 +71,10 @@ export default function DynamicBannerCarousel({ audience = "student" }: { audien
       className="group relative min-h-[180px] w-full min-w-0 overflow-hidden rounded-[1.5rem] bg-gradient-to-br from-blue-700 via-indigo-700 to-violet-800 text-white shadow-xl sm:min-h-[260px] sm:rounded-[2rem]"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPaused(false);
+      }}
       onTouchStart={(event) => {
         setPaused(true);
         didSwipe.current = false;
@@ -94,6 +98,7 @@ export default function DynamicBannerCarousel({ audience = "student" }: { audien
           src={banner.image_url}
           alt=""
           loading="eager"
+          fetchPriority="high"
           decoding="async"
           className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-[1.025]"
         />
@@ -101,7 +106,7 @@ export default function DynamicBannerCarousel({ audience = "student" }: { audien
         <>
           <div className="absolute -right-12 -top-16 h-56 w-56 rounded-full border-[30px] border-white/10 sm:h-72 sm:w-72" />
           <div className="absolute right-6 top-12 grid h-20 w-20 place-items-center rounded-3xl bg-white/10 backdrop-blur sm:right-12 sm:top-16 sm:h-24 sm:w-24">
-            <ImageIcon size={34} className="text-white/80 sm:size-[38px]" />
+            <ImageIcon size={34} className="text-white/90 sm:size-[38px]" />
           </div>
         </>
       )}
@@ -115,7 +120,7 @@ export default function DynamicBannerCarousel({ audience = "student" }: { audien
             {banner.title}
           </h2>
           {banner.description && (
-            <p className="mt-1.5 line-clamp-2 break-words text-[11px] font-medium leading-4 text-white/85 sm:mt-2 sm:text-base sm:leading-6">
+            <p className="mt-1.5 line-clamp-2 break-words text-[11px] font-medium leading-4 text-white/95 sm:mt-2 sm:text-base sm:leading-6">
               {banner.description}
             </p>
           )}
@@ -183,6 +188,7 @@ export default function DynamicBannerCarousel({ audience = "student" }: { audien
           </div>
 
           <div
+            role="group"
             className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 gap-1.5 rounded-full bg-slate-950/20 px-2 py-1.5 backdrop-blur"
             aria-label={`${active + 1} dari ${items.length} banner`}
           >
@@ -191,6 +197,7 @@ export default function DynamicBannerCarousel({ audience = "student" }: { audien
                 key={item.id}
                 type="button"
                 aria-label={`Buka banner ${index + 1}`}
+                aria-current={index === active ? "true" : undefined}
                 onClick={() => setActive(index)}
                 className={`h-1.5 rounded-full transition-all ${index === active ? "w-5 bg-white" : "w-1.5 bg-white/50"}`}
               />

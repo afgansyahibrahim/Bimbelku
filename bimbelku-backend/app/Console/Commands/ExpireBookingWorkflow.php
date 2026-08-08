@@ -122,6 +122,7 @@ class ExpireBookingWorkflow extends Command
                                 'title' => 'Pencocokan berakhir',
                                 'message' => 'Murid tidak memberikan keputusan profil dalam batas waktu.',
                                 'type' => 'info',
+                                'target_url' => '/guru/permintaan',
                             ]);
                         }
                         $count++;
@@ -192,6 +193,7 @@ class ExpireBookingWorkflow extends Command
                             'title' => 'Batas pembayaran paket berakhir',
                             'message' => 'Slot tutor dilepas karena pembayaran paket tidak diselesaikan dalam 48 jam.',
                             'type' => 'warning',
+                            'target_url' => '/student/history',
                         ]);
                         $count++;
                     }, 3);
@@ -246,6 +248,7 @@ class ExpireBookingWorkflow extends Command
                             'title' => 'Batas pembayaran berakhir',
                             'message' => 'Tagihan dibatalkan karena bukti transfer belum diterima.',
                             'type' => 'warning',
+                            'target_url' => '/student/history',
                         ]);
                         $count++;
                     });
@@ -306,6 +309,7 @@ class ExpireBookingWorkflow extends Command
                                 'title' => 'Kelompok tidak terpenuhi',
                                 'message' => 'Jumlah pembayaran minimum tidak terpenuhi. Refund penuh masuk antrean admin.',
                                 'type' => 'warning',
+                                'target_url' => '/student/history',
                             ]);
                         }
 

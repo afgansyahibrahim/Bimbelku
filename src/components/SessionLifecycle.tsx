@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { WifiOff } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 
 export const SESSION_EXPIRED_EVENT = "bimbelku:session-expired";
 
@@ -17,7 +16,7 @@ export default function SessionLifecycle() {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       sessionStorage.removeItem("bimbelku_payment_order");
-      toast.warning("Sesi telah berakhir. Silakan masuk kembali.");
+      notify.warning("Sesi telah berakhir. Silakan masuk kembali.");
       navigate("/login", { replace: true });
       window.setTimeout(() => {
         handledRef.current = false;
@@ -26,7 +25,7 @@ export default function SessionLifecycle() {
     const handleOffline = () => setOffline(true);
     const handleOnline = () => {
       setOffline(false);
-      toast.success("Koneksi internet tersambung kembali.");
+      notify.success("Koneksi internet tersambung kembali.");
     };
 
     window.addEventListener(SESSION_EXPIRED_EVENT, handleExpired);
@@ -48,7 +47,7 @@ export default function SessionLifecycle() {
       aria-live="assertive"
       className="fixed inset-x-3 top-3 z-[300] mx-auto flex max-w-xl items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-bold text-amber-900 shadow-xl"
     >
-      <WifiOff size={17} className="shrink-0" />
+      <span aria-hidden="true" className="text-base">●</span>
       Koneksi terputus. Data yang belum dikirim tetap berada di formulir.
     </div>
   );

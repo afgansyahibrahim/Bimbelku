@@ -1,8 +1,8 @@
+import { notify } from "@/lib/notify";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { X, Clock, CreditCard, Loader2, AlertTriangle, ChevronRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
 import http, { getCached } from "@/lib/http";
 
 export default function PendingPaymentPopup() {
@@ -149,14 +149,14 @@ export default function PendingPaymentPopup() {
         setIsVisible(false);
         setOrder(null);
         setShowConfirmCancel(false);
-        toast.success("Pesanan berhasil dibatalkan.");
+        notify.success("Pesanan berhasil dibatalkan.");
         
         // Jika sedang di halaman payment, tendang ke luar
         if (location.pathname === '/payment') {
             navigate("/search");
         }
     } catch (error) {
-        toast.error("Gagal membatalkan pesanan.");
+        notify.error("Gagal membatalkan pesanan.");
     } finally {
         setIsCancelling(false);
     }

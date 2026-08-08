@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
@@ -11,14 +12,13 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { toast } from "sonner";
 import AdminLayout from "@/components/AdminLayout";
 import ProtectedImage from "@/components/ProtectedImage";
 import { ResponsiveSelect } from "@/components/ResponsiveSelect";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import http, { getApiError } from "@/lib/http";
+import http, { getApiError, getApiErrorDetails } from "@/lib/http";
 
 type Payment = {
   id: number;
@@ -87,7 +87,7 @@ export default function PaymentVerification() {
       const response = await http.get<ResponseData>("/admin/finance/payments");
       setData(response.data);
     } catch (error) {
-      toast.error(getApiError(error, "Data pembayaran tidak dapat dimuat."));
+      notify.error(getApiError(error, "Data pembayaran tidak dapat dimuat."));
     } finally {
       setLoading(false);
     }
@@ -117,13 +117,19 @@ export default function PaymentVerification() {
         status: nextStatus,
         reason: nextStatus === "rejected" ? reason : null,
       });
-      toast.success(response.data?.message || "Pembayaran berhasil diproses.");
+      notify.success(response.data?.message || "Pembayaran berhasil diproses.");
       setProof(null);
       setRejecting(null);
       setRejectReason("");
       await load();
     } catch (error) {
-      toast.error(getApiError(error, "Pembayaran tidak dapat diproses."));
+      const details = getApiErrorDetails(error, "Pembayaran tidak dapat diproses.");
+      notify.error(details.message);
+      // Jika status order berubah dari tab lain / aksi murid, sinkronkan daftar admin
+      // agar tombol lama tidak terus terlihat dan memicu aksi pada data stale.
+      if (details.status === 409 || details.status === 422) {
+        await load();
+      }
     } finally {
       setProcessingId(null);
     }
@@ -141,7 +147,7 @@ export default function PaymentVerification() {
 
   const reject = async () => {
     if (!rejecting || rejectReason.trim().length < 10) {
-      toast.error("Alasan penolakan minimal 10 karakter.");
+      notify.error("Alasan penolakan minimal 10 karakter.");
       return;
     }
     const approved = await confirm({
@@ -185,6 +191,7 @@ export default function PaymentVerification() {
                     { value: "rejected", label: "Ditolak" },
                     { value: "refund_pending", label: "Menunggu refund" },
                     { value: "refunded", label: "Sudah direfund" },
+                    { value: "cancelled", label: "Dibatalkan" },
                   ]}
                   onValueChange={setStatus}
                 />

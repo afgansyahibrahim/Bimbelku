@@ -1,8 +1,8 @@
+import { notify } from "@/lib/notify";
 import { API_BASE_URL } from "@/lib/http";
 import { useState, useEffect } from "react";
 import AdminLayout from "../../components/AdminLayout"; // Sesuaikan path import
 import axios from "axios";
-import { toast } from "sonner";
 import { 
   Search, Send, User, CheckCircle2, X, MessageSquare, Loader2
 } from "lucide-react";
@@ -49,7 +49,7 @@ export default function SendMessage() {
         setUsers(allUsers);
         setFilteredUsers(allUsers);
     } catch (error) {
-        toast.error("Daftar pengguna gagal dimuat.");
+        notify.error("Daftar pengguna gagal dimuat.");
     } finally {
         setIsLoading(false);
     }
@@ -64,7 +64,7 @@ export default function SendMessage() {
 
   const handleSend = async () => {
       if(!selectedUser || !messageTitle.trim() || !messageBody.trim()) {
-          toast.error("Judul dan pesan wajib diisi.");
+          notify.error("Judul dan pesan wajib diisi.");
           return;
       }
       const approved = await confirm({
@@ -88,11 +88,11 @@ export default function SendMessage() {
               headers: { Authorization: `Bearer ${token}` }
           });
           
-          toast.success(`Pesan terkirim ke ${selectedUser.name}`);
+          notify.success(`Pesan terkirim ke ${selectedUser.name}`);
           setIsModalOpen(false);
       } catch (error) {
           console.error(error);
-          toast.error("Gagal mengirim pesan.");
+          notify.error("Gagal mengirim pesan.");
       } finally {
           setIsSending(false);
       }

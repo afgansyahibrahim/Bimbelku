@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -7,7 +8,6 @@ import {
   CalendarDays,
   Clock3,
   CreditCard,
-  Loader2,
   MapPin,
   MessageSquare,
   Monitor,
@@ -17,7 +17,6 @@ import {
   UserRound,
   WifiOff,
 } from "lucide-react";
-import { toast } from "sonner";
 import axios from "axios";
 
 import DynamicBannerCarousel from "@/components/DynamicBannerCarousel";
@@ -70,8 +69,17 @@ type DashboardData = {
 
 const activeStatuses = ["active", "payment_submitted", "awaiting_payment", "payment_rejected", "matching", "teacher_pending", "no_teacher", "refund_pending"];
 
+const storedStudentName = () => {
+  try {
+    const value = JSON.parse(localStorage.getItem("user") || "null")?.name;
+    return typeof value === "string" && value.trim() ? value.trim() : "Murid";
+  } catch {
+    return "Murid";
+  }
+};
+
 export default function Dashboard() {
-  const [name, setName] = useState("Murid");
+  const [name, setName] = useState(storedStudentName);
   const [data, setData] = useState<DashboardData>({
     packages: [],
     voucher_count: 0,
@@ -85,12 +93,16 @@ export default function Dashboard() {
 
   const load = async () => {
     try {
-      const [userResponse, dashboardResponse] = await Promise.all([
-        getCached<{ name: string }>("/user", { maxAgeMs: 60_000 }),
-        getCached<DashboardData>("/student/dashboard-v2", { maxAgeMs: 10_000 }),
-      ]);
-      const rawName = userResponse.data?.name;
-      setName(typeof rawName === "string" && rawName.trim() ? rawName.trim() : "Murid");
+      // Nama dapat tampil dari penyimpanan lokal. Request profil tetap diperbarui
+      // di belakang layar sehingga dashboard tidak menunggu endpoint kedua.
+      void getCached<{ name: string }>("/user", { maxAgeMs: 60_000 })
+        .then((response) => {
+          const rawName = response.data?.name;
+          if (typeof rawName === "string" && rawName.trim()) setName(rawName.trim());
+        })
+        .catch(() => undefined);
+
+      const dashboardResponse = await getCached<DashboardData>("/student/dashboard-v2", { maxAgeMs: 10_000 });
       const raw = dashboardResponse.data as Partial<DashboardData> | null | undefined;
       const packages = Array.isArray(raw?.packages)
         ? raw.packages.map((packageItem) => ({
@@ -131,7 +143,7 @@ export default function Dashboard() {
       } else {
         setError("generic");
       }
-      toast.error(getApiError(error, "Dashboard murid gagal dimuat."));
+      notify.error(getApiError(error, "Dashboard murid gagal dimuat."));
     } finally {
       setLoading(false);
     }
@@ -151,19 +163,23 @@ export default function Dashboard() {
     () => data.packages.find((item) => activeStatuses.includes(item.status)),
     [data.packages],
   );
-  const allSubjects = data.packages.flatMap((item) => Array.isArray(item.subjects) ? item.subjects : []);
-  const nearestSubjectSessions = allSubjects
-    .flatMap((subject) => (Array.isArray(subject.sessions) ? subject.sessions : []).map((session) => ({ ...session, subject: subject.name })))
-    .filter((session) => new Date(session.start_at).getTime() >= Date.now())
-    .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
-    .slice(0, 3);
+  const nearestSubjectSessions = useMemo(() => {
+    const now = Date.now();
+    return data.packages
+      .flatMap((item) => Array.isArray(item.subjects) ? item.subjects : [])
+      .flatMap((subject) => (Array.isArray(subject.sessions) ? subject.sessions : [])
+        .map((session) => ({ ...session, subject: subject.name })))
+      .filter((session) => new Date(session.start_at).getTime() >= now)
+      .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
+      .slice(0, 3);
+  }, [data.packages]);
 
   return (
     <StudentLayout title="Beranda">
       <div className="w-full min-w-0 space-y-5 overflow-hidden pb-20 sm:space-y-6">
         <div className="flex min-w-0 items-end justify-between gap-4">
           <div>
-            <p className="text-xs font-black uppercase tracking-[.18em] text-indigo-500">Beranda murid</p>
+            <p className="text-xs font-black uppercase tracking-[.18em] text-indigo-600">Beranda murid</p>
             <h1 className="mt-2 text-2xl font-black text-slate-900 sm:text-3xl">Halo, {loading ? "…" : name.split(" ")[0]}!</h1>
           </div>
           <Link to="/student/packages/new" className="hidden items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-black text-white sm:flex">
@@ -174,7 +190,7 @@ export default function Dashboard() {
         <DynamicBannerCarousel audience="student" />
 
         {loading ? (
-          <div className="grid min-h-48 place-items-center"><Loader2 className="animate-spin text-indigo-600" size={34} /></div>
+          <DashboardSkeleton />
         ) : error ? (
           <ErrorState error={error} onRetry={retry} />
         ) : (
@@ -199,23 +215,23 @@ export default function Dashboard() {
                     <MessageSquare size={21} />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-orange-500">Pesan baru</p>
+                    <p className="text-[10px] font-black uppercase tracking-wider text-orange-700">Pesan baru</p>
                     <p className="mt-1 break-words text-lg font-black text-slate-900 sm:text-xl">{data.unread_messages_count} pesan belum dibaca</p>
                     <p className="mt-1 text-sm text-slate-500">Buka percakapan untuk membalas.</p>
                   </div>
                 </div>
-                <ArrowRight size={20} className="shrink-0 text-slate-400 transition group-hover:translate-x-1" />
+                <ArrowRight size={20} className="shrink-0 text-slate-500 transition group-hover:translate-x-1" />
               </Link>
             )}
 
             {data.recent_notifications.length > 0 && (
-              <section className="w-full min-w-0 overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-5">
+              <section className="render-auto w-full min-w-0 overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-5">
                 <div className="flex min-w-0 items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h2 className="break-words text-lg font-black text-slate-900 sm:text-xl">Notifikasi Terbaru</h2>
                     <p className="mt-1 text-sm text-slate-500">3 notifikasi terakhir.</p>
                   </div>
-                  <Link to="/student/account" className="shrink-0 text-xs font-black text-indigo-600 sm:text-sm">Semua</Link>
+                  <Link to="/student/notifications" className="shrink-0 text-xs font-black text-indigo-600 sm:text-sm">Semua</Link>
                 </div>
                 <div className="mt-4 space-y-3">
                   {data.recent_notifications.slice(0, 3).map((notif) => (
@@ -227,7 +243,7 @@ export default function Dashboard() {
                       <div className="min-w-0 flex-1">
                         <p className={`text-sm ${notif.is_read ? 'font-medium text-slate-600' : 'font-bold text-slate-900'}`}>{notif.title}</p>
                         <p className="mt-1 text-xs text-slate-500 line-clamp-1">{notif.message}</p>
-                        <p className="mt-1 text-[10px] text-slate-400">
+                        <p className="mt-1 text-[10px] text-slate-500">
                           {new Date(notif.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
                         </p>
                       </div>
@@ -247,17 +263,17 @@ export default function Dashboard() {
                     <AlertCircle size={21} />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-rose-500">Memerlukan perhatian</p>
+                    <p className="text-[10px] font-black uppercase tracking-wider text-rose-700">Memerlukan perhatian</p>
                     <p className="mt-1 text-xl font-black text-slate-900">{data.active_disputes_count} sengketa aktif</p>
                     <p className="mt-1 text-sm text-slate-500">Admin akan menyelesaikan dalam 7 hari.</p>
                   </div>
                 </div>
-                <ArrowRight size={20} className="shrink-0 text-slate-400 transition group-hover:translate-x-1" />
+                <ArrowRight size={20} className="shrink-0 text-slate-500 transition group-hover:translate-x-1" />
               </Link>
             )}
 
             {activePackage?.subjects.length ? (
-              <section className="w-full min-w-0 overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-6">
+              <section className="render-auto w-full min-w-0 overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-6">
                 <div className="flex min-w-0 items-start justify-between gap-3">
                   <div className="min-w-0"><h2 className="break-words text-lg font-black text-slate-900 sm:text-xl">Mata pelajaran saya</h2><p className="mt-1 break-words text-xs leading-5 text-slate-500 sm:text-sm">Tutor dan progres dipisahkan untuk setiap mapel.</p></div>
                   <Link to="/student/packages" className="shrink-0 pt-0.5 text-xs font-black text-indigo-600 sm:text-sm">Detail</Link>
@@ -270,13 +286,13 @@ export default function Dashboard() {
                       <div key={subject.id} className="w-full min-w-0 overflow-hidden rounded-2xl bg-slate-50 p-3.5 sm:rounded-3xl sm:p-4">
                         <div className="flex items-center gap-3">
                           <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-white text-indigo-600 shadow-sm sm:h-11 sm:w-11">
-                            {subject.teacher?.avatar_url ? <img src={subject.teacher.avatar_url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <UserRound size={19} />}
+                            {subject.teacher?.avatar_url ? <img src={subject.teacher.avatar_url} alt={`Foto tutor ${subject.teacher.name}`} loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <UserRound size={19} />}
                           </div>
                           <div className="min-w-0 flex-1"><h3 className="truncate font-black text-slate-900">{subject.name}</h3><p className="truncate text-xs text-slate-500">{subject.teacher ? `Tutor ${subject.teacher.name}` : "Tutor sedang dicari"}</p></div>
                           <span className="shrink-0 text-xs font-black text-indigo-700 sm:text-sm">{progress}%</span>
                         </div>
                         <div className="mt-4 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-gradient-to-r from-indigo-600 to-cyan-500" style={{ width: `${progress}%` }} /></div>
-                        <p className="mt-2 text-[11px] font-bold text-slate-400">{completed} dari {subject.allocated_sessions} sesi selesai</p>
+                        <p className="mt-2 text-[11px] font-bold text-slate-500">{completed} dari {subject.allocated_sessions} sesi selesai</p>
                       </div>
                     );
                   })}
@@ -291,7 +307,7 @@ export default function Dashboard() {
               </section>
             )}
 
-            <section className="grid gap-5 lg:grid-cols-[1fr_330px]">
+            <section className="render-auto grid gap-5 lg:grid-cols-[1fr_330px]">
               <div className="w-full min-w-0 overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-6">
                 <div className="flex min-w-0 items-start justify-between gap-3">
                   <div className="min-w-0"><h2 className="break-words text-lg font-black text-slate-900 sm:text-xl">Jadwal minggu ini</h2><p className="mt-1 text-xs text-slate-500 sm:text-sm">Tiga sesi terdekat.</p></div>
@@ -312,7 +328,7 @@ export default function Dashboard() {
                 <Tag className="relative" size={28} />
                 <p className="relative mt-7 text-4xl font-black">{data.voucher_count}</p>
                 <h2 className="relative mt-1 text-lg font-black">Voucher tersedia</h2>
-                <p className="relative mt-2 text-sm text-white/75">Gunakan sebelum masa penawaran berakhir.</p>
+                <p className="relative mt-2 text-sm text-white/90">Gunakan sebelum masa penawaran berakhir.</p>
                 <span className="relative mt-5 inline-flex items-center gap-1 text-sm font-black">Lihat Voucher <ArrowRight size={16} className="transition group-hover:translate-x-1" /></span>
               </Link>
             </section>
@@ -320,6 +336,27 @@ export default function Dashboard() {
         )}
       </div>
     </StudentLayout>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div role="status" aria-live="polite" aria-label="Memuat data dashboard" className="space-y-5">
+      <section className="min-h-36 animate-pulse rounded-[2rem] border border-indigo-100 bg-gradient-to-br from-white to-indigo-50 p-5 motion-reduce:animate-none sm:p-6">
+        <div className="h-4 w-28 rounded-full bg-indigo-100" />
+        <div className="mt-4 h-7 w-3/4 max-w-md rounded-xl bg-slate-200" />
+        <div className="mt-3 h-4 w-full max-w-xl rounded-lg bg-slate-100" />
+      </section>
+      <section className="grid grid-cols-3 gap-2 sm:gap-3" aria-hidden="true">
+        {[0, 1, 2].map((item) => (
+          <div key={item} className="min-h-24 animate-pulse rounded-2xl border border-slate-100 bg-white p-3 motion-reduce:animate-none sm:rounded-3xl sm:p-5">
+            <div className="h-10 w-10 rounded-xl bg-slate-100" />
+            <div className="mt-3 h-3 w-16 rounded bg-slate-100" />
+          </div>
+        ))}
+      </section>
+      <span className="sr-only">Data dashboard sedang dimuat.</span>
+    </div>
   );
 }
 
@@ -351,11 +388,11 @@ function AdaptiveCard({ packageData, nextSession }: { packageData?: PackageData;
 }
 
 function ActionCard({ icon: Icon, eyebrow, title, description, to, action, pulse = false }: { icon: typeof Radar; eyebrow: string; title: string; description: string; to: string; action: string; pulse?: boolean }) {
-  return <section className="max-w-full overflow-hidden rounded-[2rem] border border-indigo-100 bg-gradient-to-br from-white to-indigo-50 p-5 shadow-sm sm:p-6"><div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-4"><div className={`grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-200 ${pulse ? "animate-pulse" : ""}`}><Icon size={24} /></div><div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[.18em] text-indigo-500">{eyebrow}</p><h2 className="mt-1 break-words text-lg font-black text-slate-900 sm:text-xl">{title}</h2><p className="mt-1 break-words text-sm text-slate-500">{description}</p></div></div><Link to={to} className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white sm:w-auto">{action} <ArrowRight size={16} /></Link></div></section>;
+  return <section className="max-w-full overflow-hidden rounded-[2rem] border border-indigo-100 bg-gradient-to-br from-white to-indigo-50 p-5 shadow-sm sm:p-6"><div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-4"><div className={`grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-200 ${pulse ? "animate-pulse" : ""}`}><Icon size={24} /></div><div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[.18em] text-indigo-600">{eyebrow}</p><h2 className="mt-1 break-words text-lg font-black text-slate-900 sm:text-xl">{title}</h2><p className="mt-1 break-words text-sm text-slate-500">{description}</p></div></div><Link to={to} className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white sm:w-auto">{action} <ArrowRight size={16} /></Link></div></section>;
 }
 
 function Summary({ icon: Icon, label, value, color }: { icon: typeof BookOpenCheck; label: string; value: string; color: string }) {
-  return <div className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm sm:flex-row sm:gap-4 sm:rounded-3xl sm:p-5 sm:text-left"><div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-white sm:h-12 sm:w-12 sm:rounded-2xl ${color}`}><Icon size={19} /></div><div className="min-w-0"><p className="text-[9px] font-black uppercase tracking-wide text-slate-400 sm:text-[10px] sm:tracking-wider">{label}</p><p className="mt-1 truncate text-base font-black text-slate-900 sm:text-xl">{value}</p></div></div>;
+  return <div className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm sm:flex-row sm:gap-4 sm:rounded-3xl sm:p-5 sm:text-left"><div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-white sm:h-12 sm:w-12 sm:rounded-2xl ${color}`}><Icon size={19} /></div><div className="min-w-0"><p className="text-[9px] font-black uppercase tracking-wide text-slate-500 sm:text-[10px] sm:tracking-wider">{label}</p><p className="mt-1 truncate text-base font-black text-slate-900 sm:text-xl">{value}</p></div></div>;
 }
 
 function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
@@ -366,7 +403,7 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
           <WifiOff className="mx-auto text-slate-300" size={48} />
           <h2 className="mt-4 text-xl font-black text-slate-800">Koneksi Terputus</h2>
           <p className="mt-2 text-sm text-slate-500">Periksa koneksi internet Anda dan coba lagi.</p>
-          <button onClick={onRetry} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 transition-colors">
+          <button type="button" onClick={onRetry} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 transition-colors">
             <RefreshCw size={16} /> Coba Lagi
           </button>
         </div>
@@ -396,7 +433,7 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
           <AlertCircle className="mx-auto text-slate-300" size={48} />
           <h2 className="mt-4 text-xl font-black text-slate-800">Data Tidak Ditemukan</h2>
           <p className="mt-2 text-sm text-slate-500">Dashboard tidak dapat dimuat saat ini.</p>
-          <button onClick={onRetry} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 transition-colors">
+          <button type="button" onClick={onRetry} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 transition-colors">
             <RefreshCw size={16} /> Coba Lagi
           </button>
         </div>
@@ -426,7 +463,7 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
         <AlertCircle className="mx-auto text-rose-500" size={48} />
         <h2 className="mt-4 text-xl font-black text-slate-800">Terjadi Kesalahan</h2>
         <p className="mt-2 text-sm text-slate-500">Dashboard tidak dapat dimuat. Silakan coba lagi.</p>
-        <button onClick={onRetry} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 transition-colors">
+        <button type="button" onClick={onRetry} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 transition-colors">
           <RefreshCw size={16} /> Coba Lagi
         </button>
       </div>

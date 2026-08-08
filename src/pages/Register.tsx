@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useState } from "react";
+import { notify } from "@/lib/notify";
+import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -20,16 +21,17 @@ import {
   User,
   UserRoundCheck,
 } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import CameraCapture from "@/components/CameraCapture";
 import DateOfBirthInput from "@/components/DateOfBirthInput";
-import SubjectCombobox, { SubjectOption } from "@/components/SubjectCombobox";
+
+const CameraCapture = lazy(() => import("@/components/CameraCapture"));
+const SubjectCombobox = lazy(() => import("@/components/SubjectCombobox"));
+import type { SubjectOption } from "@/components/SubjectCombobox";
 import { EDUCATION_LEVELS } from "@/lib/educationCatalog";
 import http, { getApiError, getCached } from "@/lib/http";
 import {
@@ -111,7 +113,7 @@ export default function Register() {
       extensions: isLiveSelfie ? ["jpg", "jpeg", "png", "webp"] : ["jpg", "jpeg", "png", "webp", "pdf"],
     });
     if (error) {
-      toast.error(error);
+      notify.error(error);
       setFiles((current) => ({ ...current, [key]: undefined }));
       return;
     }
@@ -131,27 +133,27 @@ export default function Register() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!isValidPersonName(form.name)) return toast.error("Nama lengkap harus berisi huruf dan tidak boleh memuat angka.");
-    if (!isValidPhone(form.phone)) return toast.error("Nomor WhatsApp/telepon harus berisi 8–15 angka.");
-    if (form.password !== form.password_confirmation) return toast.error("Konfirmasi kata sandi belum sama.");
-    if (!isValidHttpUrl(form.maps_link)) return toast.error("Tautan Google Maps harus diawali http:// atau https://.");
-    if (!isValidHttpUrl(form.linkedin)) return toast.error("Tautan LinkedIn atau portofolio belum valid.");
-    if (role === "student" && !form.date_of_birth) return toast.error("Tanggal lahir murid wajib diisi.");
-    if (isMinorStudent && !isValidPersonName(form.guardian_name)) return toast.error("Nama orang tua atau wali harus berisi huruf dan tidak boleh memuat angka.");
-    if (isMinorStudent && !isValidPhone(form.guardian_phone)) return toast.error("Nomor orang tua atau wali harus berisi 8–15 angka.");
+    if (!isValidPersonName(form.name)) return notify.error("Nama lengkap harus berisi huruf dan tidak boleh memuat angka.");
+    if (!isValidPhone(form.phone)) return notify.error("Nomor WhatsApp/telepon harus berisi 8–15 angka.");
+    if (form.password !== form.password_confirmation) return notify.error("Konfirmasi kata sandi belum sama.");
+    if (!isValidHttpUrl(form.maps_link)) return notify.error("Tautan Google Maps harus diawali http:// atau https://.");
+    if (!isValidHttpUrl(form.linkedin)) return notify.error("Tautan LinkedIn atau portofolio belum valid.");
+    if (role === "student" && !form.date_of_birth) return notify.error("Tanggal lahir murid wajib diisi.");
+    if (isMinorStudent && !isValidPersonName(form.guardian_name)) return notify.error("Nama orang tua atau wali harus berisi huruf dan tidak boleh memuat angka.");
+    if (isMinorStudent && !isValidPhone(form.guardian_phone)) return notify.error("Nomor orang tua atau wali harus berisi 8–15 angka.");
     if (
       isMinorStudent
       && (!form.guardian_name.trim() || !form.guardian_relationship || !guardianConsent)
     ) {
-      return toast.error("Data dan persetujuan orang tua atau wali wajib dilengkapi.");
+      return notify.error("Data dan persetujuan orang tua atau wali wajib dilengkapi.");
     }
-    if (role === "teacher" && !form.expertise) return toast.error("Pilih satu mata pelajaran utama.");
-    if (role === "teacher" && levels.length === 0) return toast.error("Pilih minimal satu jenjang yang dapat diajar.");
+    if (role === "teacher" && !form.expertise) return notify.error("Pilih satu mata pelajaran utama.");
+    if (role === "teacher" && levels.length === 0) return notify.error("Pilih minimal satu jenjang yang dapat diajar.");
     if (
       role === "teacher"
       && (!files.identity_document || !files.live_selfie || !files.qualification_document)
     ) {
-      return toast.error("Kartu identitas, foto wajah langsung, dan ijazah/kualifikasi wajib dilengkapi.");
+      return notify.error("Kartu identitas, foto wajah langsung, dan ijazah/kualifikasi wajib dilengkapi.");
     }
 
     const payload = new FormData();
@@ -168,10 +170,10 @@ export default function Register() {
     setSubmitting(true);
     try {
       const response = await http.post("/register", payload);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       navigate("/login", { replace: true });
     } catch (error) {
-      toast.error(getApiError(error, "Pendaftaran gagal. Periksa kembali data Anda."));
+      notify.error(getApiError(error, "Pendaftaran gagal. Periksa kembali data Anda."));
     } finally {
       setSubmitting(false);
     }
@@ -274,20 +276,22 @@ export default function Register() {
                 <div className="flex gap-3 rounded-xl border border-indigo-100 bg-white p-4 text-sm leading-6 text-indigo-800"><ShieldCheck className="shrink-0" size={20} /><p>Semua tutor memakai standar yang sama. Admin memeriksa identitas, foto langsung, dan bukti kualifikasi sebelum akun aktif.</p></div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <FormField label="Satu mata pelajaran" icon={BookOpen}>
-                    <SubjectCombobox
-                      options={subjects}
-                      value={form.expertise}
-                      onChange={(value) => setValue("expertise", value)}
-                      placeholder="Cari mapel utama"
-                      className="bg-white"
-                    />
+                    <Suspense fallback={<div className="h-12 rounded-xl bg-white" aria-hidden="true" />}>
+                      <SubjectCombobox
+                        options={subjects}
+                        value={form.expertise}
+                        onChange={(value) => setValue("expertise", value)}
+                        placeholder="Cari mapel utama"
+                        className="bg-white"
+                      />
+                    </Suspense>
                   </FormField>
                   <FormField label="Metode mengajar" icon={BriefcaseBusiness}><Select value={form.teaching_method} onValueChange={(value) => setValue("teaching_method", value)}><SelectTrigger className="h-12 rounded-xl bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="online">Online</SelectItem><SelectItem value="offline">Offline</SelectItem><SelectItem value="hybrid">Online & offline</SelectItem></SelectContent></Select></FormField>
                 </div>
                 <div><Label className="font-bold text-slate-700">Jenjang yang dapat diajar</Label><div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">{EDUCATION_LEVELS.map((level) => <button type="button" key={level} onClick={() => toggleLevel(level)} className={`rounded-xl border px-3 py-2 text-sm font-bold transition ${levels.includes(level) ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{level}</button>)}</div></div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <FileInput required label="Kartu identitas" icon={FileCheck2} file={files.identity_document} accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(file) => setFile("identity_document", file)} />
-                  <CameraCapture required file={files.live_selfie} onCapture={(file) => setFile("live_selfie", file)} />
+                  <Suspense fallback={<div className="h-24 rounded-xl bg-white" aria-hidden="true" />}><CameraCapture required file={files.live_selfie} onCapture={(file) => setFile("live_selfie", file)} /></Suspense>
                   <FileInput required label="Ijazah/kualifikasi" icon={GraduationCap} file={files.qualification_document} accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(file) => setFile("qualification_document", file)} />
                   <FileInput label="Sertifikat pendukung" icon={FileBadge} file={files.certification_document} accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(file) => setFile("certification_document", file)} />
                 </div>

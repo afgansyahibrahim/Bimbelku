@@ -1,6 +1,6 @@
+import { notify } from "@/lib/notify";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { BookOpen, GraduationCap, Layers3, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { toast } from "sonner";
 import AdminLayout from "@/components/AdminLayout";
 import SubjectCombobox, { SubjectOption } from "@/components/SubjectCombobox";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
@@ -51,7 +51,7 @@ export default function LearningTopics() {
       setChapters(chapterResponse.data || []);
       setSubjects(subjectResponse.data || []);
     } catch (error) {
-      toast.error(getApiError(error, "Katalog bab gagal dimuat."));
+      notify.error(getApiError(error, "Katalog bab gagal dimuat."));
     } finally {
       setLoading(false);
     }
@@ -75,7 +75,7 @@ export default function LearningTopics() {
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (!form.curriculum_subject_id) {
-      toast.error("Pilih mata pelajaran dari daftar.");
+      notify.error("Pilih mata pelajaran dari daftar.");
       return;
     }
     setSaving(true);
@@ -92,11 +92,11 @@ export default function LearningTopics() {
       const response = editing
         ? await http.put(`/admin/chapters/${editing.id}`, payload)
         : await http.post("/admin/chapters", payload);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setEditing(undefined);
       await load();
     } catch (error) {
-      toast.error(getApiError(error, "Bab gagal disimpan."));
+      notify.error(getApiError(error, "Bab gagal disimpan."));
     } finally {
       setSaving(false);
     }
@@ -112,10 +112,10 @@ export default function LearningTopics() {
     if (!approved) return;
     try {
       const response = await http.delete(`/admin/chapters/${chapter.id}`);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await load();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     }
   };
 

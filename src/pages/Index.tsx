@@ -1,10 +1,7 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import Navbar from "@/components/Navbar";
 import HeroSection from "@/components/HeroSection";
 
-// --- LAZY LOAD SECTIONS (Below the fold) ---
-// Komponen ini ada di bawah layar, jadi tidak perlu dimuat di detik pertama.
-// Ini akan meringankan beban awal browser secara drastis.
 const FeaturesSection = lazy(() => import("@/components/FeaturesSection"));
 const TrustStrip = lazy(() => import("@/components/TrustStrip"));
 const HowItWorksSection = lazy(() => import("@/components/HowItWorksSection"));
@@ -14,61 +11,116 @@ const DashboardPreviewSection = lazy(() => import("@/components/DashboardPreview
 const CTASection = lazy(() => import("@/components/CTASection"));
 const Footer = lazy(() => import("@/components/Footer"));
 
-// Komponen Loading Sementara (Placeholder)
-// Fungsinya: Menjaga tempat agar halaman tidak "lompat" saat loading (Mencegah CLS Score buruk)
 const SectionLoader = () => (
   <div className="w-full h-[400px] bg-gray-50/50 animate-pulse flex items-center justify-center my-8">
     <div className="flex flex-col items-center gap-2 opacity-50">
-       <div className="w-10 h-10 border-4 border-gray-300 border-t-orange-500 rounded-full animate-spin"></div>
-       <span className="text-xs font-medium text-gray-400">Memuat Konten...</span>
+      <div className="w-10 h-10 border-4 border-gray-300 border-t-orange-500 rounded-full animate-spin"></div>
+      <span className="text-xs font-medium text-gray-400">Memuat Konten...</span>
     </div>
   </div>
 );
 
+interface DeferredSectionProps {
+  children: React.ReactNode;
+  minHeight: number;
+  rootMargin?: string;
+}
+
+const DeferredSection = ({
+  children,
+  minHeight,
+  rootMargin = "900px 0px",
+}: DeferredSectionProps) => {
+  const markerRef = useRef<HTMLDivElement>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (ready) return;
+    const marker = markerRef.current;
+    if (!marker || !("IntersectionObserver" in window)) {
+      setReady(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        setReady(true);
+        observer.disconnect();
+      },
+      { rootMargin },
+    );
+
+    observer.observe(marker);
+    return () => observer.disconnect();
+  }, [ready, rootMargin]);
+
+  return (
+    <div
+      ref={markerRef}
+      style={ready ? undefined : { minHeight }}
+      aria-hidden={ready ? undefined : true}
+    >
+      {ready ? children : null}
+    </div>
+  );
+};
+
 const Index = () => {
   return (
     <div className="min-h-screen bg-background">
-      
-      {/* 1. BAGIAN ATAS (CRITICAL PATH) - Harus Import Biasa */}
+      {/* Navbar + hero tetap critical agar FCP yang sudah bagus tidak dikorbankan. */}
       <Navbar />
       <main>
         <HeroSection />
 
-        {/* 2. BAGIAN BAWAH - Lazy Load dengan Suspense */}
+        {/* Trust strip dekat fold tetap mulai segera; section berikutnya baru dimount saat mendekati viewport. */}
         <Suspense fallback={<div className="h-20 bg-white" />}>
           <TrustStrip />
         </Suspense>
 
-        <Suspense fallback={<SectionLoader />}>
-          <HowItWorksSection />
-        </Suspense>
+        <DeferredSection minHeight={560}>
+          <Suspense fallback={<SectionLoader />}>
+            <HowItWorksSection />
+          </Suspense>
+        </DeferredSection>
 
-        <Suspense fallback={<SectionLoader />}>
-          <FeaturesSection />
-        </Suspense>
+        <DeferredSection minHeight={620}>
+          <Suspense fallback={<SectionLoader />}>
+            <FeaturesSection />
+          </Suspense>
+        </DeferredSection>
 
-        <Suspense fallback={<SectionLoader />}>
-          <SubjectsSection />
-        </Suspense>
+        <DeferredSection minHeight={560}>
+          <Suspense fallback={<SectionLoader />}>
+            <SubjectsSection />
+          </Suspense>
+        </DeferredSection>
 
-        <Suspense fallback={<SectionLoader />}>
-          <PackagePreviewSection />
-        </Suspense>
+        <DeferredSection minHeight={620}>
+          <Suspense fallback={<SectionLoader />}>
+            <PackagePreviewSection />
+          </Suspense>
+        </DeferredSection>
 
-        <Suspense fallback={<SectionLoader />}>
-          <DashboardPreviewSection />
-        </Suspense>
+        <DeferredSection minHeight={560}>
+          <Suspense fallback={<SectionLoader />}>
+            <DashboardPreviewSection />
+          </Suspense>
+        </DeferredSection>
 
-        <Suspense fallback={<SectionLoader />}>
-          <CTASection />
-        </Suspense>
+        <DeferredSection minHeight={440}>
+          <Suspense fallback={<SectionLoader />}>
+            <CTASection />
+          </Suspense>
+        </DeferredSection>
       </main>
 
-      {/* Footer paling aman di-lazy load karena user jarang langsung scroll ke paling bawah */}
-      <Suspense fallback={<div className="h-32 bg-gray-100 animate-pulse" />}>
-        <Footer />
-      </Suspense>
-
+      <DeferredSection minHeight={420} rootMargin="1200px 0px">
+        <Suspense fallback={<div className="h-32 bg-gray-100 animate-pulse" />}>
+          <Footer />
+        </Suspense>
+      </DeferredSection>
     </div>
   );
 };

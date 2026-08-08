@@ -24,28 +24,32 @@ use App\Models\PromotionClaim;
 use App\Models\Refund;
 use App\Services\HourlyRateService;
 use App\Services\PackageCheckoutService;
+use App\Services\TeacherMatchingService;
 use App\Support\EducationCatalog;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class StudentPackageController extends Controller
 {
-    public function plans()
+    public function plans(Request $request)
     {
-        return response()->json(
+        $plans = Cache::remember('package_plans.active.v2', now()->addMinute(), fn () =>
             PackagePlan::query()
                 ->where('is_active', true)
                 ->orderBy('sort_order')
                 ->orderBy('session_count')
                 ->get()
         );
+
+        return $this->publicCachedResponse($request, $plans, 60);
     }
 
-    public function timeSlots()
+    public function timeSlots(Request $request)
     {
-        return response()->json(
+        $timeSlots = Cache::remember('learning_time_slots.full_hour.v2', now()->addMinute(), fn () =>
             LearningTimeSlot::query()
                 ->where('is_active', true)
                 ->orderBy('sort_order')
@@ -55,6 +59,8 @@ class StudentPackageController extends Controller
                     && substr((string) $slot->start_time, 0, 5) < '23:00')
                 ->values()
         );
+
+        return $this->publicCachedResponse($request, $timeSlots, 60);
     }
 
     public function index(Request $request)
@@ -67,6 +73,8 @@ class StudentPackageController extends Controller
                 'subjects.assignedTeacher.teacherProfile',
                 'subjects.learningTopics',
                 'subjects.sessions.booking',
+                'subjects.bookingRequest.matchingOperationLogs',
+                'subjects.bookingRequest.latestMatchingExhaustion',
                 'orders' => fn ($query) => $query->latest(),
             ])
             ->latest()
@@ -88,6 +96,8 @@ class StudentPackageController extends Controller
             'subjects.assignedTeacher.teacherProfile',
             'subjects.learningTopics',
             'subjects.sessions.booking',
+                'subjects.bookingRequest.matchingOperationLogs',
+                'subjects.bookingRequest.latestMatchingExhaustion',
             'orders' => fn ($query) => $query->latest(),
         ]);
 
@@ -100,7 +110,16 @@ class StudentPackageController extends Controller
         $packages = LearningPackage::query()
             ->where('student_id', $studentId)
             ->whereNotIn('status', ['cancelled', 'payment_expired', 'completed'])
-            ->with(['plan', 'subjects.assignedTeacher', 'subjects.learningTopics', 'subjects.sessions.booking'])
+            ->with([
+                'plan',
+                'promotion',
+                'orders' => fn ($query) => $query->latest(),
+                'subjects.assignedTeacher.teacherProfile',
+                'subjects.learningTopics',
+                'subjects.sessions.booking',
+                'subjects.bookingRequest.matchingOperationLogs',
+                'subjects.bookingRequest.latestMatchingExhaustion',
+            ])
             ->latest()
             ->limit(5)
             ->get()
@@ -636,24 +655,38 @@ class StudentPackageController extends Controller
 
     public function vouchers(Request $request)
     {
+        $query = PromotionClaim::query()
+            ->where('user_id', $request->user()->id)
+            ->latest('claimed_at');
+
+        if ($request->boolean('compact')) {
+            $claims = $query
+                ->where('status', 'available')
+                ->select(['id', 'promotion_id', 'status', 'claimed_at'])
+                ->with(['promotion' => fn ($promotions) => $promotions->select([
+                    'id', 'title', 'discount_type', 'discount_value', 'ends_at',
+                ])])
+                ->limit(30)
+                ->get();
+
+            return response()->json(['data' => $claims]);
+        }
+
         return response()->json(
-            PromotionClaim::query()
-                ->where('user_id', $request->user()->id)
-                ->with('promotion')
-                ->latest('claimed_at')
-                ->paginate(30)
+            $query->with('promotion')->paginate(30)
         );
     }
 
     public function retryMatching(
         Request $request,
         LearningPackage $learningPackage,
-        PackageCheckoutService $checkoutService
+        PackageCheckoutService $checkoutService,
+        TeacherMatchingService $matchingService
     ) {
         abort_unless($learningPackage->student_id === $request->user()->id, 403);
-        $subjectIds = DB::transaction(function () use ($learningPackage, $request) {
+        $subjectIds = DB::transaction(function () use ($learningPackage, $request, $matchingService) {
             $package = LearningPackage::query()
-                ->with('subjects.bookingRequest')
+                ->with('subjects.bookingRequest.matchingOperationLogs')
                 ->lockForUpdate()
                 ->findOrFail($learningPackage->id);
             abort_unless(
@@ -668,48 +701,61 @@ class StudentPackageController extends Controller
             });
             abort_if($subjects->isEmpty(), 422, 'Tidak ada mata pelajaran yang perlu dicari ulang.');
 
+            $retryable = collect();
             foreach ($subjects as $subject) {
                 $bookingRequest = $subject->bookingRequest;
-                $currentRadius = (int) ($bookingRequest?->search_radius_km ?? 3);
-                $nextRadius = match ($currentRadius) {
-                    3 => 5,
-                    5 => 8,
-                    default => 12,
-                };
-                $bookingRequest?->update([
+                if (!$bookingRequest) continue;
+                $currentRadius = (int) ($bookingRequest->search_radius_km ?? 3);
+                $nextRadius = $bookingRequest->learning_mode === 'offline'
+                    ? $matchingService->nextRadius($currentRadius)
+                    : null;
+                $manualRestarts = $bookingRequest->matchingOperationLogs
+                    ->where('action', 'search_restarted')
+                    ->count();
+
+                if ($nextRadius === null && $manualRestarts >= 1) {
+                    continue;
+                }
+
+                $nextScope = $nextRadius ?? $currentRadius;
+                $action = $nextRadius ? 'radius_expanded' : 'search_restarted';
+                $reason = $nextRadius
+                    ? "Murid mengulang pencarian paket dengan memperluas radius {$currentRadius} km menjadi {$nextScope} km."
+                    : 'Murid meminta satu kali pengecekan tutor baru pada jangkauan maksimum yang sama.';
+
+                $bookingRequest->update([
                     'status' => 'matching',
                     'matched_teacher_id' => null,
                     'teacher_response_deadline' => null,
-                    'search_radius_km' => $nextRadius,
+                    'search_radius_km' => $nextScope,
                     'search_started_at' => now(),
-                    'search_expires_at' => now()->addHours(48),
+                    'search_expires_at' => now()->addHours($matchingService->maximumSearchHours()),
                 ]);
                 $subject->update(['status' => 'matching']);
-                if ($bookingRequest && $nextRadius > $currentRadius) {
-                    MatchingOperationLog::create([
-                        'booking_request_id' => $bookingRequest->id,
-                        'actor_id' => $request->user()->id,
-                        'action' => 'radius_expanded',
-                        'reason' => 'Murid mengulang pencarian paket pada jangkauan yang lebih luas.',
-                        'before_state' => [
-                            'status' => 'no_teacher',
-                            'search_radius_km' => $currentRadius,
-                        ],
-                        'after_state' => [
-                            'status' => 'matching',
-                            'search_radius_km' => $nextRadius,
-                        ],
-                        'metadata' => [
-                            'source' => 'student_package',
-                            'package_id' => $package->id,
-                            'package_subject_id' => $subject->id,
-                        ],
-                    ]);
-                }
+                MatchingOperationLog::create([
+                    'booking_request_id' => $bookingRequest->id,
+                    'actor_id' => $request->user()->id,
+                    'action' => $action,
+                    'reason' => $reason,
+                    'before_state' => ['status' => 'no_teacher', 'search_radius_km' => $currentRadius],
+                    'after_state' => ['status' => 'matching', 'search_radius_km' => $nextScope],
+                    'metadata' => [
+                        'source' => 'student_package',
+                        'package_id' => $package->id,
+                        'package_subject_id' => $subject->id,
+                        'maximum_search_hours' => $matchingService->maximumSearchHours(),
+                    ],
+                ]);
+                $retryable->push($subject->id);
             }
-            $package->update(['status' => 'matching']);
 
-            return $subjects->pluck('id')->all();
+            abort_if(
+                $retryable->isEmpty(),
+                422,
+                'Pencarian pada jangkauan maksimum sudah pernah diulang. Ubah jadwal agar sistem mendapat kandidat baru, atau batalkan paket untuk mengajukan refund.'
+            );
+            $package->update(['status' => 'matching']);
+            return $retryable->all();
         }, 3);
 
         $noTeacher = false;
@@ -727,8 +773,129 @@ class StudentPackageController extends Controller
 
         return response()->json([
             'message' => $noTeacher
-                ? 'Pencarian diulang, tetapi belum ada tutor yang tersedia. Coba kembali nanti.'
-                : 'Radar kembali mencari tutor pada jangkauan yang lebih luas.',
+                ? 'Pencarian baru sudah dijalankan, tetapi tutor masih belum tersedia. Periksa alasan di tiap mapel atau ubah jadwal.'
+                : 'Radar memulai pencarian baru dengan batas waktu yang diperbarui.',
+        ]);
+    }
+
+    public function reschedule(
+        Request $request,
+        LearningPackage $learningPackage,
+        PackageCheckoutService $checkoutService,
+        TeacherMatchingService $matchingService
+    ) {
+        abort_unless($learningPackage->student_id === $request->user()->id, 403);
+        $validated = $request->validate([
+            'subjects' => ['required', 'array', 'min:1'],
+            'subjects.*.package_subject_id' => ['required', 'integer', 'distinct', 'exists:package_subjects,id'],
+            'subjects.*.schedules' => ['required', 'array', 'min:1'],
+            'subjects.*.schedules.*' => ['required', 'date'],
+        ]);
+
+        $subjectIds = DB::transaction(function () use ($request, $learningPackage, $validated, $matchingService) {
+            $package = LearningPackage::query()
+                ->with(['plan', 'subjects.sessions', 'subjects.bookingRequest.offers', 'orders'])
+                ->lockForUpdate()
+                ->findOrFail($learningPackage->id);
+            abort_unless($package->student_id === $request->user()->id, 403);
+            abort_unless(in_array($package->status, ['no_teacher', 'matching', 'teacher_pending'], true), 422, 'Jadwal hanya dapat diubah saat tutor belum ditemukan.');
+            abort_unless($package->orders->contains('status', 'paid'), 422, 'Pembayaran paket belum terverifikasi.');
+
+            $durationHours = (int) ($package->duration_hours ?? 1);
+            $activeSlotTimes = LearningTimeSlot::query()->where('is_active', true)->pluck('start_time')
+                ->map(fn ($time) => substr((string) $time, 0, 5))
+                ->filter(fn (string $time) => substr($time, 3, 2) === '00' && $time < '23:00')
+                ->values()->all();
+            $requestedIds = collect($validated['subjects'])->pluck('package_subject_id')->map(fn ($id) => (int) $id);
+            $targets = $package->subjects->whereIn('id', $requestedIds)->keyBy('id');
+            abort_unless($targets->count() === $requestedIds->count(), 422, 'Mata pelajaran paket tidak valid.');
+
+            $newIntervals = collect();
+            foreach ($validated['subjects'] as $payload) {
+                $subject = $targets[(int) $payload['package_subject_id']];
+                $bookingRequest = $subject->bookingRequest;
+                abort_unless($bookingRequest && in_array($bookingRequest->status, ['no_teacher', 'expired'], true), 422, "Jadwal {$subject->subject_name} belum dapat diubah karena pencariannya masih aktif.");
+                $starts = collect($payload['schedules'])->map(function (string $value) use ($activeSlotTimes, $durationHours) {
+                    $start = Carbon::parse($value, config('app.timezone', 'Asia/Jakarta'))->seconds(0);
+                    abort_if($start->lt(now()->addHours(72)), 422, 'Jadwal baru paling cepat dimulai 72 jam dari sekarang.');
+                    abort_unless($start->format('i') === '00', 422, 'Semua jadwal hanya boleh memakai menit 00.');
+                    abort_unless(in_array($start->format('H:i'), $activeSlotTimes, true), 422, 'Jam yang dipilih tidak termasuk slot aktif.');
+                    abort_if(((int) $start->format('H')) + $durationHours > 23, 422, 'Jam mulai terlalu malam untuk durasi pertemuan.');
+                    return $start;
+                })->sortBy(fn (Carbon $date) => $date->timestamp)->values();
+                abort_unless($starts->count() === (int) $subject->allocated_sessions, 422, "Jumlah jadwal {$subject->subject_name} harus {$subject->allocated_sessions} sesi.");
+                abort_if($starts->unique(fn (Carbon $date) => $date->timestamp)->count() !== $starts->count(), 422, "Jadwal {$subject->subject_name} tidak boleh duplikat.");
+                abort_if($starts->map(fn (Carbon $date) => $date->format('H:i'))->unique()->count() !== 1, 422, 'Semua sesi pada satu mata pelajaran harus memakai jam yang sama.');
+                foreach ($starts as $start) {
+                    $newIntervals->push(['subject_id' => $subject->id, 'start' => $start, 'end' => $start->copy()->addHours($durationHours)]);
+                }
+            }
+
+            $sorted = $newIntervals->sortBy(fn ($item) => $item['start']->timestamp)->values();
+            for ($i = 0; $i < $sorted->count() - 1; $i++) {
+                abort_if($sorted[$i]['end']->gt($sorted[$i + 1]['start']), 422, 'Ada jadwal baru yang saling bertabrakan.');
+            }
+            $otherSessions = $package->subjects->whereNotIn('id', $requestedIds)->flatMap->sessions;
+            foreach ($newIntervals as $interval) {
+                abort_if($otherSessions->contains(fn ($session) => $session->scheduled_start_at->lt($interval['end']) && $session->scheduled_end_at->gt($interval['start'])), 422, 'Jadwal baru bertabrakan dengan sesi lain di paket yang sama.');
+                $this->assertStudentHasNoConflict($package->student_id, $interval['start'], $interval['end'], $package->id);
+            }
+            $allStarts = $otherSessions->pluck('scheduled_start_at')->merge($newIntervals->pluck('start'))->sort();
+            if ($allStarts->isNotEmpty() && $package->plan) {
+                $rangeDays = $allStarts->first()->diffInDays($allStarts->last());
+                abort_if($rangeDays > (int) $package->plan->validity_days, 422, "Rentang jadwal melebihi masa paket {$package->plan->validity_days} hari.");
+            }
+
+            foreach ($validated['subjects'] as $payload) {
+                $subject = $targets[(int) $payload['package_subject_id']];
+                $bookingRequest = $subject->bookingRequest;
+                $starts = collect($payload['schedules'])->map(fn (string $value) => Carbon::parse($value, config('app.timezone', 'Asia/Jakarta'))->seconds(0))->sortBy(fn (Carbon $date) => $date->timestamp)->values();
+                $beforeSchedules = $subject->sessions->sortBy('sequence')->pluck('scheduled_start_at')->map(fn ($date) => $date?->toIso8601String())->values()->all();
+                foreach ($subject->sessions->sortBy('sequence')->values() as $index => $session) {
+                    $start = $starts[$index];
+                    $session->update(['scheduled_start_at' => $start, 'scheduled_end_at' => $start->copy()->addHours($durationHours), 'status' => 'planned', 'booking_id' => null]);
+                }
+                $bookingRequest->offers()->where('status', 'pending')->update(['status' => 'expired', 'responded_at' => now()]);
+                $firstStart = $starts->first();
+                $bookingRequest->update([
+                    'scheduled_date' => $firstStart->toDateString(),
+                    'start_time' => $firstStart->format('H:i:s'),
+                    'end_time' => $firstStart->copy()->addHours($durationHours)->format('H:i:s'),
+                    'status' => 'matching',
+                    'matched_teacher_id' => null,
+                    'teacher_response_deadline' => null,
+                    'search_radius_km' => $package->learning_mode === 'offline' ? 3 : 12,
+                    'search_started_at' => now(),
+                    'search_expires_at' => now()->addHours($matchingService->maximumSearchHours()),
+                ]);
+                $subject->update(['status' => 'matching', 'assigned_teacher_id' => null]);
+                MatchingOperationLog::create([
+                    'booking_request_id' => $bookingRequest->id,
+                    'actor_id' => $request->user()->id,
+                    'action' => 'schedule_changed',
+                    'reason' => 'Murid mengubah jadwal setelah tutor belum ditemukan.',
+                    'before_state' => ['schedules' => $beforeSchedules],
+                    'after_state' => ['schedules' => $starts->map(fn (Carbon $date) => $date->toIso8601String())->all(), 'search_radius_km' => $package->learning_mode === 'offline' ? 3 : 12],
+                    'metadata' => ['source' => 'student_package', 'package_id' => $package->id, 'package_subject_id' => $subject->id],
+                ]);
+            }
+            $package->update(['status' => 'matching']);
+            return $requestedIds->all();
+        }, 3);
+
+        $noTeacher = false;
+        PackageSubject::query()->whereIn('id', $subjectIds)->with('bookingRequest')->get()
+            ->each(function (PackageSubject $subject) use ($checkoutService, &$noTeacher) {
+                if (!$checkoutService->dispatchSubject($subject)) {
+                    $subject->update(['status' => 'no_teacher']);
+                    $noTeacher = true;
+                }
+            });
+        $learningPackage->update(['status' => $noTeacher ? 'no_teacher' : 'matching']);
+        return response()->json([
+            'message' => $noTeacher
+                ? 'Jadwal sudah diperbarui dan pencarian dimulai ulang, tetapi tutor belum tersedia. Periksa alasan terbaru di Kelas Saya.'
+                : 'Jadwal berhasil diperbarui. Sistem mulai mencari tutor dengan jadwal baru.',
         ]);
     }
 
@@ -800,6 +967,7 @@ class StudentPackageController extends Controller
             'title' => 'Permintaan paket dibatalkan',
             'message' => "Murid membatalkan pencarian paket {$learningPackage->package_code}. Penawaran tidak lagi aktif.",
             'type' => 'info',
+            'target_url' => '/guru/permintaan',
         ]));
 
         if ($refundPending) {
@@ -809,6 +977,7 @@ class StudentPackageController extends Controller
                     'title' => 'Refund paket menunggu proses',
                     'message' => "Paket {$learningPackage->package_code} dibatalkan saat pencarian tutor.",
                     'type' => 'warning',
+                    'target_url' => '/admin/refunds',
                 ])
             );
         }
@@ -847,16 +1016,29 @@ class StudentPackageController extends Controller
             ->whereIn('id', collect($validated['subjects'])->pluck('curriculum_subject_id'))
             ->get()
             ->keyBy('id');
-        $subtotal = collect($validated['subjects'])->sum(function (array $item) use ($subjects, $validated, $rateService, $durationHours) {
+        $lines = collect($validated['subjects'])->map(function (array $item) use ($subjects, $validated, $rateService, $durationHours) {
             $subject = $subjects[$item['curriculum_subject_id']] ?? null;
             abort_unless($subject, 422, 'Mata pelajaran tidak ditemukan.');
-            return $rateService->resolve(
+
+            $unit = $rateService->resolve(
                 $subject->name,
                 $validated['education_level'],
                 'private',
                 $validated['learning_mode']
-            ) * $durationHours * $item['session_count'];
-        });
+            );
+
+            return [
+                'curriculum_subject_id' => $subject->id,
+                'subject_name' => $subject->name,
+                'session_count' => $item['session_count'],
+                'duration_hours' => $durationHours,
+                'unit_price' => $unit,
+                'meeting_price' => $unit * $durationHours,
+                'subtotal_amount' => $unit * $durationHours * $item['session_count'],
+            ];
+        })->values();
+
+        $subtotal = (int) $lines->sum('subtotal_amount');
         $discount = $promotion
             ? $checkoutService->calculateDiscount(
                 $promotion,
@@ -874,24 +1056,7 @@ class StudentPackageController extends Controller
             'promotion' => $promotion,
             'duration_hours' => $durationHours,
             'total_learning_hours' => $durationHours * collect($validated['subjects'])->sum('session_count'),
-            'lines' => collect($validated['subjects'])->map(function (array $item) use ($subjects, $validated, $rateService, $durationHours) {
-                $subject = $subjects[$item['curriculum_subject_id']];
-                $unit = $rateService->resolve(
-                    $subject->name,
-                    $validated['education_level'],
-                    'private',
-                    $validated['learning_mode']
-                );
-                return [
-                    'curriculum_subject_id' => $subject->id,
-                    'subject_name' => $subject->name,
-                    'session_count' => $item['session_count'],
-                    'duration_hours' => $durationHours,
-                    'unit_price' => $unit,
-                    'meeting_price' => $unit * $durationHours,
-                    'subtotal_amount' => $unit * $durationHours * $item['session_count'],
-                ];
-            })->values(),
+            'lines' => $lines,
             'subtotal_amount' => $subtotal,
             'discount_amount' => $discount,
             'total_amount' => $subtotal - $discount,
@@ -933,7 +1098,7 @@ class StudentPackageController extends Controller
         return [null, null];
     }
 
-    private function assertStudentHasNoConflict(int $studentId, Carbon $start, Carbon $end): void
+    private function assertStudentHasNoConflict(int $studentId, Carbon $start, Carbon $end, ?int $ignorePackageId = null): void
     {
         $bookingConflict = Booking::query()
             ->where('student_id', $studentId)
@@ -947,11 +1112,16 @@ class StudentPackageController extends Controller
         $packageConflict = PackageSession::query()
             ->whereHas('subject.package', fn ($query) => $query
                 ->where('student_id', $studentId)
+                ->when($ignorePackageId, fn ($packages) => $packages->whereKeyNot($ignorePackageId))
                 ->whereNotIn('status', ['cancelled', 'payment_expired', 'completed']))
             ->where('scheduled_start_at', '<', $end)
             ->where('scheduled_end_at', '>', $start)
             ->exists();
-        abort_if($bookingConflict || $packageConflict, 422, 'Jadwal bertabrakan dengan sesi lain.');
+        if ($bookingConflict || $packageConflict) {
+            $startLabel = $start->copy()->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d/m/Y H.i');
+            $endLabel = $end->copy()->timezone(config('app.timezone', 'Asia/Jakarta'))->format('H.i');
+            abort(422, "Jadwal {$startLabel}–{$endLabel} bertabrakan dengan kelas atau paket lain yang masih aktif. Pilih hari atau jam lain.");
+        }
     }
 
     private function canRenew(LearningPackage $package): bool
@@ -1011,6 +1181,7 @@ class StudentPackageController extends Controller
                 'allocated_sessions' => $subject->allocated_sessions,
                 'unit_price' => (float) $subject->unit_price,
                 'status' => $subject->status,
+                'matching' => $this->formatMatchingState($subject),
                 'teacher' => $subject->assignedTeacher ? [
                     'id' => $subject->assignedTeacher->id,
                     'name' => $subject->assignedTeacher->name,
@@ -1030,6 +1201,54 @@ class StudentPackageController extends Controller
             'latest_order' => $package->orders->first(),
         ];
     }
+    private function formatMatchingState(PackageSubject $subject): array
+    {
+        $bookingRequest = $subject->bookingRequest;
+        if (!$bookingRequest) {
+            return ['can_retry' => false, 'can_change_schedule' => false];
+        }
+        $logs = $bookingRequest->relationLoaded('matchingOperationLogs')
+            ? $bookingRequest->matchingOperationLogs
+            : $bookingRequest->matchingOperationLogs()->get();
+        $latestFailure = $bookingRequest->relationLoaded('latestMatchingExhaustion')
+            ? $bookingRequest->latestMatchingExhaustion
+            : $bookingRequest->latestMatchingExhaustion()->first();
+        $manualRestarts = $logs->where('action', 'search_restarted')->count();
+        $radius = (int) ($bookingRequest->search_radius_km ?? 3);
+        $nextRadius = $bookingRequest->learning_mode === 'offline'
+            ? match ($radius) { 3 => 5, 5 => 8, 8 => 12, default => null }
+            : null;
+        $isNoTeacher = $bookingRequest->status === 'no_teacher';
+        $canRetry = $isNoTeacher && ($nextRadius !== null || $manualRestarts < 1);
+        $metadata = $latestFailure?->metadata ?? [];
+
+        return [
+            'status' => $bookingRequest->status,
+            'reason_code' => $metadata['code'] ?? null,
+            'message' => $latestFailure?->reason,
+            'recommended_action' => $metadata['recommended_action'] ?? null,
+            'search_radius_km' => $radius,
+            'next_radius_km' => $nextRadius,
+            'search_expires_at' => $bookingRequest->search_expires_at,
+            'can_retry' => $canRetry,
+            'retry_label' => $canRetry ? ($nextRadius ? "Perluas ke {$nextRadius} km" : 'Cek tutor baru') : null,
+            'can_change_schedule' => $isNoTeacher,
+            'manual_restart_used' => $manualRestarts >= 1,
+        ];
+    }
+
+    private function publicCachedResponse(Request $request, mixed $payload, int $maxAgeSeconds)
+    {
+        $response = response()->json($payload);
+        $response->setEtag(sha1((string) json_encode($payload)));
+        $response->setPublic();
+        $response->setMaxAge($maxAgeSeconds);
+        $response->headers->addCacheControlDirective('stale-while-revalidate', '30');
+        $response->isNotModified($request);
+
+        return $response;
+    }
+
     private function compactLabel($values): ?string
     {
         $items = collect($values)->filter()->map(fn ($value) => trim((string) $value))->unique()->values();

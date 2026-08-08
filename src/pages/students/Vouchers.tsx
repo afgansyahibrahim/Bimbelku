@@ -1,7 +1,7 @@
+import { notify } from "@/lib/notify";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertCircle, ArrowRight, CheckCircle2, Loader2, RefreshCw, Tag, TicketPercent, WifiOff } from "lucide-react";
-import { toast } from "sonner";
 import axios from "axios";
 
 import StudentLayout from "@/components/StudentLayout";
@@ -67,10 +67,10 @@ export default function Vouchers() {
     setClaiming(promotionId);
     try {
       const response = await http.post(`/student/promotions/${promotionId}/claim`);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await load();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setClaiming(null);
     }

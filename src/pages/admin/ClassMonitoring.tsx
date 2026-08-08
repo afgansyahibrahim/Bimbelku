@@ -1,7 +1,7 @@
+import { notify } from "@/lib/notify";
 import { useState, useEffect } from "react";
 import AdminLayout from "../../components/AdminLayout";
 import { Link } from "react-router-dom";
-import { toast } from "sonner";
 import http, { getApiError } from "@/lib/http";
 import { 
   Search, BookOpen, User, CheckCircle2,
@@ -22,7 +22,7 @@ export default function ClassMonitoring() {
       const res = await http.get("/admin/classes");
       setClasses(res.data);
     } catch (error) {
-      toast.error(getApiError(error, "Data pemantauan kelas gagal dimuat."));
+      notify.error(getApiError(error, "Data pemantauan kelas gagal dimuat."));
     } finally {
       setIsLoading(false);
     }

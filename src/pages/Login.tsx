@@ -1,10 +1,8 @@
-import { API_BASE_URL } from "@/lib/http";
+import { notify } from "@/lib/notify";
+import { API_BASE_URL } from "@/lib/apiBase";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
-import axios from "axios";
-import { toast } from "sonner";
-
+import { Mail, Lock, Eye, EyeOff, ArrowLeft, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
 export default function Login() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
@@ -24,9 +22,11 @@ export default function Login() {
     e.preventDefault();
     setIsLoading(true);
 
+    let axiosModule: typeof import("axios") | null = null;
     try {
-      // 1. Tembak API Login Laravel
-      const response = await axios.post(`${API_BASE_URL}/login`, formData);
+      // Axios baru dimuat saat form benar-benar dikirim, bukan pada initial paint halaman login.
+      axiosModule = await import("axios");
+      const response = await axiosModule.default.post(`${API_BASE_URL}/login`, formData);
       const { access_token, user } = response.data;
 
       // 2. Simpan Token & Data User
@@ -44,27 +44,29 @@ export default function Login() {
       if (!dashboard) {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
-        toast.error("Peran akun tidak dikenali. Hubungi admin BimbelKu.");
+        notify.error("Peran akun tidak dikenali. Hubungi admin BimbelKu.");
         return;
       }
 
-      toast.success(`Selamat datang, ${user.name}!`);
+      notify.success(`Selamat datang, ${user.name}!`);
       navigate(dashboard, { replace: true });
 
     } catch (error: unknown) {
-      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
-      const message = axios.isAxiosError(error)
-        ? (error.response?.data as { message?: string } | undefined)?.message
+      const axios = axiosModule?.default;
+      const isAxiosError = axios ? axios.isAxiosError(error) : false;
+      const status = isAxiosError ? (error as { response?: { status?: number } }).response?.status : undefined;
+      const message = isAxiosError
+        ? ((error as { response?: { data?: { message?: string } } }).response?.data)?.message
           || "Gagal masuk. Periksa email/password."
         : "Gagal masuk. Silakan coba lagi.";
 
       if (status === 403) {
-        toast.warning("Akun Belum Aktif", {
+        notify.warning("Akun Belum Aktif", {
           description: message,
           icon: <AlertCircle className="text-orange-600" />
         });
       } else {
-        toast.error("Gagal Masuk", { description: message });
+        notify.error("Gagal Masuk", { description: message });
       }
     } finally {
       setIsLoading(false);
@@ -80,6 +82,14 @@ export default function Login() {
 
       {/* Login Card */}
       <div className="relative w-full max-w-md bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/50 backdrop-blur-sm p-8 sm:p-10 animate-in fade-in zoom-in-95 duration-500">
+        <Link
+          to="/"
+          aria-label="Kembali ke halaman utama BimbelKu"
+          className="mb-6 inline-flex min-h-11 items-center gap-2 rounded-xl px-2.5 py-2 text-sm font-semibold text-gray-600 transition-colors hover:bg-orange-50 hover:text-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Kembali ke Beranda
+        </Link>
         
         {/* Header */}
         <div className="text-center mb-8">

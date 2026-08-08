@@ -1,0 +1,24 @@
+BIMBELKU — REVISI 5 PAYMENT ERROR & RATE LIMIT FIX
+
+Perubahan penting:
+- Rate limit quote paket, pembuatan paket, dan submit bukti pembayaran dipisahkan.
+- Quote tidak lagi menghabiskan jatah submit pembayaran.
+- Error 429 menampilkan pesan Indonesia + waktu tunggu.
+- Error pembayaran membedakan jadwal bentrok, tagihan kedaluwarsa, kelas/paket tidak aktif, metode pembayaran belum siap, validasi, dan masalah koneksi.
+- Halaman pembayaran menampilkan toast + alert persisten.
+- Konflik jadwal saat membuat paket menyebut tanggal/jam yang bermasalah.
+
+Setelah replace full project:
+1. Backend Laravel tetap gunakan .env milik project lokal Anda sendiri.
+2. Jalankan backend seperti biasa.
+3. Frontend:
+   npm install   (hanya jika node_modules belum ada)
+   npm run check:payment-fix
+   npm run build
+   npm run preview -- --port 8080
+
+Untuk development cepat:
+   npm run dev
+
+Catatan:
+Folder dist sengaja tidak disertakan. Jalankan npm run build agar bundle production dibuat dari source terbaru.

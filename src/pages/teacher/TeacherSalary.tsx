@@ -1,7 +1,7 @@
+import { notify } from "@/lib/notify";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Banknote, CheckCircle2, Clock3, Eye, Landmark, Loader2, LockKeyhole, RefreshCw, Send, ShieldAlert, WalletCards } from "lucide-react";
-import { toast } from "sonner";
 import TeacherLayout from "@/components/TeacherLayout";
 import { openProtectedFile } from "@/components/ProtectedImage";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
@@ -30,7 +30,7 @@ export default function TeacherSalary() {
   const load = useCallback(async () => {
     setLoading(true);
     try { const response = await http.get<SalaryData>("/teacher/salary"); setData(response.data); }
-    catch (error) { toast.error(getApiError(error, "Data pendapatan gagal dimuat.")); }
+    catch (error) { notify.error(getApiError(error, "Data pendapatan gagal dimuat.")); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -41,8 +41,8 @@ export default function TeacherSalary() {
     const approved = await confirm({ title: "Ajukan seluruh saldo tersedia?", description: `${rupiah(data.balances.available)} dari ${data.ready_sessions} sesi akan dipindahkan ke status menunggu pemeriksaan admin. Rekening tujuan: ${data.bank.bank_name || "-"} ${data.bank.account_number_masked || ""}.`, confirmText: "Ajukan pencairan", tone: "primary" });
     if (!approved) return;
     setRequesting(true);
-    try { const response = await http.post("/teacher/payout-requests", { booking_ids: data.ready_bookings.map((item) => item.id) }); toast.success(response.data.message); await load(); }
-    catch (error) { toast.error(getApiError(error, "Pencairan gagal diajukan.")); }
+    try { const response = await http.post("/teacher/payout-requests", { booking_ids: data.ready_bookings.map((item) => item.id) }); notify.success(response.data.message); await load(); }
+    catch (error) { notify.error(getApiError(error, "Pencairan gagal diajukan.")); }
     finally { setRequesting(false); }
   };
 
@@ -58,7 +58,7 @@ export default function TeacherSalary() {
 
       <section className="rounded-[1.7rem] border border-slate-100 bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-6"><div className="mb-4"><h2 className="text-lg font-black text-slate-900">Sesi siap dicairkan</h2><p className="mt-1 text-xs text-slate-500">Setiap sesi menampilkan nilai bruto, komisi, dan bagian bersih tutor.</p></div><div className="space-y-3">{data.ready_bookings.length ? data.ready_bookings.map((item) => <article key={item.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-black text-slate-900">{item.subject}</p><p className="mt-1 text-xs text-slate-400">Selesai {dateTime(item.completed_at)}</p></div><div className="grid grid-cols-3 gap-2 text-right text-xs"><div><p className="text-slate-400">Bruto</p><p className="mt-1 font-bold text-slate-700">{rupiah(item.gross_amount)}</p></div><div><p className="text-slate-400">Komisi</p><p className="mt-1 font-bold text-rose-600">-{rupiah(item.commission_amount)}</p></div><div><p className="text-slate-400">Bersih</p><p className="mt-1 font-black text-emerald-700">{rupiah(item.net_amount)}</p></div></div></div></article>) : <p className="py-10 text-center text-sm text-slate-500">Belum ada sesi berstatus siap dicairkan.</p>}</div></section>
 
-      <section className="grid gap-4 lg:grid-cols-2"><History title="Pengajuan pencairan">{data.payout_requests.length ? data.payout_requests.map((item) => <article key={item.id} className="rounded-2xl border border-slate-100 p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-lg font-black text-slate-900">{rupiah(item.net_amount)}</p><p className="mt-1 text-xs text-slate-400">Diajukan {dateTime(item.requested_at)}</p></div><Status value={item.status} /></div><div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-xs"><span>Bruto <b className="block mt-1">{rupiah(item.gross_amount)}</b></span><span>Komisi <b className="block mt-1 text-rose-600">-{rupiah(item.commission_amount)}</b></span></div>{item.review_notes && <p className="mt-3 text-xs leading-5 text-slate-600">Catatan admin: {item.review_notes}</p>}</article>) : <Empty text="Belum ada pengajuan pencairan." />}</History><History title="Transfer selesai">{data.history.length ? data.history.map((item) => <article key={item.id} className="flex items-center gap-3 rounded-2xl border border-slate-100 p-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-700"><Banknote size={18} /></span><div className="min-w-0 flex-1"><p className="font-black text-slate-900">{rupiah(item.amount)}</p><p className="mt-1 text-xs text-slate-400">{item.period} · {item.transfer_date || "-"}</p></div>{item.proof_url && <Button size="icon" variant="outline" className="shrink-0 rounded-xl" aria-label="Lihat bukti transfer" onClick={() => void openProtectedFile(item.proof_url!, `bukti-pencairan-${item.id}`).catch(() => toast.error("Bukti transfer gagal dibuka."))}><Eye size={16} /></Button>}</article>) : <Empty text="Belum ada transfer selesai." />}</History></section>
+      <section className="grid gap-4 lg:grid-cols-2"><History title="Pengajuan pencairan">{data.payout_requests.length ? data.payout_requests.map((item) => <article key={item.id} className="rounded-2xl border border-slate-100 p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-lg font-black text-slate-900">{rupiah(item.net_amount)}</p><p className="mt-1 text-xs text-slate-400">Diajukan {dateTime(item.requested_at)}</p></div><Status value={item.status} /></div><div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-xs"><span>Bruto <b className="block mt-1">{rupiah(item.gross_amount)}</b></span><span>Komisi <b className="block mt-1 text-rose-600">-{rupiah(item.commission_amount)}</b></span></div>{item.review_notes && <p className="mt-3 text-xs leading-5 text-slate-600">Catatan admin: {item.review_notes}</p>}</article>) : <Empty text="Belum ada pengajuan pencairan." />}</History><History title="Transfer selesai">{data.history.length ? data.history.map((item) => <article key={item.id} className="flex items-center gap-3 rounded-2xl border border-slate-100 p-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-700"><Banknote size={18} /></span><div className="min-w-0 flex-1"><p className="font-black text-slate-900">{rupiah(item.amount)}</p><p className="mt-1 text-xs text-slate-400">{item.period} · {item.transfer_date || "-"}</p></div>{item.proof_url && <Button size="icon" variant="outline" className="shrink-0 rounded-xl" aria-label="Lihat bukti transfer" onClick={() => void openProtectedFile(item.proof_url!, `bukti-pencairan-${item.id}`).catch(() => notify.error("Bukti transfer gagal dibuka."))}><Eye size={16} /></Button>}</article>) : <Empty text="Belum ada transfer selesai." />}</History></section>
     </>}
   </div></TeacherLayout>;
 }

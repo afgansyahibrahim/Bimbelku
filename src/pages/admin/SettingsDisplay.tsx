@@ -1,8 +1,8 @@
+import { notify } from "@/lib/notify";
 import { API_BASE_URL } from "@/lib/http";
 import { useState, useEffect, useRef } from "react";
 import AdminLayout from "../../components/AdminLayout";
 import axios from "axios";
-import { toast } from "sonner";
 import { Image, Upload, Save, Loader2, Info } from "lucide-react";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { validateUpload } from "@/lib/validation";
@@ -82,7 +82,7 @@ export default function SettingsDisplay() {
       extensions: ["jpg", "jpeg", "png", "webp"],
     });
     if (error) {
-      toast.error(error);
+      notify.error(error);
       event.target.value = "";
       return;
     }
@@ -95,17 +95,17 @@ export default function SettingsDisplay() {
       previewObjectUrlRef.current = objectUrl;
       setPreview(objectUrl);
       if (optimized.size < selected.size) {
-        toast.success("Gambar diperkecil agar halaman tutor lebih ringan.");
+        notify.success("Gambar diperkecil agar halaman tutor lebih ringan.");
       }
     } catch {
-      toast.error("Gambar tidak dapat diproses. Pilih file lain.");
+      notify.error("Gambar tidak dapat diproses. Pilih file lain.");
       event.target.value = "";
     }
   };
 
   // Handle Upload
   const handleSave = async () => {
-    if (!file) return toast.error("Pilih gambar baru dulu.");
+    if (!file) return notify.error("Pilih gambar baru dulu.");
 
     const approved = await confirm({
       title: "Ganti sampul global tutor?",
@@ -127,7 +127,7 @@ export default function SettingsDisplay() {
             "Content-Type": "multipart/form-data"
         }
       });
-      toast.success("Sampul tutor berhasil diperbarui.");
+      notify.success("Sampul tutor berhasil diperbarui.");
       if (previewObjectUrlRef.current) {
         URL.revokeObjectURL(previewObjectUrlRef.current);
         previewObjectUrlRef.current = null;
@@ -136,7 +136,7 @@ export default function SettingsDisplay() {
       setFile(null); // Reset file input
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (error) {
-      toast.error("Gagal mengupload gambar.");
+      notify.error("Gagal mengupload gambar.");
     } finally {
       setIsLoading(false);
     }

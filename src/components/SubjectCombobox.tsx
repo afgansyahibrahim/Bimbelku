@@ -101,9 +101,10 @@ export default function SubjectCombobox({
         "flex h-12 items-center gap-2 rounded-xl border border-input bg-background px-3 ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2",
         disabled && "cursor-not-allowed opacity-50",
       )}>
-        <Search size={16} className="shrink-0 text-slate-400" />
+        <Search size={16} className="shrink-0 text-slate-500" />
         <input
           role="combobox"
+          aria-label={placeholder}
           aria-expanded={open}
           aria-controls={listboxId}
           aria-activedescendant={open && filtered[activeIndex] ? `${listboxId}-option-${filtered[activeIndex].id}` : undefined}
@@ -148,7 +149,7 @@ export default function SubjectCombobox({
           aria-label={open ? "Tutup daftar mata pelajaran" : "Buka daftar mata pelajaran"}
           disabled={disabled}
           onClick={() => setOpen((current) => !current)}
-          className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
+          className="rounded-lg p-1 text-slate-500 hover:bg-slate-100"
         >
           <ChevronDown size={17} className={cn("transition", open && "rotate-180")} />
         </button>
@@ -170,7 +171,7 @@ export default function SubjectCombobox({
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-600"><BookOpen size={17} /></span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-bold text-slate-800">{option.name}</span>
-                <span className="mt-0.5 block truncate text-[11px] text-slate-400">{option.group_name || "Mata pelajaran"}</span>
+                <span className="mt-0.5 block truncate text-[11px] text-slate-500">{option.group_name || "Mata pelajaran"}</span>
               </span>
               {normalize(value) === normalize(option.name) && <Check size={17} className="text-indigo-600" />}
             </button>
@@ -189,7 +190,7 @@ export default function SubjectCombobox({
             </button>
           )}
           {!filtered.length && !canCreate && (
-            <div className="px-4 py-8 text-center text-sm text-slate-400">
+            <div className="px-4 py-8 text-center text-sm text-slate-500">
               Tidak ada mapel yang cocok untuk kelas ini.
             </div>
           )}

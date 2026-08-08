@@ -1,14 +1,24 @@
-import { useCallback, useState, useEffect, useRef } from "react";
+import { lazy, Suspense, useCallback, useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { toast } from "sonner";
-import http, { getCached } from "@/lib/http";
 import LogoutButton from "@/components/LogoutButton";
 import MobileBottomNav from "@/components/MobileBottomNav";
-import RoleQuickGuide from "@/components/RoleQuickGuide";
+import { scheduleNonCriticalTask } from "@/lib/schedule";
+import { hasSidebarAttention, NAVIGATION_ATTENTION_CHANGED_EVENT, unreadIdsForCurrentPage, type AttentionNotification } from "@/lib/navigationAttention";
 import {
   LayoutDashboard, BookOpen, Menu, X, Settings, Wallet, Banknote, 
   GraduationCap, CalendarClock, HelpCircle, Bell, MessageSquare, ClipboardCheck, BarChart3
 } from "lucide-react";
+
+const RoleQuickGuide = lazy(() => import("@/components/RoleQuickGuide"));
+const DESKTOP_MEDIA_QUERY = "(min-width: 1280px)";
+
+const storedTeacher = () => {
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
+};
 
 interface TeacherLayoutProps {
   children: React.ReactNode;
@@ -17,10 +27,12 @@ interface TeacherLayoutProps {
 
 export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [userData, setUserData] = useState<any>(null); 
+  const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_MEDIA_QUERY).matches);
+  const [userData, setUserData] = useState<any>(() => storedTeacher());
   
   // STATE NOTIFIKASI
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [attentionNotifications, setAttentionNotifications] = useState<AttentionNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   
@@ -40,6 +52,14 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
   }, [location.pathname]);
 
   useEffect(() => {
+    const mediaQuery = window.matchMedia(DESKTOP_MEDIA_QUERY);
+    const syncBreakpoint = () => setIsDesktop(mediaQuery.matches);
+    syncBreakpoint();
+    mediaQuery.addEventListener("change", syncBreakpoint);
+    return () => mediaQuery.removeEventListener("change", syncBreakpoint);
+  }, []);
+
+  useEffect(() => {
     if (!selectedNotif) return;
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setSelectedNotif(null);
@@ -49,13 +69,23 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
   }, [selectedNotif]);
 
   useEffect(() => {
+    let disposed = false;
     const fetchProfile = async () => {
       try {
+        const { getCached } = await import("@/lib/http");
         const response = await getCached("/teacher/profile", { maxAgeMs: 60_000 });
-        setUserData({ name: response.data.user.name, email: response.data.user.email, photo: response.data.profile.photo_url });
+        if (!disposed) {
+          setUserData({ name: response.data.user.name, email: response.data.user.email, photo: response.data.profile.photo_url });
+        }
       } catch (error) { console.error("Gagal profil", error); }
     };
-    fetchProfile();
+    const start = () => { if (!disposed) void fetchProfile(); };
+
+    const cancelScheduledStart = scheduleNonCriticalTask(start);
+    return () => {
+      disposed = true;
+      cancelScheduledStart();
+    };
   }, []);
 
   const handleNotifClick = useCallback(async (notif: any) => {
@@ -68,8 +98,10 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
 
       if (!notif.is_read) {
           setNotifications(prev => prev.map(n => n.id === notif.id ? {...n, is_read: true} : n));
+          setAttentionNotifications(prev => prev.filter((n) => n.id !== notif.id));
           setUnreadCount(prev => Math.max(0, prev - 1));
           try {
+              const { default: http } = await import("@/lib/http");
               await http.post(`/notifications/${notif.id}/read`);
           } catch {
               // Polling berikutnya akan menyelaraskan status jika request gagal.
@@ -82,14 +114,19 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
       try {
           const token = localStorage.getItem("token");
           if (!token) return;
+          const { getCached } = await import("@/lib/http");
           const res = await getCached("/notifications", {
             maxAgeMs: isPolling ? 5_000 : 15_000,
             force: isPolling,
           });
           
           const data = Array.isArray(res.data.notifications) ? res.data.notifications : [];
+          const attention = Array.isArray(res.data.attention_notifications)
+            ? res.data.attention_notifications
+            : data.filter((item: any) => !item.is_read && item.target_url);
           const count = Number(res.data.unread_count || 0);
           setNotifications(data);
+          setAttentionNotifications(attention);
           setUnreadCount(count);
 
           // TOAST POP-UP
@@ -97,27 +134,30 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
               const latest = data[0];
               if (isPolling && latest.id > lastNotificationIdRef.current) {
                   
-                  // Custom Toast
-                  toast.custom((t) => (
-                    <button
-                        type="button"
-                        aria-label={`Buka notifikasi: ${latest.title}`}
-                        className="pointer-events-auto flex w-full max-w-md gap-4 rounded-2xl border border-slate-100 bg-white p-4 text-left shadow-2xl transition hover:bg-slate-50 animate-in slide-in-from-top-5 duration-500"
-                        onClick={() => {
-                            toast.dismiss(t);
-                            handleNotifClick(latest);
-                        }}
-                    >
-                        <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
-                            <Bell size={20} className="animate-bounce"/>
-                        </div>
-                        <div className="flex-1">
-                            <h4 className="font-bold text-slate-800 text-sm">{latest.title}</h4>
-                            <p className="text-xs text-slate-500 mt-1 line-clamp-2">{latest.message}</p>
-                            <p className="text-[10px] text-indigo-500 mt-2 font-bold">Ketuk untuk membaca</p>
-                        </div>
-                    </button>
-                  ), { duration: 5000, position: 'top-center' });
+                  // Custom Toast dimuat hanya ketika polling benar-benar menemukan notifikasi baru.
+                  window.dispatchEvent(new Event("bimbelku:toast-needed"));
+                  void import("sonner").then(({ toast }) => {
+                    toast.custom((t) => (
+                      <button
+                          type="button"
+                          aria-label={`Buka notifikasi: ${latest.title}`}
+                          className="pointer-events-auto flex w-full max-w-md gap-4 rounded-2xl border border-slate-100 bg-white p-4 text-left shadow-2xl transition hover:bg-slate-50 animate-in slide-in-from-top-5 duration-500"
+                          onClick={() => {
+                              toast.dismiss(t);
+                              handleNotifClick(latest);
+                          }}
+                      >
+                          <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                              <Bell size={20} className="animate-bounce"/>
+                          </div>
+                          <div className="flex-1">
+                              <h4 className="font-bold text-slate-800 text-sm">{latest.title}</h4>
+                              <p className="text-xs text-slate-500 mt-1 line-clamp-2">{latest.message}</p>
+                              <p className="text-[10px] text-indigo-500 mt-2 font-bold">Ketuk untuk membaca</p>
+                          </div>
+                      </button>
+                    ), { duration: 5000, position: 'top-center' });
+                  });
               }
               lastNotificationIdRef.current = latest.id;
           }
@@ -127,12 +167,43 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
   }, [handleNotifClick]);
 
   useEffect(() => {
-      fetchNotifications();
-      const interval = setInterval(() => {
+      let disposed = false;
+      const start = () => { if (!disposed) void fetchNotifications(false); };
+      const cancelScheduledStart = scheduleNonCriticalTask(start);
+      const interval = window.setInterval(() => {
           if (document.visibilityState === "visible") void fetchNotifications(true);
       }, 60000);
-      return () => clearInterval(interval);
+      return () => {
+        disposed = true;
+        cancelScheduledStart();
+        window.clearInterval(interval);
+      };
   }, [fetchNotifications]);
+
+  useEffect(() => {
+      const syncAttention = () => void fetchNotifications(true);
+      window.addEventListener(NAVIGATION_ATTENTION_CHANGED_EVENT, syncAttention);
+      return () => window.removeEventListener(NAVIGATION_ATTENTION_CHANGED_EVENT, syncAttention);
+  }, [fetchNotifications]);
+
+  useEffect(() => {
+      const ids = unreadIdsForCurrentPage("teacher", location.pathname, attentionNotifications);
+      if (!ids.length) return;
+
+      const idSet = new Set(ids);
+      setNotifications((current) => current.map((item) => idSet.has(item.id) ? { ...item, is_read: true } : item));
+      setAttentionNotifications((current) => current.filter((item) => !idSet.has(item.id)));
+      setUnreadCount((current) => Math.max(0, current - ids.length));
+
+      let cancelled = false;
+      void import("@/lib/http")
+        .then(({ default: http }) => http.post("/notifications/read-batch", { ids }))
+        .catch(() => {
+          if (!cancelled) void fetchNotifications(true);
+        });
+
+      return () => { cancelled = true; };
+  }, [attentionNotifications, fetchNotifications, location.pathname]);
 
   return (
     <div className="flex h-dvh w-full max-w-full overflow-hidden bg-[#F8FAFC] font-sans text-slate-800">
@@ -150,32 +221,32 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
         <nav className="flex-1 px-5 py-6 space-y-8 overflow-y-auto custom-scrollbar">
             <div>
                 <div className="px-4 mb-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest flex items-center gap-2"><span className="w-1.5 h-1.5 bg-indigo-400 rounded-full"></span> Dashboard</div>
-                <NavItem to="/guru" icon={LayoutDashboard} label="Overview" active={isActive('/guru', true)} />
+                <NavItem to="/guru" icon={LayoutDashboard} label="Overview" active={isActive('/guru', true)} attention={hasSidebarAttention("teacher", "/guru", attentionNotifications)} />
             </div>
             <div>
                 <div className="px-4 mb-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest flex items-center gap-2"><span className="w-1.5 h-1.5 bg-violet-400 rounded-full"></span> Akademik</div>
                 <div className="space-y-1">
-                    <NavItem to="/guru/permintaan" icon={ClipboardCheck} label="Permintaan Bimbel" active={isActive('/guru/permintaan')} />
-                    <NavItem to="/guru/kelas" icon={BookOpen} label="Kelas Saya" active={isActive('/guru/kelas')} />
-                    <NavItem to="/guru/pesan" icon={MessageSquare} label="Pesan" active={isActive('/guru/pesan')} />
-                    <NavItem to="/guru/jadwal" icon={CalendarClock} label="Jadwal Mengajar" active={isActive('/guru/jadwal')} />
+                    <NavItem to="/guru/permintaan" icon={ClipboardCheck} label="Permintaan Bimbel" active={isActive('/guru/permintaan')} attention={hasSidebarAttention("teacher", "/guru/permintaan", attentionNotifications)} />
+                    <NavItem to="/guru/kelas" icon={BookOpen} label="Kelas Saya" active={isActive('/guru/kelas')} attention={hasSidebarAttention("teacher", "/guru/kelas", attentionNotifications)} />
+                    <NavItem to="/guru/pesan" icon={MessageSquare} label="Pesan" active={isActive('/guru/pesan')} attention={hasSidebarAttention("teacher", "/guru/pesan", attentionNotifications)} />
+                    <NavItem to="/guru/jadwal" icon={CalendarClock} label="Jadwal Mengajar" active={isActive('/guru/jadwal')} attention={hasSidebarAttention("teacher", "/guru/jadwal", attentionNotifications)} />
                 </div>
             </div>
             <div>
                 <div className="px-4 mb-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest flex items-center gap-2"><span className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span> Keuangan</div>
                 <div className="space-y-1">
-                    <NavItem to="/guru/rekening" icon={Wallet} label="Rekening" active={isActive('/guru/rekening')} />
-                    <NavItem to="/guru/gaji" icon={Banknote} label="Dompet & Gaji" active={isActive('/guru/gaji')} />
+                    <NavItem to="/guru/rekening" icon={Wallet} label="Rekening" active={isActive('/guru/rekening')} attention={hasSidebarAttention("teacher", "/guru/rekening", attentionNotifications)} />
+                    <NavItem to="/guru/gaji" icon={Banknote} label="Dompet & Gaji" active={isActive('/guru/gaji')} attention={hasSidebarAttention("teacher", "/guru/gaji", attentionNotifications)} />
                 </div>
             </div>
             <div>
                 <div className="px-4 mb-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest flex items-center gap-2"><span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span> Saya</div>
                 <div className="space-y-1">
-                    <NavItem to="/guru/saya" icon={GraduationCap} label="Pusat Akun" active={isActive('/guru/saya')} />
-                    <NavItem to="/guru/performa" icon={BarChart3} label="Performa & Banding" active={isActive('/guru/performa')} />
-                    <NavItem to="/guru/notifikasi" icon={Bell} label="Notifikasi" active={isActive('/guru/notifikasi')} />
-                    <NavItem to="/guru/profil" icon={Settings} label="Edit Profil" active={isActive('/guru/profil')} />
-                    <NavItem to="/guru/bantuan" icon={HelpCircle} label="Pusat Bantuan" active={isActive('/guru/bantuan')} />
+                    <NavItem to="/guru/saya" icon={GraduationCap} label="Pusat Akun" active={isActive('/guru/saya')} attention={hasSidebarAttention("teacher", "/guru/saya", attentionNotifications)} />
+                    <NavItem to="/guru/performa" icon={BarChart3} label="Performa & Banding" active={isActive('/guru/performa')} attention={hasSidebarAttention("teacher", "/guru/performa", attentionNotifications)} />
+                    <NavItem to="/guru/notifikasi" icon={Bell} label="Notifikasi" active={isActive('/guru/notifikasi')} attention={hasSidebarAttention("teacher", "/guru/notifikasi", attentionNotifications)} />
+                    <NavItem to="/guru/profil" icon={Settings} label="Edit Profil" active={isActive('/guru/profil')} attention={hasSidebarAttention("teacher", "/guru/profil", attentionNotifications)} />
+                    <NavItem to="/guru/bantuan" icon={HelpCircle} label="Pusat Bantuan" active={isActive('/guru/bantuan')} attention={hasSidebarAttention("teacher", "/guru/bantuan", attentionNotifications)} />
                 </div>
             </div>
         </nav>
@@ -194,7 +265,9 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
           </div>
           
           <div className="flex items-center gap-2 sm:gap-5">
-             <RoleQuickGuide role="teacher" />
+             <Suspense fallback={null}>
+               <RoleQuickGuide role="teacher" />
+             </Suspense>
              
              {/* DROPDOWN NOTIF */}
              <div className="relative">
@@ -232,7 +305,7 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
         <div className="flex-1 overflow-x-hidden overflow-y-auto p-3 pb-24 scroll-smooth sm:p-6 sm:pb-24 xl:p-10 xl:pb-10">
           <div className="mx-auto w-full min-w-0 max-w-7xl pb-10">{children}</div>
         </div>
-        <MobileBottomNav role="teacher" />
+        {!isDesktop && <MobileBottomNav role="teacher" attentionNotifications={attentionNotifications} />}
 
         {/* --- [FIXED] MODAL DETAIL NOTIFIKASI GURU --- */}
         {selectedNotif && (
@@ -289,7 +362,7 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
   );
 }
 
-function NavItem({ to, icon: Icon, label, active }: any) {
+function NavItem({ to, icon: Icon, label, active, attention = false }: any) {
   return (
     <Link
       to={to}
@@ -301,11 +374,14 @@ function NavItem({ to, icon: Icon, label, active }: any) {
       }`}
     >
       <div className="flex items-center gap-3.5">
-        <Icon 
-            size={20} 
-            className={`${active ? 'text-indigo-100' : 'text-slate-400 group-hover:text-indigo-500'} transition-colors duration-300`} 
-            strokeWidth={active ? 2.5 : 2}
-        />
+        <span className="relative shrink-0">
+          <Icon 
+              size={20} 
+              className={`${active ? 'text-indigo-100' : 'text-slate-400 group-hover:text-indigo-500'} transition-colors duration-300`} 
+              strokeWidth={active ? 2.5 : 2}
+          />
+          {attention && <span aria-label="Ada pembaruan yang belum dilihat" className="absolute -right-1.5 -top-1.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />}
+        </span>
         <span>{label}</span>
       </div>
       {active && <div className="w-1.5 h-1.5 rounded-full bg-white shadow-sm animate-pulse"></div>}

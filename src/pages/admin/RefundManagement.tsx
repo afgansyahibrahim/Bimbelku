@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownToLine,
@@ -12,7 +13,6 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import { toast } from "sonner";
 import AdminLayout from "@/components/AdminLayout";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
@@ -84,7 +84,7 @@ export default function RefundManagement() {
       const response = await http.get<RefundResponse>("/admin/finance/refunds");
       setData(response.data);
     } catch (error) {
-      toast.error(getApiError(error, "Data refund tidak dapat dimuat."));
+      notify.error(getApiError(error, "Data refund tidak dapat dimuat."));
     } finally {
       setLoading(false);
     }
@@ -119,7 +119,7 @@ export default function RefundManagement() {
       extensions: ["jpg", "jpeg", "png", "webp"],
     });
     if (error) {
-      toast.error(error);
+      notify.error(error);
       event.target.value = "";
       return;
     }
@@ -129,11 +129,11 @@ export default function RefundManagement() {
   const complete = async () => {
     if (!selected) return;
     if (destination === "bank_transfer" && !selected.bank_destination.is_complete) {
-      toast.error("Tujuan rekening refund belum lengkap.");
+      notify.error("Tujuan rekening refund belum lengkap.");
       return;
     }
     if (destination === "bank_transfer" && !proof) {
-      toast.error("Bukti transfer refund wajib diunggah.");
+      notify.error("Bukti transfer refund wajib diunggah.");
       return;
     }
 
@@ -155,11 +155,11 @@ export default function RefundManagement() {
     setProcessing(true);
     try {
       const response = await http.post(`/admin/refunds/${selected.id}/complete`, form);
-      toast.success(response.data?.message || "Refund berhasil diselesaikan.");
+      notify.success(response.data?.message || "Refund berhasil diselesaikan.");
       setSelected(null);
       await load();
     } catch (error) {
-      toast.error(getApiError(error, "Refund tidak dapat diproses."));
+      notify.error(getApiError(error, "Refund tidak dapat diproses."));
     } finally {
       setProcessing(false);
     }
@@ -182,7 +182,7 @@ export default function RefundManagement() {
             <div className="flex flex-col gap-2 sm:flex-row"><label className="relative sm:w-72"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari invoice atau murid" className="h-11 rounded-xl pl-9" /></label><Button variant="outline" onClick={() => void load()} disabled={loading} className="h-11 rounded-xl"><RefreshCw size={16} className={loading ? "mr-2 animate-spin" : "mr-2"} />Muat ulang</Button></div>
           </div>
 
-          {loading ? <div className="grid min-h-72 place-items-center"><Loader2 className="animate-spin text-indigo-600" /></div> : rows.length === 0 ? <div className="grid min-h-72 place-items-center p-8 text-center"><div><CheckCircle2 className="mx-auto text-emerald-500" size={40} /><p className="mt-3 font-black text-slate-800">Tidak ada refund pada tampilan ini.</p></div></div> : <div className="divide-y divide-slate-100">{rows.map((item) => <article key={item.id} className="grid gap-4 p-4 sm:p-5 xl:grid-cols-[1fr_.9fr_.8fr_auto] xl:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-black text-slate-950">{item.student?.name || "Murid"}</p><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-500">{item.order_id || `Refund #${item.id}`}</span></div><p className="mt-1 truncate text-sm font-semibold text-slate-600">{item.subject || "Pesanan belajar"}</p><p className="mt-2 text-xs leading-5 text-slate-500">{item.reason}</p></div><div><p className="text-xs font-black uppercase tracking-wide text-slate-400">Nominal penuh</p><p className="mt-1 text-lg font-black text-rose-700">{rupiah(item.amount)}</p><p className="mt-1 text-xs text-slate-400">Dibuat {dateTime(item.created_at)}</p></div><div><p className="text-xs font-black uppercase tracking-wide text-slate-400">Tujuan</p>{item.destination_method === "bimbelku_balance" ? <p className="mt-1 text-sm font-black text-indigo-700">Saldo BimbelKu</p> : <><p className="mt-1 text-sm font-bold text-slate-700">{item.bank_destination.bank_name || "Rekening asal"}</p><p className="mt-1 text-xs text-slate-500">{item.bank_destination.account_name || "-"} · {item.bank_destination.account_number || "-"}</p></>}{tab === "history" && <><p className="mt-2 text-xs text-slate-400">{item.processor?.name || "Admin"} · {dateTime(item.processed_at)}</p>{item.destination_method === "bimbelku_balance" && item.wallet_balance_after !== null && item.wallet_balance_after !== undefined && <p className="mt-1 text-xs font-bold text-indigo-600">Saldo setelah refund: {rupiah(item.wallet_balance_after)}</p>}</>}</div><div className="flex flex-wrap gap-2 xl:justify-end">{tab === "pending" ? <Button onClick={() => openProcess(item)} className="h-10 rounded-xl bg-slate-950"><ArrowDownToLine size={15} className="mr-2" />Proses refund</Button> : <>{item.proof_url && <Button variant="outline" className="h-10 rounded-xl" onClick={() => void openProtectedFile(item.proof_url!, `bukti-refund-${item.id}`).catch(() => toast.error("Bukti refund tidak dapat dibuka."))}><FileText size={15} className="mr-2" />Bukti</Button>}<span className={`inline-flex h-10 items-center rounded-xl px-3 text-xs font-black ${item.destination_method === "bimbelku_balance" ? "bg-indigo-50 text-indigo-700" : "bg-emerald-50 text-emerald-700"}`}>{item.destination_method === "bimbelku_balance" ? "Masuk saldo" : "Transfer selesai"}</span></>}</div></article>)}</div>}
+          {loading ? <div className="grid min-h-72 place-items-center"><Loader2 className="animate-spin text-indigo-600" /></div> : rows.length === 0 ? <div className="grid min-h-72 place-items-center p-8 text-center"><div><CheckCircle2 className="mx-auto text-emerald-500" size={40} /><p className="mt-3 font-black text-slate-800">Tidak ada refund pada tampilan ini.</p></div></div> : <div className="divide-y divide-slate-100">{rows.map((item) => <article key={item.id} className="grid gap-4 p-4 sm:p-5 xl:grid-cols-[1fr_.9fr_.8fr_auto] xl:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-black text-slate-950">{item.student?.name || "Murid"}</p><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-500">{item.order_id || `Refund #${item.id}`}</span></div><p className="mt-1 truncate text-sm font-semibold text-slate-600">{item.subject || "Pesanan belajar"}</p><p className="mt-2 text-xs leading-5 text-slate-500">{item.reason}</p></div><div><p className="text-xs font-black uppercase tracking-wide text-slate-400">Nominal penuh</p><p className="mt-1 text-lg font-black text-rose-700">{rupiah(item.amount)}</p><p className="mt-1 text-xs text-slate-400">Dibuat {dateTime(item.created_at)}</p></div><div><p className="text-xs font-black uppercase tracking-wide text-slate-400">Tujuan</p>{item.destination_method === "bimbelku_balance" ? <p className="mt-1 text-sm font-black text-indigo-700">Saldo BimbelKu</p> : <><p className="mt-1 text-sm font-bold text-slate-700">{item.bank_destination.bank_name || "Rekening asal"}</p><p className="mt-1 text-xs text-slate-500">{item.bank_destination.account_name || "-"} · {item.bank_destination.account_number || "-"}</p></>}{tab === "history" && <><p className="mt-2 text-xs text-slate-400">{item.processor?.name || "Admin"} · {dateTime(item.processed_at)}</p>{item.destination_method === "bimbelku_balance" && item.wallet_balance_after !== null && item.wallet_balance_after !== undefined && <p className="mt-1 text-xs font-bold text-indigo-600">Saldo setelah refund: {rupiah(item.wallet_balance_after)}</p>}</>}</div><div className="flex flex-wrap gap-2 xl:justify-end">{tab === "pending" ? <Button onClick={() => openProcess(item)} className="h-10 rounded-xl bg-slate-950"><ArrowDownToLine size={15} className="mr-2" />Proses refund</Button> : <>{item.proof_url && <Button variant="outline" className="h-10 rounded-xl" onClick={() => void openProtectedFile(item.proof_url!, `bukti-refund-${item.id}`).catch(() => notify.error("Bukti refund tidak dapat dibuka."))}><FileText size={15} className="mr-2" />Bukti</Button>}<span className={`inline-flex h-10 items-center rounded-xl px-3 text-xs font-black ${item.destination_method === "bimbelku_balance" ? "bg-indigo-50 text-indigo-700" : "bg-emerald-50 text-emerald-700"}`}>{item.destination_method === "bimbelku_balance" ? "Masuk saldo" : "Transfer selesai"}</span></>}</div></article>)}</div>}
         </section>
       </div>
 

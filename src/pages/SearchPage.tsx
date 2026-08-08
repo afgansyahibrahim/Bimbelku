@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -24,7 +25,6 @@ import {
   Users,
   XCircle,
 } from "lucide-react";
-import { toast } from "sonner";
 import StudentLayout from "@/components/StudentLayout";
 import SubjectCombobox, { SubjectOption } from "@/components/SubjectCombobox";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
@@ -404,35 +404,35 @@ export default function SearchPage() {
   const nextStep = () => {
     if (currentStep === 1) {
       if (!form.subject_name || !form.grade || !form.chapter.trim()) {
-        toast.error("Lengkapi jenjang, mata pelajaran, dan materi utama.");
+        notify.error("Lengkapi jenjang, mata pelajaran, dan materi utama.");
         return;
       }
     }
     if (currentStep === 2 && form.learning_mode === "offline") {
       if (!form.address.trim()) {
-        toast.error("Alamat pertemuan wajib diisi untuk kelas offline.");
+        notify.error("Alamat pertemuan wajib diisi untuk kelas offline.");
         return;
       }
       if (!isValidPhone(form.contact_number)) {
-        toast.error("Nomor WhatsApp atau telepon belum valid.");
+        notify.error("Nomor WhatsApp atau telepon belum valid.");
         return;
       }
       if (!form.latitude || !form.longitude) {
-        toast.error("Gunakan lokasi perangkat untuk pencarian tutor offline.");
+        notify.error("Gunakan lokasi perangkat untuk pencarian tutor offline.");
         return;
       }
       if (!isValidHttpUrl(form.maps_link)) {
-        toast.error("Tautan Google Maps harus diawali http:// atau https://.");
+        notify.error("Tautan Google Maps harus diawali http:// atau https://.");
         return;
       }
     }
     if (currentStep === 3) {
       if (!form.scheduled_date || !form.start_time) {
-        toast.error("Pilih tanggal dan jam mulai.");
+        notify.error("Pilih tanggal dan jam mulai.");
         return;
       }
       if (scheduleIssue) {
-        toast.error(scheduleIssue);
+        notify.error(scheduleIssue);
         return;
       }
     }
@@ -475,7 +475,7 @@ export default function SearchPage() {
         longitude: profileResponse.data?.longitude?.toString() || current.longitude,
       }));
     } catch (error) {
-      toast.error(getApiError(error, "Data pencarian bimbel gagal dimuat."));
+      notify.error(getApiError(error, "Data pencarian bimbel gagal dimuat."));
     } finally {
       setLoading(false);
     }
@@ -485,9 +485,9 @@ export default function SearchPage() {
     try {
       const response = await http.get("/student/booking-requests");
       applyRequestResponse(response.data);
-      if (notify) toast.success("Status permintaan diperbarui.");
+      if (notify) notify.success("Status permintaan diperbarui.");
     } catch (error) {
-      if (notify) toast.error(getApiError(error));
+      if (notify) notify.error(getApiError(error));
     }
   }, [applyRequestResponse]);
 
@@ -526,7 +526,7 @@ export default function SearchPage() {
         setCatalogDetailsKey(requestKey);
       })
       .catch((error) => {
-        if (active) toast.error(getApiError(error, "Daftar bab gagal dimuat."));
+        if (active) notify.error(getApiError(error, "Daftar bab gagal dimuat."));
       })
       .finally(() => {
         if (active) setDetailsLoading(false);
@@ -549,29 +549,29 @@ export default function SearchPage() {
     event.preventDefault();
     const requestSnapshot = { ...form };
     if (!form.subject_name || !form.grade || !form.chapter.trim()) {
-      toast.error("Lengkapi jenjang, mata pelajaran, dan materi utama.");
+      notify.error("Lengkapi jenjang, mata pelajaran, dan materi utama.");
       setCurrentStep(1);
       return;
     }
     if (scheduleIssue) {
-      toast.error(scheduleIssue);
+      notify.error(scheduleIssue);
       setCurrentStep(3);
       return;
     }
     if (form.learning_mode === "offline" && (!form.latitude || !form.longitude)) {
-      toast.error("Aktifkan titik lokasi untuk pencarian offline.");
+      notify.error("Aktifkan titik lokasi untuk pencarian offline.");
       return;
     }
     if (form.learning_mode === "offline" && !form.address.trim()) {
-      toast.error("Alamat pertemuan wajib diisi untuk kelas offline.");
+      notify.error("Alamat pertemuan wajib diisi untuk kelas offline.");
       return;
     }
     if (form.learning_mode === "offline" && !isValidPhone(form.contact_number)) {
-      toast.error("Nomor WhatsApp/telepon belum valid.");
+      notify.error("Nomor WhatsApp/telepon belum valid.");
       return;
     }
     if (!isValidHttpUrl(form.maps_link)) {
-      toast.error("Tautan Google Maps harus diawali http:// atau https://.");
+      notify.error("Tautan Google Maps harus diawali http:// atau https://.");
       return;
     }
 
@@ -586,11 +586,11 @@ export default function SearchPage() {
         if (createdRequest?.id) {
           await http.post(`/student/booking-requests/${createdRequest.id}/cancel`);
         }
-        toast.error("Jenis kelas tidak tersimpan sesuai pilihan. Permintaan dibatalkan otomatis.");
+        notify.error("Jenis kelas tidak tersimpan sesuai pilihan. Permintaan dibatalkan otomatis.");
         await refreshRequests(false);
         return;
       }
-      toast.success(
+      notify.success(
         `${response.data.message} Jenis kelas: ${requestSnapshot.class_type === "private" ? "Privat" : "Kelompok"}.`,
       );
       setForm((current) => ({
@@ -606,7 +606,7 @@ export default function SearchPage() {
       setCurrentStep(1);
       await refreshRequests(false);
     } catch (error) {
-      toast.error(getApiError(error, "Permintaan bimbel gagal dibuat."));
+      notify.error(getApiError(error, "Permintaan bimbel gagal dibuat."));
     } finally {
       setSubmitting(false);
     }
@@ -616,11 +616,11 @@ export default function SearchPage() {
     setProcessing(id);
     try {
       const response = await http.post(`/student/booking-requests/${id}/${path}`, payload);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await refreshRequests(false);
       return response.data;
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
       return null;
     } finally {
       setProcessing(null);
@@ -665,7 +665,7 @@ export default function SearchPage() {
   const rejectTeacher = async () => {
     if (!rejecting) return;
     if (rejectReason === "other" && rejectNote.trim().length < 10) {
-      toast.error("Jelaskan alasan lain minimal 10 karakter.");
+      notify.error("Jelaskan alasan lain minimal 10 karakter.");
       return;
     }
     const result = await postAction(rejecting.id, "teacher-decision", {
@@ -686,7 +686,7 @@ export default function SearchPage() {
       extensions: ["jpg", "jpeg", "png", "pdf"],
     });
     if (error) {
-      toast.error(error);
+      notify.error(error);
       setAttachment(null);
       return;
     }
@@ -695,7 +695,7 @@ export default function SearchPage() {
 
   const openPayment = (item: BookingRequestItem, orderId = item.my_order?.id, dueAt = item.payment_due_at) => {
     if (!orderId) {
-      toast.error("Data tagihan belum tersedia.");
+      notify.error("Data tagihan belum tersedia.");
       return;
     }
     navigate("/payment", {
@@ -714,7 +714,7 @@ export default function SearchPage() {
   };
 
   const detectLocation = () => {
-    if (!navigator.geolocation) return toast.error("Perangkat ini tidak mendukung deteksi lokasi.");
+    if (!navigator.geolocation) return notify.error("Perangkat ini tidak mendukung deteksi lokasi.");
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
@@ -724,11 +724,11 @@ export default function SearchPage() {
           longitude: coords.longitude.toFixed(7),
         }));
         setLocating(false);
-        toast.success("Titik lokasi siap digunakan.");
+        notify.success("Titik lokasi siap digunakan.");
       },
       () => {
         setLocating(false);
-        toast.error("Lokasi gagal dibaca. Periksa izin lokasi pada browser.");
+        notify.error("Lokasi gagal dibaca. Periksa izin lokasi pada browser.");
       },
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
     );
@@ -737,7 +737,10 @@ export default function SearchPage() {
   if (loading) {
     return (
       <StudentLayout title="Cari Bimbingan">
-        <div className="grid min-h-[65vh] place-items-center"><RadarLoader label="Menyiapkan radar pencarian" /></div>
+        <div className="mx-auto max-w-7xl space-y-8 pb-12">
+          <SearchHero />
+          <div className="grid min-h-72 place-items-center rounded-[2rem] border border-slate-100 bg-white shadow-sm"><RadarLoader label="Menyiapkan radar pencarian" /></div>
+        </div>
       </StudentLayout>
     );
   }
@@ -745,18 +748,7 @@ export default function SearchPage() {
   return (
     <StudentLayout title="Cari Bimbingan">
       <div className="mx-auto max-w-7xl space-y-8 pb-12">
-        <section className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 px-7 py-9 text-white shadow-xl md:px-10">
-          <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-indigo-400/20 blur-3xl" />
-          <div className="relative max-w-3xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-indigo-100">
-              <Sparkles size={14} /> Pencocokan otomatis & adil
-            </div>
-            <h1 className="mt-5 text-3xl font-black tracking-tight md:text-4xl">Pilih waktumu, radar mencarikan tutor.</h1>
-            <p className="mt-3 max-w-2xl leading-7 text-indigo-100/80">
-              Sistem memeriksa mata pelajaran, jenjang, materi, slot kosong, performa, dan jarak—tanpa katalog tutor.
-            </p>
-          </div>
-        </section>
+        <SearchHero />
 
         {cooldownUntil && new Date(cooldownUntil) > new Date() && (
           <div className="flex gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-5 text-rose-800">
@@ -1202,6 +1194,23 @@ function RequestCard({
         </div>
       </div>
     </article>
+  );
+}
+
+function SearchHero() {
+  return (
+    <section className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 px-7 py-9 text-white shadow-xl md:px-10">
+      <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-indigo-400/20 blur-3xl" />
+      <div className="relative max-w-3xl">
+        <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-indigo-100">
+          <Sparkles size={14} /> Pencocokan otomatis & adil
+        </div>
+        <h1 className="mt-5 text-3xl font-black tracking-tight md:text-4xl">Pilih waktumu, radar mencarikan tutor.</h1>
+        <p className="mt-3 max-w-2xl leading-7 text-indigo-100/80">
+          Sistem memeriksa mata pelajaran, jenjang, materi, slot kosong, performa, dan jarak—tanpa katalog tutor.
+        </p>
+      </div>
+    </section>
   );
 }
 

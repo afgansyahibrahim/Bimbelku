@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
@@ -12,7 +13,6 @@ import {
   UserRoundCheck,
   XCircle,
 } from "lucide-react";
-import { toast } from "sonner";
 import AdminLayout from "@/components/AdminLayout";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
@@ -65,7 +65,7 @@ export default function TeacherVerification() {
       setPending(pendingResponse.data);
       setHistory(historyResponse.data);
     } catch (error) {
-      toast.error(getApiError(error, "Data verifikasi tutor gagal dimuat."));
+      notify.error(getApiError(error, "Data verifikasi tutor gagal dimuat."));
     } finally {
       setLoading(false);
     }
@@ -82,19 +82,19 @@ export default function TeacherVerification() {
       });
       if (!approved) return;
     } else if (notes.trim().length < 10) {
-      toast.error("Alasan penolakan minimal 10 karakter.");
+      notify.error("Alasan penolakan minimal 10 karakter.");
       return;
     }
     setProcessing(true);
     try {
       const response = await http.post("/admin/verify-teacher", { user_id: selected.id, status, notes });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setSelected(null);
       setRejecting(false);
       setNotes("");
       await load();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setProcessing(false);
     }
@@ -107,7 +107,7 @@ export default function TeacherVerification() {
     try {
       await openProtectedFile(url, label);
     } catch (error) {
-      toast.error(getApiError(error, "Dokumen gagal dibuka."));
+      notify.error(getApiError(error, "Dokumen gagal dibuka."));
     }
   };
 

@@ -1,5 +1,4 @@
 import { Component, ErrorInfo, ReactNode } from "react";
-import { AlertTriangle, Home, LogIn, RefreshCw } from "lucide-react";
 
 type AppErrorBoundaryProps = {
   children: ReactNode;
@@ -55,7 +54,7 @@ export default class AppErrorBoundary extends Component<
           className="w-full max-w-lg rounded-[2rem] border border-white bg-white p-6 text-center shadow-2xl shadow-slate-200/70 sm:p-8"
         >
           <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-amber-100 text-amber-700">
-            <AlertTriangle aria-hidden="true" size={30} />
+            <span aria-hidden="true" className="text-2xl font-black">!</span>
           </span>
           <h1 className="mt-5 text-2xl font-black text-slate-950">
             Halaman tidak berhasil dimuat
@@ -71,7 +70,7 @@ export default class AppErrorBoundary extends Component<
               onClick={this.reload}
               className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-black text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-300"
             >
-              <RefreshCw aria-hidden="true" size={17} />
+              <span aria-hidden="true" className="text-base">↻</span>
               Muat ulang
             </button>
             <button
@@ -79,7 +78,7 @@ export default class AppErrorBoundary extends Component<
               onClick={this.goHome}
               className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-200"
             >
-              <Home aria-hidden="true" size={17} />
+              <span aria-hidden="true" className="text-base">⌂</span>
               Beranda
             </button>
             <button
@@ -87,7 +86,7 @@ export default class AppErrorBoundary extends Component<
               onClick={this.goToLogin}
               className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 text-sm font-black text-indigo-800 transition hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-200"
             >
-              <LogIn aria-hidden="true" size={17} />
+              <span aria-hidden="true" className="text-base">→</span>
               Masuk kembali
             </button>
           </div>

@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import React, { useState, useEffect } from "react";
 import TeacherLayout from "../../components/TeacherLayout"; 
 import { 
@@ -7,7 +8,6 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { toast } from "sonner";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import http, { getApiError, getCached } from "@/lib/http";
 import {
@@ -48,7 +48,7 @@ export default function TeacherBankSettings() {
         }
     } catch (error) {
         console.error("Gagal load data bank", error);
-        toast.error("Gagal memuat data rekening.");
+        notify.error("Gagal memuat data rekening.");
     } finally {
         setIsLoading(false);
     }
@@ -56,11 +56,11 @@ export default function TeacherBankSettings() {
 
   const handleSave = async () => {
     if(!bankName || !accountNumber || !accountHolder || !currentPassword) {
-        toast.error("Mohon lengkapi semua data rekening.");
+        notify.error("Mohon lengkapi semua data rekening.");
         return;
     }
     if (!containsLetter(bankName)) {
-        toast.error("Nama bank atau e-wallet wajib mengandung huruf.");
+        notify.error("Nama bank atau e-wallet wajib mengandung huruf.");
         return;
     }
     if (
@@ -68,11 +68,11 @@ export default function TeacherBankSettings() {
         || accountNumber.length < PAYOUT_ACCOUNT_MIN_DIGITS
         || accountNumber.length > PAYOUT_ACCOUNT_MAX_DIGITS
     ) {
-        toast.error(`Nomor rekening atau e-wallet harus berisi ${PAYOUT_ACCOUNT_MIN_DIGITS}–${PAYOUT_ACCOUNT_MAX_DIGITS} digit.`);
+        notify.error(`Nomor rekening atau e-wallet harus berisi ${PAYOUT_ACCOUNT_MIN_DIGITS}–${PAYOUT_ACCOUNT_MAX_DIGITS} digit.`);
         return;
     }
     if (!isValidPersonName(accountHolder)) {
-        toast.error("Nama pemilik rekening harus berisi huruf dan tidak boleh memuat angka.");
+        notify.error("Nama pemilik rekening harus berisi huruf dan tidak boleh memuat angka.");
         return;
     }
 
@@ -96,7 +96,7 @@ export default function TeacherBankSettings() {
         const holdUntil = response.data?.payout_hold_until || null;
         setPayoutHoldUntil(holdUntil);
 
-        toast.success("Rekening Berhasil Disimpan!", {
+        notify.success("Rekening Berhasil Disimpan!", {
             description: holdUntil
               ? `Pencairan ditahan sampai ${new Date(holdUntil).toLocaleString("id-ID")}.`
               : "Data rekening tidak berubah.",
@@ -104,7 +104,7 @@ export default function TeacherBankSettings() {
             style: { background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857' }
         });
     } catch (error) {
-        toast.error(getApiError(error, "Gagal menyimpan rekening."));
+        notify.error(getApiError(error, "Gagal menyimpan rekening."));
     } finally {
         setIsSaving(false);
     }

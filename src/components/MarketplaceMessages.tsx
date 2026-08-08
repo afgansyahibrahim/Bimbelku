@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -14,7 +15,6 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
-import { toast } from "sonner";
 import { openProtectedFile } from "@/components/ProtectedImage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -108,7 +108,7 @@ export default function MarketplaceMessages({ role }: { role: "student" | "teach
     } catch (error) {
       if (!quiet) {
         setListError(true);
-        toast.error(getApiError(error, "Daftar percakapan gagal dimuat."));
+        notify.error(getApiError(error, "Daftar percakapan gagal dimuat."));
       }
     } finally {
       if (!quiet) setListLoading(false);
@@ -127,7 +127,7 @@ export default function MarketplaceMessages({ role }: { role: "student" | "teach
     } catch (error) {
       if (!quiet) {
         setChatError(true);
-        toast.error(getApiError(error, "Percakapan gagal dibuka."));
+        notify.error(getApiError(error, "Percakapan gagal dibuka."));
       }
     } finally {
       if (!quiet) setChatLoading(false);
@@ -180,7 +180,7 @@ export default function MarketplaceMessages({ role }: { role: "student" | "teach
       extensions: ["jpg", "jpeg", "png", "webp", "pdf"],
     });
     if (error) {
-      toast.error(error);
+      notify.error(error);
       setFile(null);
       return;
     }
@@ -205,7 +205,7 @@ export default function MarketplaceMessages({ role }: { role: "student" | "teach
       await Promise.all([loadChat(selectedId, true), loadConversations(true)]);
     } catch (error) {
       setPending(outgoing);
-      toast.error(getApiError(error, "Pesan gagal dikirim. Data tetap disimpan untuk dicoba ulang."));
+      notify.error(getApiError(error, "Pesan gagal dikirim. Data tetap disimpan untuk dicoba ulang."));
     } finally {
       setSending(false);
     }
@@ -274,7 +274,7 @@ export default function MarketplaceMessages({ role }: { role: "student" | "teach
                     <div className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm sm:max-w-[72%] sm:px-4 sm:py-3 ${item.is_mine ? "rounded-br-md bg-indigo-600 text-white" : "rounded-bl-md border border-slate-200 bg-white text-slate-800"}`}>
                       {!item.is_mine && <p className="mb-1 text-[10px] font-black text-indigo-500">{item.sender_name}</p>}
                       {item.body && <p className="whitespace-pre-wrap break-words leading-6">{item.body}</p>}
-                      {item.attachment && <button type="button" onClick={() => void openProtectedFile(item.attachment!.url, item.attachment!.name).catch(() => toast.error("Lampiran tidak dapat dibuka."))} className={`mt-2 flex w-full items-center gap-3 rounded-xl border p-3 text-left ${item.is_mine ? "border-white/20 bg-white/10" : "border-slate-200 bg-slate-50"}`}><FileText className="shrink-0" size={20} /><span className="min-w-0"><span className="block truncate text-xs font-black">{item.attachment.name}</span><span className={`mt-0.5 block text-[10px] ${item.is_mine ? "text-indigo-100" : "text-slate-400"}`}>{Math.max(1, Math.round(item.attachment.size / 1024))} KB · buka di viewer</span></span></button>}
+                      {item.attachment && <button type="button" onClick={() => void openProtectedFile(item.attachment!.url, item.attachment!.name).catch(() => notify.error("Lampiran tidak dapat dibuka."))} className={`mt-2 flex w-full items-center gap-3 rounded-xl border p-3 text-left ${item.is_mine ? "border-white/20 bg-white/10" : "border-slate-200 bg-slate-50"}`}><FileText className="shrink-0" size={20} /><span className="min-w-0"><span className="block truncate text-xs font-black">{item.attachment.name}</span><span className={`mt-0.5 block text-[10px] ${item.is_mine ? "text-indigo-100" : "text-slate-400"}`}>{Math.max(1, Math.round(item.attachment.size / 1024))} KB · buka di viewer</span></span></button>}
                       <p className={`mt-1.5 flex items-center justify-end gap-1 text-[9px] ${item.is_mine ? "text-indigo-100" : "text-slate-400"}`}>{timeOnly(item.created_at)}{item.is_mine && <CheckCheck size={12} aria-label={item.is_read ? "Sudah dibaca" : "Terkirim"} className={item.is_read ? "text-sky-200" : "text-indigo-200"} />}</p>
                     </div>
                   </div>

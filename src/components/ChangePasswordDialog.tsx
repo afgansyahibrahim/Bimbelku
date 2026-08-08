@@ -1,6 +1,6 @@
+import { notify } from "@/lib/notify";
 import { FormEvent, useState } from "react";
 import { Eye, EyeOff, KeyRound, Loader2, ShieldCheck } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -51,26 +51,26 @@ export default function ChangePasswordDialog({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (form.password.length < 8) {
-      toast.error("Kata sandi baru minimal 8 karakter.");
+      notify.error("Kata sandi baru minimal 8 karakter.");
       return;
     }
     if (form.password === form.current_password) {
-      toast.error("Kata sandi baru harus berbeda dari kata sandi saat ini.");
+      notify.error("Kata sandi baru harus berbeda dari kata sandi saat ini.");
       return;
     }
     if (form.password !== form.password_confirmation) {
-      toast.error("Konfirmasi kata sandi baru belum sama.");
+      notify.error("Konfirmasi kata sandi baru belum sama.");
       return;
     }
 
     setSaving(true);
     try {
       const response = await http.put("/user/password", form);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       onUpdated?.(response.data.password_updated_at || null);
       changeOpen(false);
     } catch (error) {
-      toast.error(getApiError(error, "Kata sandi gagal diperbarui."));
+      notify.error(getApiError(error, "Kata sandi gagal diperbarui."));
     } finally {
       setSaving(false);
     }

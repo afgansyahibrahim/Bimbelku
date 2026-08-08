@@ -8,9 +8,11 @@ use Illuminate\Support\Facades\Cache;
 
 class HourlyRateService
 {
+    private ?int $cacheVersion = null;
+
     public function resolve(string $subjectName, string $educationLevel, string $classType, string $learningMode): int
     {
-        $version = (int) Cache::get('hourly_rate.cache_version', 1);
+        $version = $this->cacheVersion ??= (int) Cache::get('hourly_rate.cache_version', 1);
         $cacheKey = 'hourly_rate.'.$version.'.'.sha1(
             mb_strtolower($subjectName).'|'.$educationLevel.'|'.$classType.'|'.$learningMode
         );
@@ -51,7 +53,8 @@ class HourlyRateService
 
     public function clearCache(): void
     {
-        $nextVersion = (int) Cache::get('hourly_rate.cache_version', 1) + 1;
+        $nextVersion = ($this->cacheVersion ?? (int) Cache::get('hourly_rate.cache_version', 1)) + 1;
         Cache::forever('hourly_rate.cache_version', $nextVersion);
+        $this->cacheVersion = $nextVersion;
     }
 }

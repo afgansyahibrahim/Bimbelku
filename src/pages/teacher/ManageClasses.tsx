@@ -1,6 +1,8 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { notify } from "@/lib/notify";
+import { FormEvent, lazy, Suspense, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowUpDown,
   BookOpen,
   CalendarDays,
@@ -22,10 +24,7 @@ import {
   Users,
   WalletCards,
 } from "lucide-react";
-import { toast } from "sonner";
 import TeacherLayout from "@/components/TeacherLayout";
-import CameraCapture from "@/components/CameraCapture";
-import LearningSessionHub from "@/components/LearningSessionHub";
 import ProtectedImage, { openProtectedFile } from "@/components/ProtectedImage";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
@@ -34,8 +33,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import http, { getApiError } from "@/lib/http";
+import http, { getApiError, getCached } from "@/lib/http";
 import { isValidHttpUrl, validateUpload } from "@/lib/validation";
+
+const CameraCapture = lazy(() => import("@/components/CameraCapture"));
+const LearningSessionHub = lazy(() => import("@/components/LearningSessionHub"));
 
 interface Participant {
   id: number;
@@ -203,6 +205,7 @@ export default function ManageClasses() {
   const [incidentLocation, setIncidentLocation] = useState("");
   const [impact, setImpact] = useState("");
   const [hubBookingId, setHubBookingId] = useState<number | null>(null);
+  const [hubReturnClass, setHubReturnClass] = useState<TeacherClass | null>(null);
   const [methodFilter, setMethodFilter] = useState<MethodFilter>("all");
   const [scheduleSort, setScheduleSort] = useState<ScheduleSort>("nearest");
 
@@ -238,7 +241,7 @@ export default function ManageClasses() {
   const loadClasses = async () => {
     setLoading(true);
     try {
-      const response = await http.get<unknown>("/teacher/classes");
+      const response = await getCached<unknown>("/teacher/classes", { maxAgeMs: 10_000 });
       const normalized = normalizeClasses(response.data);
       setClasses(normalized);
       setSelected((current) => current ? normalized.find((item) => item.id === current.id) || null : null);
@@ -248,7 +251,7 @@ export default function ManageClasses() {
       setClasses([]);
       setSelected(null);
       setLoadError(message);
-      toast.error(message);
+      notify.error(message);
     } finally {
       setLoading(false);
     }
@@ -256,16 +259,16 @@ export default function ManageClasses() {
 
   const saveMeetingLink = async (item: TeacherClass) => {
     if (meetingLink && !isValidHttpUrl(meetingLink)) {
-      toast.error("Tautan kelas harus diawali http:// atau https://.");
+      notify.error("Tautan kelas harus diawali http:// atau https://.");
       return;
     }
     setProcessing(true);
     try {
       const response = await http.put(`/teacher/classes/${item.id}`, { meeting_link: meetingLink });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await loadClasses();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setProcessing(false);
     }
@@ -287,7 +290,7 @@ export default function ManageClasses() {
     event.preventDefault();
     if (!action || !evidence) return;
     if (action.type === "absence" && action.item.type === "group" && !studentId) {
-      toast.error("Pilih murid yang dilaporkan tidak hadir.");
+      notify.error("Pilih murid yang dilaporkan tidak hadir.");
       return;
     }
 
@@ -325,12 +328,12 @@ export default function ManageClasses() {
     setProcessing(true);
     try {
       const response = await http.post(`/teacher/bookings/${action.item.id}/${endpoint}`, payload);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setAction(null);
       setSelected(null);
       await loadClasses();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setProcessing(false);
     }
@@ -346,16 +349,12 @@ export default function ManageClasses() {
         : ["jpg", "jpeg", "png", "webp", "pdf"],
     });
     if (error) {
-      toast.error(error);
+      notify.error(error);
       setEvidence(null);
       return;
     }
     setEvidence(file || null);
   };
-
-  if (loading) {
-    return <TeacherLayout title="Kelas Saya"><div className="grid min-h-[65vh] place-items-center"><Loader2 className="h-10 w-10 animate-spin text-indigo-600" /></div></TeacherLayout>;
-  }
 
   return (
     <TeacherLayout title="Kelas Saya">
@@ -426,7 +425,11 @@ export default function ManageClasses() {
           </section>
         )}
 
-        {loadError ? (
+        {loading ? (
+          <div role="status" aria-live="polite" className="grid min-h-56 place-items-center rounded-[2rem] border border-slate-100 bg-white shadow-sm">
+            <div className="text-center"><Loader2 className="mx-auto h-9 w-9 animate-spin text-indigo-600" /><p className="mt-3 text-sm font-bold text-slate-500">Memuat kelas tutor…</p></div>
+          </div>
+        ) : loadError ? (
           <div className="rounded-[2rem] border border-rose-100 bg-white px-5 py-12 text-center shadow-sm">
             <AlertTriangle className="mx-auto h-11 w-11 text-rose-400" />
             <p className="mt-4 font-black text-slate-800">Kelas belum dapat dimuat</p>
@@ -445,7 +448,7 @@ export default function ManageClasses() {
         ) : (
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             {visibleClasses.map((item) => (
-              <article key={item.id} className="flex flex-col rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
+              <article key={item.id} className="render-auto flex flex-col rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
                 <div className="flex items-start justify-between gap-3">
                   <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ${item.method === "online" ? "bg-indigo-50 text-indigo-600" : "bg-emerald-50 text-emerald-600"}`}>
                     {item.method === "online" ? <Monitor /> : <MapPin />}
@@ -470,13 +473,21 @@ export default function ManageClasses() {
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
         <DialogContent className="max-h-[92dvh] overflow-y-auto rounded-[2rem] sm:max-w-2xl">
           {selected && <>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setSelected(null)}
+              className="w-fit -ml-3 rounded-xl text-slate-600 hover:bg-slate-50 hover:text-indigo-700"
+            >
+              <ArrowLeft size={16} className="mr-2" />Kembali ke daftar kelas
+            </Button>
             <DialogHeader><DialogTitle className="text-2xl">{selected.subject} · {selected.chapter || selected.topic || "Sesi belajar"}</DialogTitle><DialogDescription>{dateTime(selected.start_at)} · {selected.type === "group" ? "Kelompok" : "Privat"}</DialogDescription></DialogHeader>
             <div className="grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm sm:grid-cols-2"><Info icon={GraduationCap} text={`${selected.education_level || ""} ${selected.grade || ""}`} /><Info icon={Clock3} text={timeRange(selected.start_at, selected.end_at)} /><Info icon={selected.method === "online" ? Monitor : MapPin} text={selected.method === "online" ? "Online" : selected.address || "Alamat murid"} /><Info icon={WalletCards} text={`Komisi admin ${selected.commission_percent}%`} /></div>
             {selected.learning_goal && <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4"><p className="text-xs font-black uppercase tracking-widest text-indigo-500">Tujuan murid</p><p className="mt-2 text-sm leading-6 text-indigo-900">{selected.learning_goal}</p></div>}
-            {selected.attachment_url && <Button type="button" variant="outline" className="rounded-xl" onClick={() => void openProtectedFile(selected.attachment_url!, "lampiran-materi").catch(() => toast.error("Lampiran tidak dapat dibuka."))}><ExternalLink size={16} className="mr-2" />Buka lampiran materi</Button>}
+            {selected.attachment_url && <Button type="button" variant="outline" className="rounded-xl" onClick={() => void openProtectedFile(selected.attachment_url!, "lampiran-materi").catch(() => notify.error("Lampiran tidak dapat dibuka."))}><ExternalLink size={16} className="mr-2" />Buka lampiran materi</Button>}
             {selected.method === "online" ? <div><Label className="font-bold">Tautan Google Meet/Zoom</Label><div className="mt-2 flex gap-2"><Input type="url" className="h-11 rounded-xl" value={meetingLink} onChange={(event) => setMeetingLink(event.target.value)} placeholder="https://..." /><Button aria-label="Simpan tautan kelas" onClick={() => saveMeetingLink(selected)} disabled={processing} className="rounded-xl bg-indigo-600"><Link2 size={16} /></Button></div></div> : selected.maps_link ? <Button asChild className="rounded-xl bg-emerald-600 hover:bg-emerald-700"><a href={selected.maps_link} target="_blank" rel="noreferrer"><MapPin size={16} className="mr-2" />Buka lokasi murid</a></Button> : <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-sm text-amber-800">Alamat lengkap dibuka setelah pembayaran dikonfirmasi.</div>}
             <div><p className="text-sm font-black text-slate-800">Peserta</p><div className="mt-2 space-y-2">{selected.participants.length ? selected.participants.map((participant) => <div key={participant.id} className="flex items-center justify-between rounded-xl border border-slate-100 p-3 text-sm"><div><p className="font-bold text-slate-800">{participant.name}</p><p className="text-xs text-slate-400">{participant.status}</p></div><span className="font-bold text-slate-600">{rupiah(participant.amount)}</span></div>) : <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-500">Data peserta belum tersedia.</p>}</div></div>
-            {["confirmed", "in_progress", "awaiting_student_approval", "disputed", "absence_review", "admin_review_required", "completed"].includes(selected.status) && <Button variant="outline" className="w-full rounded-xl border-indigo-200 text-indigo-700" onClick={() => { setHubBookingId(selected.id); setSelected(null); }}><MessageCircle size={16} className="mr-2" />Buka ruang belajar</Button>}
+            {["confirmed", "in_progress", "awaiting_student_approval", "disputed", "absence_review", "admin_review_required", "completed"].includes(selected.status) && <Button variant="outline" className="w-full rounded-xl border-indigo-200 text-indigo-700" onClick={() => { setHubReturnClass(selected); setHubBookingId(selected.id); setSelected(null); }}><MessageCircle size={16} className="mr-2" />Buka ruang belajar</Button>}
             {selected.latest_report && <div className="flex gap-3 rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900"><FileWarning className="shrink-0" /><div><p className="font-black">Laporan {selected.latest_report.status}</p><p className="mt-1 line-clamp-3 leading-6">{selected.latest_report.chronology}</p></div></div>}
             {selected.latest_dispute && <div className="flex gap-3 rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm text-rose-900"><ShieldAlert className="shrink-0" /><div><p className="font-black">Keberatan murid {selected.latest_dispute.status}</p><p className="mt-1 leading-6">{selected.latest_dispute.reason}</p></div></div>}
             {selected.completion_evidence_url && <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4"><div className="flex items-center gap-2 font-black text-emerald-900"><FileCheck2 size={18} />Bukti sudah dikirim</div><ProtectedImage source={selected.completion_evidence_url} alt="Bukti sesi" className="mt-3 max-h-64 w-full rounded-xl bg-white object-contain" /><p className="mt-3 text-sm text-emerald-800">{selected.completion_notes}</p></div>}
@@ -494,13 +505,33 @@ export default function ManageClasses() {
               {action.type === "absence" && action.item.type === "group" && <div><Label>Pilih murid</Label><Select value={studentId} onValueChange={setStudentId}><SelectTrigger className="mt-2 h-11 rounded-xl"><SelectValue placeholder="Murid yang tidak hadir" /></SelectTrigger><SelectContent>{action.item.participants.filter((item) => item.order_status === "paid" || item.status === "paid").map((item) => <SelectItem key={item.student_id} value={String(item.student_id)}>{item.name}</SelectItem>)}</SelectContent></Select></div>}
               {action.type === "emergency" && <><div><Label>Jenis keadaan</Label><Input required maxLength={120} className="mt-2 rounded-xl" value={incidentType} onChange={(event) => setIncidentType(event.target.value)} placeholder="Contoh: kecelakaan dalam perjalanan" /></div><div><Label>Waktu kejadian</Label><Input required type="datetime-local" className="mt-2 rounded-xl" value={incidentAt} onChange={(event) => setIncidentAt(event.target.value)} /></div><div><Label>Lokasi kejadian</Label><Input required maxLength={500} className="mt-2 rounded-xl" value={incidentLocation} onChange={(event) => setIncidentLocation(event.target.value)} /></div><div><Label>Dampak terhadap sesi</Label><Textarea required minLength={20} maxLength={1500} className="mt-2 min-h-24 rounded-xl" value={impact} onChange={(event) => setImpact(event.target.value)} /></div></>}
               <div><Label>{action.type === "complete" ? "Catatan pelaksanaan" : "Kronologi lengkap"}</Label><Textarea required minLength={action.type === "complete" ? 20 : action.type === "absence" ? 30 : 50} maxLength={action.type === "emergency" ? 3000 : action.type === "absence" ? 2500 : 2000} className="mt-2 min-h-36 rounded-xl" value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Tuliskan kejadian dengan jelas dan masuk akal" /></div>
-              {action.type === "complete" ? <div><Label>Bukti pelaksanaan dari kamera</Label><div className="mt-2"><CameraCapture file={evidence} required onCapture={(file) => { selectEvidence(file); setEvidenceCapturedAt(new Date().toISOString()); }} label="Ambil foto pelaksanaan sekarang" dialogTitle="Foto bukti pelaksanaan" dialogDescription="Ambil foto kondisi kelas saat ini. Galeri tidak digunakan agar waktu pengambilan dapat diverifikasi." captureButtonLabel="Ambil bukti" facingMode="environment" guideShape="frame" /></div><p className="mt-2 text-xs leading-5 text-slate-500">Foto harus diambil langsung dan dikirim dalam 20 menit.</p></div> : <div><Label>Bukti yang dapat dipercaya</Label><Input required className="mt-2" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(event) => selectEvidence(event.target.files?.[0])} /></div>}
+              {action.type === "complete" ? <div><Label>Bukti pelaksanaan dari kamera</Label><div className="mt-2"><Suspense fallback={<div className="h-12 rounded-xl bg-slate-100 animate-pulse" aria-hidden="true" />}><CameraCapture file={evidence} required onCapture={(file) => { selectEvidence(file); setEvidenceCapturedAt(new Date().toISOString()); }} label="Ambil foto pelaksanaan sekarang" dialogTitle="Foto bukti pelaksanaan" dialogDescription="Ambil foto kondisi kelas saat ini. Galeri tidak digunakan agar waktu pengambilan dapat diverifikasi." captureButtonLabel="Ambil bukti" facingMode="environment" guideShape="frame" /></Suspense></div><p className="mt-2 text-xs leading-5 text-slate-500">Foto harus diambil langsung dan dikirim dalam 20 menit.</p></div> : <div><Label>Bukti yang dapat dipercaya</Label><Input required className="mt-2" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(event) => selectEvidence(event.target.files?.[0])} /></div>}
               <Button className={`w-full rounded-xl ${action.type === "emergency" ? "bg-rose-600 hover:bg-rose-700" : "bg-indigo-600 hover:bg-indigo-700"}`} disabled={processing}>{processing && <Loader2 size={16} className="mr-2 animate-spin" />}Kirim</Button>
             </form>
           </>}
         </DialogContent>
       </Dialog>
-      <LearningSessionHub bookingId={hubBookingId} open={hubBookingId !== null} onOpenChange={(open) => !open && setHubBookingId(null)} />
+      {hubBookingId !== null && (
+        <Suspense fallback={null}>
+          <LearningSessionHub
+            bookingId={hubBookingId}
+            open
+            onOpenChange={(open) => {
+              if (!open) {
+                setHubBookingId(null);
+                setHubReturnClass(null);
+              }
+            }}
+            backLabel={hubReturnClass ? "Kembali ke detail kelas" : undefined}
+            onBack={hubReturnClass ? () => {
+              setHubBookingId(null);
+              setSelected(hubReturnClass);
+              setMeetingLink(hubReturnClass.meeting_link || "");
+              setHubReturnClass(null);
+            } : undefined}
+          />
+        </Suspense>
+      )}
     </TeacherLayout>
   );
 }

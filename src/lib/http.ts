@@ -1,7 +1,7 @@
 import axios, { AxiosRequestConfig, AxiosResponse } from "axios";
+import { API_BASE_URL, STORAGE_BASE_URL } from "@/lib/apiBase";
 
-export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api").replace(/\/$/, "");
-export const STORAGE_BASE_URL = API_BASE_URL.replace(/\/api$/, "");
+export { API_BASE_URL, STORAGE_BASE_URL } from "@/lib/apiBase";
 
 const http = axios.create({
   baseURL: API_BASE_URL,
@@ -27,6 +27,32 @@ const financialMutationKeys = new Map<string, { key: string; expiresAt: number }
 const MAX_CACHE_ENTRIES = 80;
 let cacheGeneration = 0;
 
+const PUBLIC_GET_ENDPOINTS = new Set([
+  "/learning-catalog",
+  "/settings/footer",
+  "/socials",
+  "/settings/teacher-cover",
+  "/package-plans",
+  "/learning-time-slots",
+  "/content/banners",
+  "/content/tutorials",
+  "/content/promotions",
+]);
+
+const requestPathname = (url: string): string => {
+  const withoutBase = url.startsWith(API_BASE_URL)
+    ? url.slice(API_BASE_URL.length)
+    : url;
+  return withoutBase.split("?")[0] || "/";
+};
+
+const isPublicGetRequest = (method: string | undefined, url: string): boolean => {
+  if ((method || "get").toLowerCase() !== "get") return false;
+  const pathname = requestPathname(url);
+  return PUBLIC_GET_ENDPOINTS.has(pathname)
+    || pathname.startsWith("/content/promotions/");
+};
+
 type FinancialRequestConfig = AxiosRequestConfig & {
   bimbelkuFinanceKeySlot?: string;
 };
@@ -42,7 +68,9 @@ const stableParams = (params: unknown): string => {
 };
 
 const cacheKey = (url: string, config: AxiosRequestConfig): string => {
-  const token = localStorage.getItem("token") || "public";
+  const token = isPublicGetRequest(config.method || "get", url)
+    ? "public"
+    : localStorage.getItem("token") || "public";
   return `${token}|${url}|${stableParams(config.params)}`;
 };
 
@@ -116,12 +144,12 @@ export async function getCached<T = unknown>(
 }
 
 http.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
   const method = config.method?.toLowerCase();
   const url = String(config.url || "");
+  const token = localStorage.getItem("token");
+  if (token && !isPublicGetRequest(method, url)) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
   const financialMutation = method && !["get", "head", "options"].includes(method) && (
     /\/orders\/\d+\/pay$/.test(url)
     || url === "/student/packages"
@@ -212,15 +240,54 @@ const readableApiMessage = (message?: string): string | undefined => {
 
 const isTechnicalServerMessage = (message: string): boolean => /no query results for model|modelnotfoundexception|sqlstate\[|stack trace|undefined (?:property|variable|array key)|call to (?:a member function|undefined method)|too few arguments|class [^ ]+ not found|syntax error/i.test(message);
 
-export function getApiError(error: unknown, fallback = "Terjadi kesalahan. Silakan coba lagi."): string {
-  if (axios.isAxiosError(error)) {
-    const data = error.response?.data as { message?: string; errors?: Record<string, string[]> } | undefined;
-    const firstError = data?.errors ? Object.values(data.errors).flat()[0] : undefined;
-    const genericMessage = data?.message === "The given data was invalid." ? undefined : data?.message;
-    const message = readableApiMessage(firstError || genericMessage);
-    if (message && !isTechnicalServerMessage(message)) return message;
+export type ApiErrorDetails = {
+  message: string;
+  status?: number;
+  code?: string;
+  retryAfterSeconds?: number;
+};
+
+type ApiErrorPayload = {
+  message?: string;
+  errors?: Record<string, string[]>;
+  error_code?: string;
+  retry_after_seconds?: number;
+};
+
+export function getApiErrorDetails(
+  error: unknown,
+  fallback = "Terjadi kesalahan. Silakan coba lagi.",
+): ApiErrorDetails {
+  if (!axios.isAxiosError(error)) return { message: fallback };
+
+  const data = error.response?.data as ApiErrorPayload | undefined;
+  const status = error.response?.status;
+  const firstError = data?.errors ? Object.values(data.errors).flat()[0] : undefined;
+  const genericMessage = data?.message === "The given data was invalid." ? undefined : data?.message;
+  const rawRetryAfter = data?.retry_after_seconds ?? Number(error.response?.headers?.["retry-after"]);
+  const retryAfterSeconds = Number.isFinite(Number(rawRetryAfter))
+    ? Math.max(1, Number(rawRetryAfter))
+    : undefined;
+  let message = readableApiMessage(firstError || genericMessage);
+
+  if (status === 429 && (!message || /too many attempts/i.test(message))) {
+    message = retryAfterSeconds
+      ? `Terlalu banyak percobaan dalam waktu singkat. Tunggu ${retryAfterSeconds} detik lalu coba lagi.`
+      : "Terlalu banyak percobaan dalam waktu singkat. Tunggu sebentar lalu coba lagi.";
   }
-  return fallback;
+
+  if (!message || isTechnicalServerMessage(message)) message = fallback;
+
+  return {
+    message,
+    status,
+    code: data?.error_code,
+    retryAfterSeconds,
+  };
+}
+
+export function getApiError(error: unknown, fallback = "Terjadi kesalahan. Silakan coba lagi."): string {
+  return getApiErrorDetails(error, fallback).message;
 }
 
 export default http;

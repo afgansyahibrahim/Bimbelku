@@ -1,6 +1,6 @@
+import { notify } from "@/lib/notify";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { BookOpen, Coins, Loader2, Plus, Save, Trash2 } from "lucide-react";
-import { toast } from "sonner";
 import AdminLayout from "@/components/AdminLayout";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import SubjectCombobox, { SubjectOption } from "@/components/SubjectCombobox";
@@ -45,7 +45,7 @@ export default function HourlyRates() {
       setDefaults(response.data.defaults || { private_online: 40000, private_offline: 40000, group_online: 40000, group_offline: 40000 });
       setGroupSettings(response.data.group_settings || { minimum: 2, maximum: 5, wait_hours: 24 });
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setLoading(false);
     }
@@ -58,7 +58,7 @@ export default function HourlyRates() {
       maxAgeMs: 5 * 60_000,
     })
       .then((response) => setSubjectOptions(response.data.subject_options || []))
-      .catch(() => toast.error("Katalog mata pelajaran belum dapat dimuat."));
+      .catch(() => notify.error("Katalog mata pelajaran belum dapat dimuat."));
   }, []);
 
   const createSubject = async (name: string): Promise<SubjectOption | null> => {
@@ -73,10 +73,10 @@ export default function HourlyRates() {
       });
       const created = response.data.data as SubjectOption;
       setSubjectOptions((current) => [...current.filter((item) => item.id !== created.id), created]);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       return created;
     } catch (error) {
-      toast.error(getApiError(error, "Mata pelajaran gagal ditambahkan."));
+      notify.error(getApiError(error, "Mata pelajaran gagal ditambahkan."));
       return null;
     }
   };
@@ -92,11 +92,11 @@ export default function HourlyRates() {
         learning_mode: form.learning_mode,
         amount: Number(form.amount),
       });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setForm({ subject_name: "", education_level: "all", class_type: "private", learning_mode: "online", amount: "" });
       await loadRates();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setSaving(false);
     }
@@ -105,18 +105,18 @@ export default function HourlyRates() {
   const saveDefaults = async () => {
     try {
       const response = await http.post("/admin/hourly-rates/defaults", defaults);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     }
   };
 
   const saveGroupSettings = async () => {
     try {
       const response = await http.post("/admin/hourly-rates/group-settings", groupSettings);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     }
   };
 
@@ -130,10 +130,10 @@ export default function HourlyRates() {
     if (!approved) return;
     try {
       const response = await http.delete(`/admin/hourly-rates/${id}`);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await loadRates();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     }
   };
 

@@ -1,4 +1,5 @@
 export const FILE_PREVIEW_EVENT = "bimbelku:file-preview";
+export const FILE_PREVIEW_REQUEST_EVENT = "bimbelku:file-preview-needed";
 
 export interface FilePreviewDetail {
   url: string;
@@ -7,10 +8,20 @@ export interface FilePreviewDetail {
   release?: () => void;
 }
 
+let pendingPreview: FilePreviewDetail | null = null;
+
 export const showFilePreview = (detail: FilePreviewDetail) => {
+  pendingPreview = detail;
+  window.dispatchEvent(new Event(FILE_PREVIEW_REQUEST_EVENT));
   window.dispatchEvent(new CustomEvent<FilePreviewDetail>(FILE_PREVIEW_EVENT, {
     detail,
   }));
+};
+
+export const consumePendingFilePreview = () => {
+  const detail = pendingPreview;
+  pendingPreview = null;
+  return detail;
 };
 
 export const inferContentType = (source: string) => {

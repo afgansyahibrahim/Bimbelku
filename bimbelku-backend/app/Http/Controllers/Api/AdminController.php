@@ -142,6 +142,7 @@ class AdminController extends Controller
                     ? 'Akun Anda telah diverifikasi dan dapat menerima permintaan belajar.'
                     : 'Verifikasi belum disetujui. Alasan: '.trim((string) ($validated['notes'] ?? '')),
                 'type' => $validated['status'] === 'active' ? 'success' : 'warning',
+                'target_url' => '/guru/saya',
             ]);
         }, 3);
 
@@ -383,7 +384,21 @@ class AdminController extends Controller
 
         $order = Order::findOrFail($validated['order_id']);
         if ($order->status !== 'submitted') {
-            return response()->json(['message' => 'Pembayaran ini sudah diproses.'], 422);
+            $message = match ($order->status) {
+                'cancelled' => 'Tagihan ini sudah dibatalkan murid. Tidak ada bukti aktif yang perlu diproses lagi.',
+                'rejected' => 'Bukti pembayaran ini sudah pernah ditolak. Muat ulang daftar pembayaran untuk melihat status terbaru.',
+                'paid' => 'Pembayaran ini sudah diterima dan tidak dapat diproses ulang.',
+                'refund_pending' => 'Pembayaran ini sudah masuk proses refund dan tidak dapat diverifikasi ulang.',
+                'refunded' => 'Pembayaran ini sudah direfund dan tidak dapat diverifikasi ulang.',
+                'expired' => 'Tagihan ini sudah kedaluwarsa dan tidak dapat diproses.',
+                'pending' => 'Tagihan ini belum memiliki bukti pembayaran yang sedang menunggu pemeriksaan.',
+                default => 'Status pembayaran sudah berubah. Muat ulang daftar pembayaran sebelum melanjutkan.',
+            };
+
+            return response()->json([
+                'message' => $message,
+                'current_status' => $order->status,
+            ], 409);
         }
 
         if (!$order->payment_proof) {
@@ -400,7 +415,7 @@ class AdminController extends Controller
 
         if ($order->learning_package_id) {
             if ($validated['status'] === 'rejected') {
-                $packageCheckoutService->rejectPackagePayment($order, $reason);
+                $packageCheckoutService->rejectPackagePayment($order, $reason, $request->user());
                 return response()->json(['message' => 'Pembayaran paket ditolak.']);
             }
             $result = $packageCheckoutService->activatePaidPackage($order, $request->user());
@@ -465,6 +480,7 @@ class AdminController extends Controller
                         ? 'Bukti pembayaran ditolak: '.$reason
                         : 'Bukti pembayaran ditolak. Silakan hubungi admin melalui pusat bantuan.',
                     'type' => 'warning',
+                    'target_url' => '/student/history',
                 ]);
 
                 return response()->json(['message' => 'Pembayaran ditolak.', 'data' => $lockedOrder->fresh()]);
@@ -521,12 +537,14 @@ class AdminController extends Controller
                 'title' => 'Kelas dikonfirmasi',
                 'message' => "Pembayaran diterima. Kelas bersama {$teacher->name} sudah aktif.",
                 'type' => 'success',
+                'target_url' => '/student/my-classes',
             ]);
             Notification::create([
                 'user_id' => $booking->teacher_id,
                 'title' => 'Pembayaran murid diterima',
                 'message' => "Kelas {$subject} pada {$booking->start_at->format('d/m/Y H:i')} WIB sudah dikonfirmasi.",
                 'type' => 'success',
+                'target_url' => '/guru/kelas',
             ]);
 
             return response()->json(['message' => 'Pembayaran diverifikasi dan kelas dikonfirmasi.', 'data' => $lockedOrder->fresh()]);
@@ -600,6 +618,7 @@ class AdminController extends Controller
                     'title' => 'Bukti pembayaran ditolak',
                     'message' => 'Bukti perlu dikirim ulang: '.$reason,
                     'type' => 'warning',
+                    'target_url' => '/student/history',
                 ]);
 
                 return response()->json([
@@ -642,6 +661,7 @@ class AdminController extends Controller
                         'title' => 'Sesi dibatalkan karena pembayaran terlambat',
                         'message' => 'Pembayaran baru terverifikasi setelah sesi dimulai. Dana murid masuk antrean refund dan sesi tidak menghasilkan pendapatan.',
                         'type' => 'warning',
+                        'target_url' => '/guru/kelas',
                     ]);
                 } else {
                     if ($participant->bookingRequest) {
@@ -694,6 +714,7 @@ class AdminController extends Controller
                     'title' => 'Pembayaran masuk antrean refund',
                     'message' => 'Bukti diterima setelah sesi dimulai sehingga dana dikembalikan penuh melalui proses transfer admin.',
                     'type' => 'warning',
+                    'target_url' => '/student/history',
                 ]);
 
                 return response()->json([
@@ -786,6 +807,7 @@ class AdminController extends Controller
                         'title' => 'Sesi dikonfirmasi',
                         'message' => "Pembayaran minimum terpenuhi. Sesi {$subject} sudah aktif.",
                         'type' => 'success',
+                        'target_url' => '/guru/kelas',
                     ]);
                 }
             } else {
@@ -803,6 +825,7 @@ class AdminController extends Controller
                     ? "Sesi bersama {$teacher->name} sudah dikonfirmasi."
                     : 'Pembayaran diterima. Kelas kelompok menunggu pembayaran anggota minimum.',
                 'type' => 'success',
+                'target_url' => $paidCount >= $minimumParticipants ? '/student/my-classes' : '/student/packages',
             ]);
 
             return response()->json([

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\CurriculumSubject;
+use App\Models\Notification;
 use Illuminate\Http\Request;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
@@ -215,6 +216,24 @@ class AuthController extends Controller
                 Storage::disk('local')->delete($path);
             }
             throw $exception;
+        }
+
+        if ($user->role === 'teacher') {
+            User::query()
+                ->where('role', 'admin')
+                ->where('status', 'active')
+                ->pluck('id')
+                ->each(fn (int $adminId) => Notification::updateOrCreate(
+                    ['unique_key' => "teacher-registration:{$user->id}:{$adminId}"],
+                    [
+                        'user_id' => $adminId,
+                        'title' => 'Pendaftaran tutor baru',
+                        'message' => "{$user->name} menunggu verifikasi dokumen dan profil tutor.",
+                        'type' => 'info',
+                        'target_url' => '/admin/guru',
+                        'is_read' => false,
+                    ]
+                ));
         }
 
         return response()->json([

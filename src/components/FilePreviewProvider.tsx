@@ -8,6 +8,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import {
+  consumePendingFilePreview,
   FILE_PREVIEW_EVENT,
   FilePreviewDetail,
 } from "@/lib/filePreview";
@@ -33,6 +34,7 @@ export default function FilePreviewProvider() {
     const open = (event: Event) => {
       const detail = (event as CustomEvent<FilePreviewDetail>).detail;
       if (!detail?.url) return;
+      consumePendingFilePreview();
 
       setPreview((current) => {
         current?.release?.();
@@ -43,6 +45,12 @@ export default function FilePreviewProvider() {
     };
 
     window.addEventListener(FILE_PREVIEW_EVENT, open);
+    const pending = consumePendingFilePreview();
+    if (pending?.url) {
+      setPreview(pending);
+      setScale(1);
+      setRotation(0);
+    }
     return () => window.removeEventListener(FILE_PREVIEW_EVENT, open);
   }, []);
 

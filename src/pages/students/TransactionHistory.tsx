@@ -14,7 +14,6 @@ import {
   WifiOff,
   XCircle,
 } from "lucide-react";
-import { toast } from "sonner";
 import axios from "axios";
 import StudentLayout from "@/components/StudentLayout";
 import ProtectedImage from "@/components/ProtectedImage";

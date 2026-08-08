@@ -10,8 +10,10 @@ class ClassroomController extends Controller
 {
     public function index(Request $request)
     {
+        $teacherId = (int) $request->user()->id;
+
         $bookings = Booking::query()
-            ->where('teacher_id', $request->user()->id)
+            ->where('teacher_id', $teacherId)
             ->whereNotIn('status', ['cancelled', 'student_rejected', 'payment_expired', 'expired'])
             ->with([
                 'bookingRequest',
@@ -29,11 +31,14 @@ class ClassroomController extends Controller
                     ->with('responses')
                     ->latest(),
             ])
+            ->withCount([
+                'classroomMessages as unread_message_count' => fn ($query) => $query
+                    ->where('sender_id', '!=', $teacherId)
+                    ->whereDoesntHave('reads', fn ($readQuery) => $readQuery->where('user_id', $teacherId)),
+            ])
             ->latest('start_at')
             ->limit(200)
             ->get();
-
-        $teacherId = (int) $request->user()->id;
 
         return response()->json($bookings->map(function (Booking $booking) use ($teacherId) {
             $bookingRequest = $booking->bookingRequest;
@@ -106,10 +111,7 @@ class ClassroomController extends Controller
                     'created_at' => $booking->latestClassroomMessage->created_at,
                     'has_attachment' => (bool) $booking->latestClassroomMessage->attachment_path,
                 ] : null,
-                'unread_message_count' => $booking->classroomMessages()
-                    ->where('sender_id', '!=', $teacherId)
-                    ->whereDoesntHave('reads', fn ($query) => $query->where('user_id', $teacherId))
-                    ->count(),
+                'unread_message_count' => (int) $booking->unread_message_count,
                 'pending_schedule_change' => $booking->scheduleChangeRequests->first(),
                 'latest_report' => $booking->reports->first(),
                 'latest_dispute' => $booking->disputes->first(),

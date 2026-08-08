@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { API_BASE_URL } from "@/lib/http";
 import React, { useState, useEffect, useRef } from "react";
 import AdminLayout from "../../components/AdminLayout";
@@ -5,7 +6,6 @@ import {
   MessageSquare, User, CheckCircle2, X, Send, Loader2, Search, Paperclip, Lock, Clock, Image as ImageIcon, ChevronLeft
 } from "lucide-react";
 import axios from "axios";
-import { toast } from "sonner";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import ProtectedImage from "@/components/ProtectedImage";
 import { validateUpload } from "@/lib/validation";
@@ -33,7 +33,7 @@ export default function AdminMessages() {
       });
       setTickets(res.data);
     } catch (e) { 
-        if(!isBackground) toast.error("Gagal load pesan."); 
+        if(!isBackground) notify.error("Gagal load pesan."); 
     } 
     finally { 
         if(!isBackground) setIsLoading(false); 
@@ -90,7 +90,7 @@ export default function AdminMessages() {
 
         setMessage(""); setImageFile(null);
         fetchChatDetail(activeTicket.id); 
-    } catch(e) { toast.error("Gagal kirim."); }
+    } catch(e) { notify.error("Gagal kirim."); }
     finally { setIsSending(false); }
   };
 
@@ -101,7 +101,7 @@ export default function AdminMessages() {
       extensions: ["jpg", "jpeg", "png", "webp"],
     });
     if (error) {
-      toast.error(error);
+      notify.error(error);
       setImageFile(null);
       if (input) input.value = "";
       return;
@@ -122,9 +122,9 @@ export default function AdminMessages() {
         await axios.post(`${API_BASE_URL}/tickets/${activeTicket.id}/close`, {}, {
             headers: { Authorization: `Bearer ${token}` }
         });
-        toast.success("Sesi diselesaikan.");
+        notify.success("Sesi diselesaikan.");
         fetchChatDetail(activeTicket.id); 
-      } catch(e) { toast.error("Gagal menutup sesi."); }
+      } catch(e) { notify.error("Gagal menutup sesi."); }
   };
 
   const filteredTickets = tickets.filter(t => 

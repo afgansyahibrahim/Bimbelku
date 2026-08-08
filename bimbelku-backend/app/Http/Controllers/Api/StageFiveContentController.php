@@ -8,6 +8,7 @@ use App\Models\PackagePlan;
 use App\Models\Promotion;
 use App\Models\Tutorial;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\Rule;
 
 class StageFiveContentController extends Controller
@@ -19,7 +20,7 @@ class StageFiveContentController extends Controller
         ]);
         $audience = $validated['audience'] ?? 'all';
 
-        return response()->json(
+        $banners = Cache::remember("content.banners.{$audience}.v1", now()->addMinute(), fn () =>
             DynamicBanner::query()
                 ->where('is_active', true)
                 ->whereIn('audience', $audience === 'all' ? ['all'] : ['all', $audience])
@@ -29,6 +30,15 @@ class StageFiveContentController extends Controller
                 ->orderByDesc('id')
                 ->get()
         );
+
+        $response = response()->json($banners);
+        $response->setEtag(sha1((string) json_encode($banners)));
+        $response->setPublic();
+        $response->setMaxAge(60);
+        $response->headers->addCacheControlDirective('stale-while-revalidate', '30');
+        $response->isNotModified($request);
+
+        return $response;
     }
 
     public function tutorials(Request $request)

@@ -105,4 +105,11 @@ class BookingRequest extends Model
     {
         return $this->hasMany(MatchingOperationLog::class);
     }
+
+    public function latestMatchingExhaustion()
+    {
+        return $this->hasOne(MatchingOperationLog::class)
+            ->where('action', 'matching_exhausted')
+            ->latestOfMany('created_at');
+    }
 }

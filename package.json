@@ -32,7 +32,14 @@
     "check:checkpoint3": "node scripts/check-checkpoint3.mjs",
     "check:checkpoint4": "node scripts/check-checkpoint4.mjs",
     "check:checkpoint5": "node scripts/check-checkpoint5.mjs",
-    "check:final": "npm run check"
+    "check:final": "npm run check",
+    "check:performance-revision1": "node scripts/check-performance-revision1.mjs",
+    "check:performance-whole-site": "node scripts/check-performance-revision2-whole-site.mjs",
+    "check:payment-fix": "node scripts/check-payment-error-fix.mjs",
+    "check:admin-payment-fix": "node scripts/check-admin-payment-verification-fix.mjs",
+    "check:navigation-attention": "node scripts/check-navigation-attention.mjs",
+    "check:notification-ux": "node scripts/check-notification-ux-fix.mjs",
+    "check:matching-fallback": "node scripts/check-matching-fallback-fix.mjs"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.14",

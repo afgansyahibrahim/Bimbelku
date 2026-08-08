@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -13,7 +14,6 @@ import {
   ShieldAlert,
   UserRoundX,
 } from "lucide-react";
-import { toast } from "sonner";
 import AdminLayout from "@/components/AdminLayout";
 import { openProtectedFile } from "@/components/ProtectedImage";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
@@ -54,7 +54,7 @@ export default function CaseCenter() {
       const response = await http.get<CaseData>("/admin/cases");
       setData(response.data);
     } catch (error) {
-      toast.error(getApiError(error, "Pusat kasus gagal dimuat."));
+      notify.error(getApiError(error, "Pusat kasus gagal dimuat."));
     } finally {
       setLoading(false);
     }
@@ -104,11 +104,11 @@ export default function CaseCenter() {
       } else {
         response = await http.post(`/admin/teacher-appeals/${item.id}/resolve`, { decision, notes });
       }
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setSelected(null);
       await load();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setProcessing(false);
     }
@@ -175,7 +175,7 @@ function CaseDetail({ type, item }: { type: CaseType; item: any }) {
       : type === "completion"
         ? item.completion_evidence_url
         : item.evidence_url;
-  return <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-700">{type === "report" && <><p><strong>Kronologi:</strong> {item.chronology}</p>{item.incident_at && <p><strong>Waktu:</strong> {new Date(item.incident_at).toLocaleString("id-ID")}</p>}{item.incident_location && <p><strong>Lokasi:</strong> {item.incident_location}</p>}{item.impact && <p><strong>Dampak:</strong> {item.impact}</p>}</>}{type === "dispute" && <p><strong>Alasan keberatan:</strong> {item.reason}</p>}{type === "completion" && <p><strong>Catatan tutor:</strong> {item.completion_notes || "-"}</p>}{type === "appeal" && <><p><strong>Penalti:</strong> {item.point_entry?.change || 0} poin · {item.point_entry?.reason || "-"}</p><p><strong>Catatan penalti:</strong> {item.point_entry?.notes || "-"}</p><p><strong>Alasan banding:</strong> {item.reason}</p></>}{evidence && <Button type="button" variant="outline" size="sm" className="rounded-xl bg-white" onClick={() => void openProtectedFile(evidence, `bukti-kasus-${item.id}`).catch(() => toast.error("Bukti tidak dapat dibuka."))}><ExternalLink size={14} className="mr-2" />Buka bukti</Button>}</div>;
+  return <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-700">{type === "report" && <><p><strong>Kronologi:</strong> {item.chronology}</p>{item.incident_at && <p><strong>Waktu:</strong> {new Date(item.incident_at).toLocaleString("id-ID")}</p>}{item.incident_location && <p><strong>Lokasi:</strong> {item.incident_location}</p>}{item.impact && <p><strong>Dampak:</strong> {item.impact}</p>}</>}{type === "dispute" && <p><strong>Alasan keberatan:</strong> {item.reason}</p>}{type === "completion" && <p><strong>Catatan tutor:</strong> {item.completion_notes || "-"}</p>}{type === "appeal" && <><p><strong>Penalti:</strong> {item.point_entry?.change || 0} poin · {item.point_entry?.reason || "-"}</p><p><strong>Catatan penalti:</strong> {item.point_entry?.notes || "-"}</p><p><strong>Alasan banding:</strong> {item.reason}</p></>}{evidence && <Button type="button" variant="outline" size="sm" className="rounded-xl bg-white" onClick={() => void openProtectedFile(evidence, `bukti-kasus-${item.id}`).catch(() => notify.error("Bukti tidak dapat dibuka."))}><ExternalLink size={14} className="mr-2" />Buka bukti</Button>}</div>;
 }
 
 function caseTitle(type: CaseType, item: any) {

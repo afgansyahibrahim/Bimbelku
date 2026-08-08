@@ -7,6 +7,7 @@ import {
   Search,
   User,
 } from "lucide-react";
+import { hasMobileAttention, type AttentionNotification } from "@/lib/navigationAttention";
 
 type Role = "student" | "teacher";
 type NavItem = {
@@ -33,7 +34,7 @@ const teacherItems: NavItem[] = [
   { key: "account", to: "/guru/saya", label: "Saya", icon: User },
 ];
 
-export default function MobileBottomNav({ role }: { role: Role }) {
+export default function MobileBottomNav({ role, attentionNotifications = [] }: { role: Role; attentionNotifications?: AttentionNotification[] }) {
   const location = useLocation();
   const items = role === "student" ? studentItems : teacherItems;
   const accent = role === "student" ? "text-blue-600" : "text-indigo-600";
@@ -44,7 +45,7 @@ export default function MobileBottomNav({ role }: { role: Role }) {
     if (path === "/student/packages/new") return "search";
     if (path === "/student/packages" || path.startsWith("/student/packages/") || path === "/student/my-classes" || path.startsWith("/student/my-classes/") || path === "/student/progress") return "classes";
     if (path === "/student/messages" || path.startsWith("/student/messages/")) return "messages";
-    if (["/student/account", "/student/profile", "/student/history", "/student/vouchers", "/student/help"].some((route) => path === route || path.startsWith(`${route}/`))) return "account";
+    if (["/student/account", "/student/profile", "/student/history", "/student/vouchers", "/student/offers", "/student/help", "/student/notifications"].some((route) => path === route || path.startsWith(`${route}/`))) return "account";
     return "";
   })();
   const teacherActive = (() => {
@@ -68,6 +69,7 @@ export default function MobileBottomNav({ role }: { role: Role }) {
             ? studentActive === item.key
             : teacherActive === item.key;
           const Icon = item.icon;
+          const attention = hasMobileAttention(role, item.key, attentionNotifications);
 
           return (
             <Link
@@ -79,10 +81,13 @@ export default function MobileBottomNav({ role }: { role: Role }) {
               className={`flex min-h-[3.6rem] min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-[10px] font-bold transition ${
                 active
                   ? `${activeBackground} ${accent}`
-                  : "text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-600"
               }`}
             >
-              <Icon size={19} strokeWidth={active ? 2.7 : 2} />
+              <span className="relative">
+                <Icon size={19} strokeWidth={active ? 2.7 : 2} />
+                {attention && <span aria-label="Ada pembaruan yang belum dilihat" className="absolute -right-1.5 -top-1.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />}
+              </span>
               <span className="max-w-full truncate">{item.label}</span>
             </Link>
           );

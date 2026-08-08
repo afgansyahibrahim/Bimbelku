@@ -75,8 +75,10 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
     Route::post('/tickets/{id}/close', [TicketController::class, 'close']);
 
     Route::get('/notifications', [NotificationController::class, 'index']);
-    Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
+    Route::post('/notifications/read-batch', [NotificationController::class, 'markManyAsRead']);
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead'])
+        ->whereNumber('id');
     Route::get('/teachers/{teacher}/documents/{document}', [TeacherDocumentController::class, 'show'])
         ->where('document', 'cv_file|identity_document|live_selfie|qualification_document|certification_document');
     Route::get('/learning-attachments/{bookingRequest}', [LearningAttachmentController::class, 'show']);
@@ -125,7 +127,7 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         Route::get('/student/wallet', [CustomerWalletController::class, 'show']);
         Route::get('/student/classes', [StudentController::class, 'getMyClasses']);
         Route::post('/orders/{id}/pay', [OrderController::class, 'pay'])
-            ->middleware(['throttle:5,1', 'idempotency', 'finance.audit:student_payment_submit']);
+            ->middleware(['throttle:student-payment-submit', 'idempotency', 'finance.audit:student_payment_submit']);
         Route::get('/active-order', [OrderController::class, 'getActiveOrder']);
         Route::post('/orders/{id}/cancel', [OrderController::class, 'cancelOrder']);
         Route::get('/orders', [OrderController::class, 'index']);
@@ -135,8 +137,10 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         Route::get('/student/packages', [StudentPackageController::class, 'index']);
         Route::get('/student/packages/tutorial-status', [StudentPackageController::class, 'tutorialStatus']);
         Route::post('/student/packages', [StudentPackageController::class, 'store'])
-            ->middleware(['throttle:5,1', 'idempotency']);
+            ->middleware(['throttle:student-package-create', 'idempotency']);
         Route::post('/student/packages/{learningPackage}/retry', [StudentPackageController::class, 'retryMatching'])
+            ->middleware('throttle:5,1');
+        Route::post('/student/packages/{learningPackage}/reschedule', [StudentPackageController::class, 'reschedule'])
             ->middleware('throttle:5,1');
         Route::post('/student/packages/{learningPackage}/cancel', [StudentPackageController::class, 'cancel']);
         Route::get('/student/packages/{learningPackage}', [StudentPackageController::class, 'show']);
@@ -146,7 +150,7 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         Route::post('/student/promotions/{promotion}/claim', [StudentPackageController::class, 'claim'])
             ->middleware('throttle:10,1');
         Route::post('/student/packages/quote', [StudentPackageController::class, 'previewPromotion'])
-            ->middleware('throttle:20,1');
+            ->middleware('throttle:student-package-quote');
     });
 
     Route::prefix('teacher')->middleware('role:teacher')->group(function () {

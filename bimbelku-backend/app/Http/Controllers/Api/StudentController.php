@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\Order;
-use App\Models\LearningProgressReport;
 use App\Models\Rating;
 use Illuminate\Http\Request;
 
@@ -51,6 +50,7 @@ class StudentController extends Controller
                 'disputes' => fn ($query) => $query->where('student_id', $studentId)->latest(),
                 'latestClassroomMessage.sender:id,name',
                 'learningPlan',
+                'latestLearningProgressReport' => fn ($query) => $query->where('student_id', $studentId),
             ])
             ->withCount([
                 'learningProgressReports as student_learning_progress_reports_count' => fn ($query) => $query->where('student_id', $studentId),
@@ -58,27 +58,20 @@ class StudentController extends Controller
             ->latest('start_at')
             ->limit(200)
             ->get();
-        $latestReports = LearningProgressReport::query()
-            ->whereIn('booking_id', $bookings->pluck('id'))
-            ->where('student_id', $studentId)
-            ->latest('published_at')
-            ->get()
-            ->unique('booking_id')
-            ->keyBy('booking_id');
         $ratedBookingIds = Rating::query()
             ->where('student_id', $studentId)
             ->whereIn('booking_id', $bookings->pluck('id'))
             ->pluck('booking_id')
             ->flip();
 
-        $data = $bookings->map(function (Booking $booking) use ($ratedBookingIds, $latestReports) {
+        $data = $bookings->map(function (Booking $booking) use ($ratedBookingIds) {
             $participant = $booking->participants->first();
             $learningRequest = $participant?->bookingRequest ?? $booking->bookingRequest;
             $classType = $learningRequest?->class_type ?? $booking->class_type;
             $profile = $booking->teacher?->teacherProfile;
             $hasSessionAccess = $participant?->order?->status === 'paid';
             $isRated = $ratedBookingIds->has($booking->id);
-            $latestReport = $latestReports->get($booking->id);
+            $latestReport = $booking->latestLearningProgressReport;
 
             return [
                 'id' => $booking->id,

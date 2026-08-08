@@ -1,7 +1,6 @@
-import { API_BASE_URL } from "@/lib/http";
+import { notify } from "@/lib/notify";
+import { API_BASE_URL } from "@/lib/apiBase";
 import { useState, useEffect } from "react";
-import axios from "axios";
-import { toast } from "sonner";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Loader2, Lock, CheckCircle2 } from "lucide-react";
 
@@ -19,7 +18,7 @@ const ResetPassword = () => {
 
   useEffect(() => {
     if (!token || !email) {
-      toast.error("Link tidak valid.");
+      notify.error("Link tidak valid.");
       navigate("/login");
     }
   }, [token, email, navigate]);
@@ -27,22 +26,23 @@ const ResetPassword = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password !== passwordConfirmation) {
-      toast.error("Konfirmasi password tidak cocok!");
+      notify.error("Konfirmasi password tidak cocok!");
       return;
     }
 
     setIsLoading(true);
     try {
+      const { default: axios } = await import("axios");
       await axios.post(`${API_BASE_URL}/reset-password`, {
         token,
         email,
         password,
         password_confirmation: passwordConfirmation,
       });
-      toast.success("Password berhasil diubah! Silakan login.");
+      notify.success("Password berhasil diubah! Silakan login.");
       navigate("/login");
     } catch (error: any) {
-      toast.error(error.response?.data?.message || "Gagal mereset password.");
+      notify.error(error.response?.data?.message || "Gagal mereset password.");
     } finally {
       setIsLoading(false);
     }

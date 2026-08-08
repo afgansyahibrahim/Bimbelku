@@ -780,6 +780,7 @@ class LearningSessionController extends Controller
             'title' => 'Target belajar menunggu persetujuan',
             'message' => 'Tutor telah menerbitkan asesmen awal dan target belajar. Periksa melalui Ruang Belajar.',
             'type' => 'info',
+            'target_url' => '/student/my-classes',
         ]);
 
         return response()->json([

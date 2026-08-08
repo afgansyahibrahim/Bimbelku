@@ -1,7 +1,7 @@
+import { notify } from "@/lib/notify";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { BarChart3, Bell, CalendarClock, ChevronRight, CircleHelp, Landmark, Loader2, ShieldCheck, UserRound, WalletCards } from "lucide-react";
-import { toast } from "sonner";
 import TeacherLayout from "@/components/TeacherLayout";
 import { getCached } from "@/lib/http";
 
@@ -27,7 +27,7 @@ export default function TeacherAccount() {
   useEffect(() => {
     getCached<ProfileData>("/teacher/profile", { maxAgeMs: 60_000 })
       .then((response) => setData(response.data))
-      .catch(() => toast.error("Data akun tutor gagal dimuat."))
+      .catch(() => notify.error("Data akun tutor gagal dimuat."))
       .finally(() => setLoading(false));
   }, []);
 

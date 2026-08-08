@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
@@ -11,7 +12,6 @@ import {
   Trash2,
   CalendarX2,
 } from "lucide-react";
-import { toast } from "sonner";
 import TeacherLayout from "@/components/TeacherLayout";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -86,7 +86,7 @@ export default function ManageSchedule() {
       setSchedules(response.data.map((item) => ({ ...item, ranges: item.ranges || [] })));
       setExceptions(exceptionResponse.data || []);
     } catch (error) {
-      toast.error(getApiError(error, "Jadwal gagal dimuat."));
+      notify.error(getApiError(error, "Jadwal gagal dimuat."));
     } finally {
       setLoading(false);
     }
@@ -138,7 +138,7 @@ export default function ManageSchedule() {
       added = true;
       return { ...item, ranges: [...item.ranges, candidate].sort((a, b) => a.start_time.localeCompare(b.start_time)) };
     }));
-    window.setTimeout(() => { if (!added) toast.error("Semua jam pada hari tersebut sudah terisi."); }, 0);
+    window.setTimeout(() => { if (!added) notify.error("Semua jam pada hari tersebut sudah terisi."); }, 0);
   };
 
   const removeRange = (dayIndex: number, rangeIndex: number) => {
@@ -154,7 +154,7 @@ export default function ManageSchedule() {
       || rangesOverlap(item.ranges)
     ));
     if (invalid) {
-      toast.error(`Periksa kembali seluruh rentang waktu ${invalid.day}.`);
+      notify.error(`Periksa kembali seluruh rentang waktu ${invalid.day}.`);
       return;
     }
 
@@ -166,10 +166,10 @@ export default function ManageSchedule() {
           ranges: [...item.ranges].sort((a, b) => a.start_time.localeCompare(b.start_time)),
         })),
       });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await fetchSchedule();
     } catch (error) {
-      toast.error(getApiError(error, "Jadwal gagal disimpan."));
+      notify.error(getApiError(error, "Jadwal gagal disimpan."));
     } finally {
       setSaving(false);
     }
@@ -177,7 +177,7 @@ export default function ManageSchedule() {
 
   const saveException = async () => {
     if (!exceptionForm.start_date || !exceptionForm.end_date) {
-      toast.error("Pilih tanggal mulai dan selesai.");
+      notify.error("Pilih tanggal mulai dan selesai.");
       return;
     }
     setSavingException(true);
@@ -186,11 +186,11 @@ export default function ManageSchedule() {
         ...exceptionForm,
         reason: exceptionForm.reason.trim() || null,
       });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setExceptionForm({ start_date: "", end_date: "", reason: "" });
       await fetchSchedule();
     } catch (error) {
-      toast.error(getApiError(error, "Tanggal tidak tersedia gagal disimpan."));
+      notify.error(getApiError(error, "Tanggal tidak tersedia gagal disimpan."));
     } finally {
       setSavingException(false);
     }
@@ -199,10 +199,10 @@ export default function ManageSchedule() {
   const deleteException = async (id: number) => {
     try {
       const response = await http.delete(`/teacher/schedule-exceptions/${id}`);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setExceptions((current) => current.filter((item) => item.id !== id));
     } catch (error) {
-      toast.error(getApiError(error, "Tanggal tidak tersedia gagal dihapus."));
+      notify.error(getApiError(error, "Tanggal tidak tersedia gagal dihapus."));
     }
   };
 

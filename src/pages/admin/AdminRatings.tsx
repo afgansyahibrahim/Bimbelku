@@ -1,8 +1,8 @@
+import { notify } from "@/lib/notify";
 import { API_BASE_URL } from "@/lib/http";
 import { useState, useEffect } from "react";
 import AdminLayout from "../../components/AdminLayout";
 import axios from "axios";
-import { toast } from "sonner";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { 
   Star, Trash2, Search, MessageSquare, User, UserCheck, AlertCircle, Loader2 
@@ -42,7 +42,7 @@ export default function AdminRatings() {
       setRatings(res.data.data);
       setFilteredRatings(res.data.data);
     } catch (error) {
-      toast.error("Gagal memuat data rating.");
+      notify.error("Gagal memuat data rating.");
     } finally {
       setIsLoading(false);
     }
@@ -64,11 +64,11 @@ export default function AdminRatings() {
             headers: { Authorization: `Bearer ${token}` }
         });
         
-        toast.success("Ulasan berhasil dihapus!");
+        notify.success("Ulasan berhasil dihapus!");
         // Hapus dari state tanpa fetch ulang biar cepat
         setRatings(prev => prev.filter(r => r.id !== id)); 
     } catch (error) {
-        toast.error("Gagal menghapus ulasan.");
+        notify.error("Gagal menghapus ulasan.");
     } finally {
         setIsDeleting(null);
     }

@@ -212,10 +212,7 @@ class BookingRequestController extends Controller
         $attachmentPath = $request->hasFile('attachment')
             ? $request->file('attachment')->store('learning_requests', 'local')
             : null;
-        $initialSearchHours = min(
-            48,
-            max(1, (int) (Setting::where('key', 'maximum_search_hours')->value('value') ?? 48))
-        );
+        $initialSearchHours = $matchingService->maximumSearchHours();
 
         try {
             $creation = DB::transaction(function () use (
@@ -384,10 +381,7 @@ class BookingRequestController extends Controller
                 abort(422, 'Pencarian ini belum memerlukan perpanjangan.');
             }
 
-            $maximumHours = max(
-                1,
-                (int) (Setting::where('key', 'maximum_search_hours')->value('value') ?? 48)
-            );
+            $maximumHours = $matchingService->maximumSearchHours();
             $maximumDeadline = $lockedRequest->search_started_at->copy()->addHours($maximumHours);
             $classCutoff = $matchingService->startAt($lockedRequest);
             $resolvedDeadline = $maximumDeadline->min($classCutoff);
@@ -541,6 +535,7 @@ class BookingRequestController extends Controller
                 'title' => 'Profil diterima murid',
                 'message' => 'Murid menerima pencocokan. Pembayaran sedang ditunggu.',
                 'type' => 'success',
+                'target_url' => '/guru/kelas',
             ]);
 
             return response()->json([

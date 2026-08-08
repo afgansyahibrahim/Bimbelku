@@ -458,6 +458,7 @@ class TeacherController extends Controller
                 'title' => 'Rekening pencairan diubah',
                 'message' => 'Pencairan ditahan sementara untuk melindungi saldo setelah perubahan rekening.',
                 'type' => 'warning',
+                'target_url' => '/guru/rekening',
             ]);
             User::query()
                 ->where('role', 'admin')
@@ -468,6 +469,7 @@ class TeacherController extends Controller
                     'title' => 'Perubahan rekening tutor',
                     'message' => "Rekening pencairan {$user->name} berubah. Pencairan ditahan sementara.",
                     'type' => 'warning',
+                    'target_url' => '/admin/finance',
                 ]));
         }
 

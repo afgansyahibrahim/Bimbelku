@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
-  ArrowLeft,
   BookOpenCheck,
   CalendarPlus,
   Check,
@@ -20,13 +19,11 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
-import { toast } from "sonner";
-import axios from "axios";
 
 import StudentLayout from "@/components/StudentLayout";
 import SubjectCombobox, { SubjectOption } from "@/components/SubjectCombobox";
 import { EDUCATION_LEVELS, GRADES_BY_EDUCATION_LEVEL } from "@/lib/educationCatalog";
-import http, { getApiError, getCached } from "@/lib/http";
+import { notify } from "@/lib/notify";
 
 type Plan = {
   id: number;
@@ -210,6 +207,41 @@ const rebalance = (items: DraftSubject[], total: number) => {
   return items.map((item, index) => rebuildSchedules(item, base + (index < remainder ? 1 : 0)));
 };
 
+function PackageBuilderIntro({ renewal }: { renewal: boolean }) {
+  return (
+    <>
+      <section className="min-h-44 min-w-0 overflow-hidden rounded-[1.5rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-blue-900 p-5 text-white sm:rounded-[2rem] sm:p-8">
+        <p className="text-xs font-black uppercase tracking-[.2em] text-indigo-100">{renewal ? "Tutor lama diprioritaskan" : "Langkah 1"}</p>
+        <h1 className="mt-3 break-words text-2xl font-black sm:text-3xl">Susun paket belajarmu</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-50/90">Pilih jumlah sesi, durasi pertemuan, hari, dan jam mulai. Periksa ringkasan, bayar, lalu sistem mencari tutor.</p>
+      </section>
+    </>
+  );
+}
+
+function PackageBuilderSkeleton() {
+  return (
+    <div role="status" aria-live="polite" aria-label="Memuat formulir paket belajar" className="space-y-5 sm:space-y-6">
+      <div className="rounded-3xl border border-slate-100 bg-white p-3 shadow-sm" aria-hidden="true">
+        <div className="h-12 animate-pulse rounded-2xl bg-slate-100 motion-reduce:animate-none" />
+      </div>
+      <section aria-hidden="true">
+        <div className="mb-3 h-6 w-48 rounded-lg bg-slate-200" />
+        <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((item) => (
+            <div key={item} className="min-h-40 animate-pulse rounded-3xl border border-slate-100 bg-white p-5 motion-reduce:animate-none">
+              <div className="h-4 w-20 rounded bg-indigo-100" />
+              <div className="mt-4 h-6 w-3/4 rounded-lg bg-slate-200" />
+              <div className="mt-3 h-4 w-full rounded bg-slate-100" />
+            </div>
+          ))}
+        </div>
+      </section>
+      <span className="sr-only">Formulir paket belajar sedang dimuat.</span>
+    </div>
+  );
+}
+
 export default function PackageBuilder() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -241,7 +273,9 @@ export default function PackageBuilder() {
   const [quoting, setQuoting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [hasMultiSubjectPackage, setHasMultiSubjectPackage] = useState(false);
+  const [tutorialStatusLoaded, setTutorialStatusLoaded] = useState(false);
   const multiSubjectGuideOpened = useRef(false);
+  const quoteRequestIdRef = useRef(0);
 
   const plan = plans.find((item) => item.id === planId);
   const availableTimeSlots = useMemo(
@@ -300,30 +334,57 @@ export default function PackageBuilder() {
   );
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setLoadError(null);
-      try {
-        const [plansResponse, catalogResponse, voucherResponse, slotsResponse, profileResponse, tutorialStatusResponse] = await Promise.all([
-          getCached<Plan[]>("/package-plans", { maxAgeMs: 60_000 }),
-          getCached<{ subject_options: SubjectOption[] }>("/learning-catalog", { params: { compact: 1 }, maxAgeMs: 60_000 }),
-          getCached<{ data: Voucher[] }>("/student/vouchers", { maxAgeMs: 20_000 }),
-          getCached<TimeSlot[]>("/learning-time-slots", { maxAgeMs: 60_000 }),
-          getCached<StudentProfile>("/user", { maxAgeMs: 60_000, force: true }),
-          getCached<{ has_multi_subject_package: boolean }>("/student/packages/tutorial-status", { maxAgeMs: 60_000 }),
-        ]);
-        setPlans(plansResponse.data);
-        setCatalog(catalogResponse.data.subject_options || []);
-        const availableVouchers = (voucherResponse.data.data ?? []).filter(
+    let active = true;
+
+    const loadSecondaryData = async () => {
+      const { getCached } = await import("@/lib/http");
+      const [voucherResult, profileResult, tutorialResult] = await Promise.allSettled([
+        getCached<{ data: Voucher[] }>("/student/vouchers", {
+          params: { compact: 1 },
+          maxAgeMs: 60_000,
+        }),
+        getCached<StudentProfile>("/user", { maxAgeMs: 60_000 }),
+        getCached<{ has_multi_subject_package: boolean }>("/student/packages/tutorial-status", { maxAgeMs: 60_000 }),
+      ]);
+      if (!active) return;
+
+      if (voucherResult.status === "fulfilled") {
+        const availableVouchers = (voucherResult.value.data.data ?? []).filter(
           (item): item is Voucher & { promotion: NonNullable<Voucher["promotion"]> } =>
             item.status === "available" && Boolean(item.promotion?.id),
         );
         setVouchers(availableVouchers);
         setVoucherId((current) => current && !availableVouchers.some((item) => item.id === current) ? "" : current);
+      }
+
+      if (profileResult.status === "fulfilled") {
+        setStudentProfile(profileResult.value.data);
+      }
+
+      if (tutorialResult.status === "fulfilled") {
+        setHasMultiSubjectPackage(Boolean(tutorialResult.value.data.has_multi_subject_package));
+        setTutorialStatusLoaded(true);
+      }
+    };
+
+    const load = async () => {
+      setLoading(true);
+      setLoadError(null);
+      setTutorialStatusLoaded(false);
+      try {
+        const { default: http, getCached } = await import("@/lib/http");
+        const [plansResponse, catalogResponse, slotsResponse, renewalResponse] = await Promise.all([
+          getCached<Plan[]>("/package-plans", { maxAgeMs: 5 * 60_000 }),
+          getCached<{ subject_options: SubjectOption[] }>("/learning-catalog", { params: { compact: 1 }, maxAgeMs: 5 * 60_000 }),
+          getCached<TimeSlot[]>("/learning-time-slots", { maxAgeMs: 5 * 60_000 }),
+          renewalId ? http.get(`/student/packages/${renewalId}`) : Promise.resolve(null),
+        ]);
+        if (!active) return;
+
+        setPlans(plansResponse.data);
+        setCatalog(catalogResponse.data.subject_options || []);
         const fullHourSlots = slotsResponse.data.filter((slot) => slot.start_time.slice(3, 5) === "00");
         setTimeSlots(fullHourSlots);
-        setStudentProfile(profileResponse.data);
-        setHasMultiSubjectPackage(Boolean(tutorialStatusResponse.data.has_multi_subject_package));
         const defaultTime = preferredSlotTime(fullHourSlots, 1);
         const defaultPlan = plansResponse.data.find((item) => item.session_count === 4) || plansResponse.data[0];
         if (defaultPlan) {
@@ -332,9 +393,8 @@ export default function PackageBuilder() {
           setSubjects([createSubject(defaultPlan.session_count, defaultTime)]);
         }
 
-        if (renewalId) {
-          const packageResponse = await http.get(`/student/packages/${renewalId}`);
-          const previous = packageResponse.data;
+        if (renewalResponse) {
+          const previous = renewalResponse.data;
           setLevel(previous.education_level);
           setGrade(previous.grade);
           setMode(previous.learning_mode);
@@ -418,21 +478,25 @@ export default function PackageBuilder() {
             localStorage.removeItem(DRAFT_KEY);
           }
         }
+
+        setLoading(false);
+        void loadSecondaryData();
       } catch (err: unknown) {
-        if (axios.isAxiosError(err)) {
-          if (!err.response) setLoadError("network");
-          else if (err.response.status === 401) setLoadError("unauthorized");
-          else if (err.response.status === 403) setLoadError("forbidden");
-          else if (err.response.status === 404) setLoadError("not_found");
-          else setLoadError("generic");
-        } else {
-          setLoadError("generic");
-        }
-      } finally {
+        if (!active) return;
+        const response = (err as { response?: { status?: number } } | null)?.response;
+        if (!response) setLoadError("network");
+        else if (response.status === 401) setLoadError("unauthorized");
+        else if (response.status === 403) setLoadError("forbidden");
+        else if (response.status === 404) setLoadError("not_found");
+        else setLoadError("generic");
         setLoading(false);
       }
     };
+
     void load();
+    return () => {
+      active = false;
+    };
   }, [renewalId, renewalSubjectId, retryKey]);
 
   const handleRetry = () => { setLoadError(null); setLoading(true); setRetryKey((k) => k + 1); };
@@ -460,19 +524,21 @@ export default function PackageBuilder() {
     selected.forEach(({ id, name }) => {
       if (materialCatalogs[id] || materialsLoading[id]) return;
       setMaterialsLoading((current) => ({ ...current, [id]: true }));
-      void getCached<{ chapters: CurriculumChapterOption[]; topics: LearningTopicOption[] }>("/learning-catalog", {
-        params: { subject_name: name, education_level: level, grade },
-        maxAgeMs: 60_000,
-      }).then((response) => {
-        setMaterialCatalogs((current) => ({ ...current, [id]: {
-          chapters: response.data.chapters || [],
-          topics: response.data.topics || [],
-        } }));
-      }).catch((error) => {
-        toast.error(getApiError(error, `Bab dan subbab ${name} gagal dimuat.`));
-      }).finally(() => {
-        setMaterialsLoading((current) => ({ ...current, [id]: false }));
-      });
+      void import("@/lib/http").then(({ getCached, getApiError }) =>
+        getCached<{ chapters: CurriculumChapterOption[]; topics: LearningTopicOption[] }>("/learning-catalog", {
+          params: { subject_name: name, education_level: level, grade },
+          maxAgeMs: 60_000,
+        }).then((response) => {
+          setMaterialCatalogs((current) => ({ ...current, [id]: {
+            chapters: response.data.chapters || [],
+            topics: response.data.topics || [],
+          } }));
+        }).catch((error) => {
+          notify.error(getApiError(error, `Bab dan subbab ${name} gagal dimuat.`));
+        }).finally(() => {
+          setMaterialsLoading((current) => ({ ...current, [id]: false }));
+        })
+      );
     });
   }, [grade, level, materialCatalogs, materialsLoading, subjects]);
 
@@ -506,7 +572,7 @@ export default function PackageBuilder() {
   };
 
   useEffect(() => {
-    if (loading || hasMultiSubjectPackage || !plan || plan.maximum_subjects < 2 || multiSubjectGuideOpened.current) return;
+    if (loading || !tutorialStatusLoaded || hasMultiSubjectPackage || !plan || plan.maximum_subjects < 2 || multiSubjectGuideOpened.current) return;
     try {
       if (localStorage.getItem(MULTI_SUBJECT_TUTORIAL_KEY)) return;
     } catch {
@@ -515,7 +581,7 @@ export default function PackageBuilder() {
     multiSubjectGuideOpened.current = true;
     const timer = window.setTimeout(openMultiSubjectGuide, 450);
     return () => window.clearTimeout(timer);
-  }, [hasMultiSubjectPackage, loading, plan]);
+  }, [hasMultiSubjectPackage, loading, plan, tutorialStatusLoaded]);
 
   useEffect(() => {
     if (!summaryOpen) return;
@@ -533,11 +599,17 @@ export default function PackageBuilder() {
 
   useEffect(() => {
     if (!draftValid) {
+      quoteRequestIdRef.current += 1;
       setQuote(null);
+      setQuoting(false);
       return;
     }
+
+    const controller = new AbortController();
     const timer = window.setTimeout(async () => {
+      const requestId = ++quoteRequestIdRef.current;
       setQuoting(true);
+      const { default: http, getApiError } = await import("@/lib/http");
       try {
         const response = await http.post<Quote>("/student/packages/quote", {
           package_plan_id: planId,
@@ -550,10 +622,15 @@ export default function PackageBuilder() {
             curriculum_subject_id: item.curriculum_subject_id,
             session_count: item.session_count,
           })),
+        }, {
+          signal: controller.signal,
         });
+
+        if (requestId !== quoteRequestIdRef.current) return;
         setQuote(response.data);
         setPromoError(null);
       } catch (error) {
+        if (controller.signal.aborted || requestId !== quoteRequestIdRef.current) return;
         setQuote(null);
         if (promoCode.trim() || voucherId) {
           const fallback = promoCode.trim()
@@ -562,20 +639,26 @@ export default function PackageBuilder() {
           setPromoError(getApiError(error, fallback));
         } else {
           setPromoError(null);
-          toast.error(getApiError(error, "Harga paket tidak dapat dihitung."));
+          notify.error(getApiError(error, "Harga paket tidak dapat dihitung."));
         }
       } finally {
-        setQuoting(false);
+        if (requestId === quoteRequestIdRef.current) {
+          setQuoting(false);
+        }
       }
     }, 450);
-    return () => window.clearTimeout(timer);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [draftValid, durationHours, level, mode, planId, promoCode, subjects, voucherId]);
 
   const changeDuration = (nextDuration: DurationHours) => {
     if (nextDuration === durationHours) return;
     const compatibleSlots = slotsForDuration(timeSlots, nextDuration);
     if (!compatibleSlots.length) {
-      toast.error(`Belum ada jam aktif yang dapat dipakai untuk sesi ${nextDuration} jam.`);
+      notify.error(`Belum ada jam aktif yang dapat dipakai untuk sesi ${nextDuration} jam.`);
       return;
     }
     const fallbackTime = preferredSlotTime(timeSlots, nextDuration);
@@ -656,10 +739,11 @@ export default function PackageBuilder() {
   };
   const submit = async () => {
     if (!draftValid || !quote) {
-      toast.error("Lengkapi pembagian sesi dan jadwal terlebih dahulu.");
+      notify.error("Lengkapi pembagian sesi dan jadwal terlebih dahulu.");
       return;
     }
     setSubmitting(true);
+    const { default: http, getApiError } = await import("@/lib/http");
     try {
       const response = await http.post("/student/packages", {
         package_plan_id: planId,
@@ -680,7 +764,7 @@ export default function PackageBuilder() {
           schedules: item.schedules,
         })),
       });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       try {
         localStorage.removeItem(DRAFT_KEY);
       } catch {
@@ -706,7 +790,7 @@ export default function PackageBuilder() {
         },
       });
     } catch (error) {
-      toast.error(getApiError(error, "Paket gagal dibuat."));
+      notify.error(getApiError(error, "Paket gagal dibuat."));
     } finally {
       setSubmitting(false);
     }
@@ -723,14 +807,24 @@ export default function PackageBuilder() {
   const activeStepIndex = firstIncomplete === -1 ? 4 : Math.min(firstIncomplete, 4);
 
   if (loading) {
-    return <StudentLayout title="Pilih Paket Belajar"><div className="grid min-h-[60vh] place-items-center"><Loader2 className="animate-spin text-indigo-600" size={36} /></div></StudentLayout>;
+    return (
+      <StudentLayout title={renewalId ? "Perpanjang Paket" : "Pilih Paket Belajar"}>
+        <div className="mx-auto w-full min-w-0 max-w-6xl space-y-5 overflow-hidden pb-20 sm:space-y-6">
+          <PackageBuilderIntro renewal={Boolean(renewalId)} />
+          <PackageBuilderSkeleton />
+        </div>
+      </StudentLayout>
+    );
   }
 
   if (loadError) {
     return (
-      <StudentLayout title="Pilih Paket Belajar">
-        <div className="mx-auto max-w-xl py-20">
-          <ErrorState type={loadError} onRetry={handleRetry} />
+      <StudentLayout title={renewalId ? "Perpanjang Paket" : "Pilih Paket Belajar"}>
+        <div className="mx-auto w-full min-w-0 max-w-6xl space-y-5 overflow-hidden pb-20 sm:space-y-6">
+          <PackageBuilderIntro renewal={Boolean(renewalId)} />
+          <div className="mx-auto max-w-xl py-10 sm:py-16">
+            <ErrorState type={loadError} onRetry={handleRetry} />
+          </div>
         </div>
       </StudentLayout>
     );
@@ -739,27 +833,19 @@ export default function PackageBuilder() {
   return (
     <StudentLayout title={renewalId ? "Perpanjang Paket" : "Pilih Paket Belajar"}>
       <div className="mx-auto w-full min-w-0 max-w-6xl space-y-5 overflow-hidden pb-20 sm:space-y-6">
-        <button type="button" onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-slate-900">
-          <ArrowLeft size={17} /> Kembali
-        </button>
-
-        <section className="min-w-0 overflow-hidden rounded-[1.5rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-blue-900 p-5 text-white sm:rounded-[2rem] sm:p-8">
-          <p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">{renewalId ? "Tutor lama diprioritaskan" : "Langkah 1"}</p>
-          <h1 className="mt-3 break-words text-2xl font-black sm:text-3xl">Susun paket belajarmu</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Pilih jumlah sesi, durasi pertemuan, hari, dan jam mulai. Periksa ringkasan, bayar, lalu sistem mencari tutor.</p>
-        </section>
+        <PackageBuilderIntro renewal={Boolean(renewalId)} />
 
         <nav aria-label="Tahapan pemesanan" className="rounded-3xl border border-slate-100 bg-white p-3 shadow-sm">
           <div className="sm:hidden">
             <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-wider text-indigo-500">Langkah {activeStepIndex + 1} dari 5</p><p className="mt-1 text-sm font-black text-slate-900">{["Paket & sesi", "Mata pelajaran", "Pembagian sesi", "Jadwal", "Ringkasan"][activeStepIndex]}</p></div>
+              <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-wider text-indigo-600">Langkah {activeStepIndex + 1} dari 5</p><p className="mt-1 text-sm font-black text-slate-900">{["Paket & sesi", "Mata pelajaran", "Pembagian sesi", "Jadwal", "Ringkasan"][activeStepIndex]}</p></div>
               <span className="grid h-10 w-10 place-items-center rounded-2xl bg-indigo-600 text-sm font-black text-white">{activeStepIndex + 1}</span>
             </div>
             <div className="mt-3 grid grid-cols-5 gap-1.5" aria-hidden="true">{completedSteps.map((done, index) => <span key={index} className={`h-1.5 rounded-full ${index === activeStepIndex ? "bg-indigo-600" : done ? "bg-emerald-400" : "bg-slate-200"}`} />)}</div>
           </div>
           <ol className="hidden grid-cols-5 gap-2 sm:grid">
             {["Paket & Sesi", "Mapel", "Pembagian Sesi", "Jadwal", "Ringkasan"].map((label, index) => (
-              <li key={label} className={`flex min-h-12 items-center gap-2 rounded-2xl px-3 text-xs font-black ${index === activeStepIndex ? "bg-indigo-600 text-white" : completedSteps[index] ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-400"}`}>
+              <li key={label} className={`flex min-h-12 items-center gap-2 rounded-2xl px-3 text-xs font-black ${index === activeStepIndex ? "bg-indigo-600 text-white" : completedSteps[index] ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"}`}>
                 <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full ${index === activeStepIndex ? "bg-white/20" : completedSteps[index] ? "bg-emerald-100" : "bg-white"}`}>{completedSteps[index] && index !== activeStepIndex ? <Check size={14} /> : index + 1}</span>
                 {label}
               </li>
@@ -789,7 +875,7 @@ export default function PackageBuilder() {
                 className={`min-h-40 min-w-0 overflow-hidden rounded-3xl border p-4 text-left transition sm:p-5 ${planId === item.id ? "border-indigo-600 bg-indigo-50 ring-2 ring-indigo-100" : "border-slate-200 bg-white hover:border-indigo-300"}`}
               >
                 <div className="flex items-start justify-between">
-                  <BookOpenCheck className={planId === item.id ? "text-indigo-600" : "text-slate-400"} />
+                  <BookOpenCheck className={planId === item.id ? "text-indigo-600" : "text-slate-500"} />
                   {planId === item.id && <Check className="text-indigo-600" size={20} />}
                 </div>
                 <h3 className="mt-4 font-black text-slate-900">{item.name}</h3>
@@ -800,7 +886,7 @@ export default function PackageBuilder() {
           </div>
         </section>
 
-        <section data-tour="package-duration-picker" className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-7">
+        <section data-tour="package-duration-picker" className="render-auto rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-7">
           <div className="flex min-w-0 items-start gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600"><Clock3 size={20} /></div>
             <div className="min-w-0">
@@ -833,7 +919,7 @@ export default function PackageBuilder() {
           <p className="mt-2 text-xs font-medium leading-5 text-slate-500">Jam mulai tetap memakai menit 00. Sistem otomatis menghitung jam selesai dan memeriksa benturan.</p>
         </section>
 
-        <section className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-7">
+        <section className="render-auto rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-7">
           <h2 className="text-lg font-black text-slate-900">3. Jenjang dan metode</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-3">
             <Field label="Jenjang">
@@ -882,11 +968,11 @@ export default function PackageBuilder() {
           )}
         </section>
 
-        <section className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-7">
+        <section className="render-auto rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-7">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-black text-slate-900">4. Pilih mapel dan bagikan sesi</h2>
-              <p className={`mt-1 text-sm font-bold ${selectedSessions === plan?.session_count ? "text-emerald-600" : "text-orange-600"}`}>
+              <p className={`mt-1 text-sm font-bold ${selectedSessions === plan?.session_count ? "text-emerald-700" : "text-orange-700"}`}>
                 Total: {selectedSessions} dari {plan?.session_count || 0} sesi
               </p>
             </div>
@@ -1050,7 +1136,7 @@ export default function PackageBuilder() {
           
         </section>
 
-        <section className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="render-auto-tall grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="min-w-0 overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-7">
             <h2 className="break-words text-lg font-black text-slate-900">5. Voucher atau kode promo</h2>
             <p className="mt-1 text-sm text-slate-500">Satu transaksi hanya memakai satu voucher atau kode.</p>
@@ -1063,7 +1149,7 @@ export default function PackageBuilder() {
               </Field>
               <Field label="Masukkan kode promo">
                 <div className="relative">
-                  <Tag className="absolute left-3 top-3.5 text-slate-400" size={17} />
+                  <Tag className="absolute left-3 top-3.5 text-slate-500" size={17} />
                   <input value={promoCode} disabled={Boolean(voucherId)} onChange={(event) => { setPromoCode(event.target.value.toUpperCase()); setPromoError(null); }} className="form-field pl-10 uppercase disabled:bg-slate-100" placeholder="BELAJAR20" />
                 </div>
               </Field>
@@ -1077,7 +1163,7 @@ export default function PackageBuilder() {
           </div>
 
           <aside className="min-w-0 overflow-hidden rounded-[2rem] bg-slate-950 p-5 text-white shadow-xl sm:p-6">
-            <div className="flex items-center gap-2 text-indigo-200"><Clock3 size={17} /><span className="text-xs font-black uppercase tracking-wider">Ringkasan harga</span></div>
+            <div className="flex items-center gap-2 text-indigo-100"><Clock3 size={17} /><span className="text-xs font-black uppercase tracking-wider">Ringkasan harga</span></div>
             {quoting ? (
               <div className="grid h-32 place-items-center"><Loader2 className="animate-spin" /></div>
             ) : quote ? (
@@ -1090,16 +1176,16 @@ export default function PackageBuilder() {
                     </div>
                   ))}
                   <div className="border-t border-white/10 pt-3">
-                    <div className="flex justify-between text-slate-400"><span>Harga normal</span><span className={quote.discount_amount ? "text-xs line-through" : ""}>{rupiah(quote.subtotal_amount)}</span></div>
+                    <div className="flex justify-between text-slate-300"><span>Harga normal</span><span className={quote.discount_amount ? "text-xs line-through" : ""}>{rupiah(quote.subtotal_amount)}</span></div>
                     {quote.discount_amount > 0 && <div className="mt-2 flex justify-between text-emerald-300"><span>Potongan</span><span>-{rupiah(quote.discount_amount)}</span></div>}
                   </div>
                 </div>
-                <p className="mt-5 text-xs font-bold text-slate-400">Total pembayaran</p>
+                <p className="mt-5 text-xs font-bold text-slate-300">Total pembayaran</p>
                 <p className="mt-1 break-all text-2xl font-black sm:text-3xl">{rupiah(quote.total_amount)}</p>
                 {quote.promotion && <span className="mt-2 inline-flex rounded-full bg-emerald-400/15 px-2.5 py-1 text-[10px] font-black text-emerald-300">🏷️ {quote.promotion.title}</span>}
               </>
             ) : (
-              <p className="mt-5 text-sm leading-6 text-slate-400">Lengkapi alokasi sesi untuk melihat harga akhir.</p>
+              <p className="mt-5 text-sm leading-6 text-slate-300">Lengkapi alokasi sesi untuk melihat harga akhir.</p>
             )}
             <button data-tour="package-review-order" type="button" disabled={!draftValid || !quote || submitting} onClick={() => setSummaryOpen(true)} className="mt-6 flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-white font-black text-slate-950 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40">
               <FileCheck2 size={18} />
@@ -1127,7 +1213,7 @@ export default function PackageBuilder() {
                   <SummaryItem label="Jenjang" value={`${level} · ${grade}`} />
                   <SummaryItem label="Metode" value={mode === "online" ? "Online" : "Offline"} />
                 </div>
-                {mode === "offline" && <div className="rounded-2xl border border-slate-200 p-4"><p className="text-xs font-black uppercase tracking-wider text-slate-400">Lokasi belajar</p><p className="mt-2 text-sm font-bold leading-6 text-slate-800">{studentProfile?.address}</p>{studentProfile?.maps_link && <a href={studentProfile.maps_link} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs font-black text-indigo-600">Buka peta</a>}</div>}
+                {mode === "offline" && <div className="rounded-2xl border border-slate-200 p-4"><p className="text-xs font-black uppercase tracking-wider text-slate-500">Lokasi belajar</p><p className="mt-2 text-sm font-bold leading-6 text-slate-800">{studentProfile?.address}</p>{studentProfile?.maps_link && <a href={studentProfile.maps_link} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs font-black text-indigo-600">Buka peta</a>}</div>}
                 <div>
                   <h3 className="text-sm font-black text-slate-900">Mapel, pembagian, dan jadwal</h3>
                   <div className="mt-3 space-y-3">
@@ -1148,7 +1234,7 @@ export default function PackageBuilder() {
                   </div>
                 </div>
                 <div className="rounded-2xl bg-slate-950 p-5 text-white">
-                  <p className="mb-3 text-xs font-bold text-slate-400">Total waktu belajar: {plan.session_count * durationHours} jam</p>
+                  <p className="mb-3 text-xs font-bold text-slate-300">Total waktu belajar: {plan.session_count * durationHours} jam</p>
                   <div className="flex justify-between text-sm text-slate-300"><span>Harga normal</span><span>{rupiah(quote.subtotal_amount)}</span></div>
                   {quote.discount_amount > 0 && <div className="mt-2 flex justify-between text-sm text-emerald-300"><span>Potongan</span><span>-{rupiah(quote.discount_amount)}</span></div>}
                   <div className="mt-4 flex flex-wrap items-end justify-between gap-2 border-t border-white/10 pt-4"><span className="text-sm font-black">Total pembayaran</span><span className="break-all text-right text-xl font-black sm:text-2xl">{rupiah(quote.total_amount)}</span></div>
@@ -1203,10 +1289,11 @@ function ScheduleTimePicker({ value, options, onChange }: { value: string; optio
         disabled={!options.length}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="form-field flex min-w-0 items-center justify-between gap-3 text-left disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+        aria-label="Pilih jam mulai pertemuan"
+        className="form-field flex min-w-0 items-center justify-between gap-3 text-left disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
       >
         <span className="min-w-0 truncate">{selected ? timeSlotLabel(selected) : "Pilih jam"}</span>
-        <ChevronDown className="shrink-0 text-slate-400" size={18} />
+        <ChevronDown className="shrink-0 text-slate-500" size={18} />
       </button>
 
       {open && (
@@ -1224,7 +1311,7 @@ function ScheduleTimePicker({ value, options, onChange }: { value: string; optio
           >
             <header className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-[.16em] text-indigo-500">Jadwal pertemuan</p>
+                <p className="text-[10px] font-black uppercase tracking-[.16em] text-indigo-600">Jadwal pertemuan</p>
                 <h3 id="schedule-time-title" className="mt-1 text-lg font-black text-slate-900">Pilih jam mulai</h3>
               </div>
               <button type="button" onClick={() => setOpen(false)} aria-label="Tutup pilihan jam" className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500">
@@ -1353,7 +1440,7 @@ function MaterialCapacityWarning({ topicCount, sessionCount, durationHours, comp
 }
 
 function SummaryItem({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-2xl border border-slate-200 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="mt-2 text-sm font-black text-slate-900">{value}</p></div>;
+  return <div className="rounded-2xl border border-slate-200 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-slate-500">{label}</p><p className="mt-2 text-sm font-black text-slate-900">{value}</p></div>;
 }
 
 function ErrorState({ type, onRetry }: { type: ErrorType; onRetry: () => void }) {
@@ -1373,7 +1460,7 @@ function ErrorState({ type, onRetry }: { type: ErrorType; onRetry: () => void })
         <p className={`text-lg font-black ${color}`}>{title}</p>
         <p className="mt-1 text-sm text-slate-500">{desc}</p>
       </div>
-      <button onClick={onRetry} className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-black text-slate-700 shadow-sm border border-slate-200 hover:bg-slate-50 transition">
+      <button type="button" onClick={onRetry} className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-black text-slate-700 shadow-sm border border-slate-200 hover:bg-slate-50 transition">
         <RefreshCw size={15} /> Coba lagi
       </button>
     </div>

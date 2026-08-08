@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -5,6 +6,7 @@ import {
   ArrowRight,
   BookOpenCheck,
   CalendarDays,
+  CalendarClock,
   Clock3,
   CreditCard,
   Loader2,
@@ -14,7 +16,6 @@ import {
   XCircle,
   UserRound,
 } from "lucide-react";
-import { toast } from "sonner";
 import axios from "axios";
 
 import StudentLayout from "@/components/StudentLayout";
@@ -44,6 +45,18 @@ type PackageData = {
     status: string;
     teacher?: { id: number; name: string; avatar_url?: string | null } | null;
     sessions?: Array<{ id: number; start_at?: string | null; status?: string; booking_id?: number | null }> | null;
+    matching?: {
+      reason_code?: string | null;
+      message?: string | null;
+      recommended_action?: string | null;
+      search_radius_km?: number;
+      next_radius_km?: number | null;
+      search_expires_at?: string | null;
+      can_retry?: boolean;
+      retry_label?: string | null;
+      can_change_schedule?: boolean;
+      manual_restart_used?: boolean;
+    } | null;
   }> | null;
   latest_order?: { id: number; status: string } | null;
 };
@@ -120,7 +133,7 @@ export default function MyPackages() {
       } else {
         setError("generic");
       }
-      toast.error(getApiError(err, "Paket gagal dimuat."));
+      notify.error(getApiError(err, "Paket gagal dimuat."));
     } finally {
       setLoading(false);
     }
@@ -140,10 +153,10 @@ export default function MyPackages() {
     setProcessing(packageId);
     try {
       const response = await http.post(`/student/packages/${packageId}/retry`);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await load(true);
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setProcessing(null);
     }
@@ -160,10 +173,10 @@ export default function MyPackages() {
     setProcessing(item.id);
     try {
       const response = await http.post(`/student/packages/${item.id}/cancel`);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await load(true);
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setProcessing(null);
     }
@@ -194,7 +207,10 @@ export default function MyPackages() {
               const progress = Math.round((Number(item.used_sessions || 0) / Math.max(1, Number(item.total_sessions || 0))) * 100);
               const needsPayment = ["awaiting_payment", "payment_rejected"].includes(item.status) && item.latest_order;
               const canCancelSearch = ["matching", "teacher_pending", "no_teacher"].includes(item.status);
-              const canRetry = subjects.some((subject) => subject.status === "no_teacher");
+              const retryableSubjects = subjects.filter((subject) => subject.status === "no_teacher" && subject.matching?.can_retry);
+              const canRetry = retryableSubjects.length > 0;
+              const canChangeSchedule = subjects.some((subject) => subject.status === "no_teacher" && subject.matching?.can_change_schedule);
+              const retryLabel = retryableSubjects.length === 1 ? (retryableSubjects[0].matching?.retry_label || "Cari Lagi") : "Cari Lagi";
               return (
                 <article key={item.id} className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm">
                   <div className="flex flex-col justify-between gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:p-6">
@@ -208,12 +224,17 @@ export default function MyPackages() {
                     <div className="flex w-full flex-wrap gap-2 sm:w-auto">
                       {canRetry && (
                         <button type="button" disabled={processing === item.id} onClick={() => retry(item.id)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-black text-white disabled:opacity-50 sm:flex-none">
-                          {processing === item.id ? <Loader2 className="animate-spin" size={17} /> : <Search size={17} />} Cari Lagi
+                          {processing === item.id ? <Loader2 className="animate-spin" size={17} /> : <Search size={17} />} {retryLabel}
                         </button>
                       )}
                       {needsPayment && (
                         <Link to="/payment" className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-black text-white sm:flex-none">
                           <CreditCard size={17} /> Bayar Paket
+                        </Link>
+                      )}
+                      {canChangeSchedule && (
+                        <Link to={`/student/packages/${item.id}/reschedule`} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-black text-indigo-700 sm:flex-none">
+                          <CalendarClock size={17} /> Ubah Jadwal
                         </Link>
                       )}
                       {canCancelSearch && (
@@ -256,6 +277,11 @@ export default function MyPackages() {
                               </div>
                             </div>
                             <p className="mt-3 text-sm font-bold text-slate-700">{subject.teacher ? `Tutor ${subject.teacher.name}` : "Tutor sedang dicari"}</p>
+                            {subject.status === "no_teacher" && subject.matching?.message && (
+                              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-900">
+                                <div className="flex items-start gap-2"><AlertCircle size={15} className="mt-0.5 shrink-0"/><span>{subject.matching.message}</span></div>
+                              </div>
+                            )}
                             {nextLabel && <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500"><Clock3 size={14} /> {nextLabel}</p>}
                             {item.can_renew && subject.teacher && (
                               <Link to={`/student/packages/new?renew=${item.id}&subject=${subject.id}`} className="mt-4 inline-flex rounded-xl bg-white px-3 py-2 text-xs font-black text-indigo-700 shadow-sm">

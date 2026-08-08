@@ -270,6 +270,7 @@ class TeacherAssignmentService
                 'title' => 'Penetapan kelas oleh admin',
                 'message' => "Admin menetapkan Anda untuk {$lockedRequest->subject_name}. Buka jadwal dan ruang kelas untuk memeriksa detail.",
                 'type' => 'info',
+                'target_url' => '/guru/kelas',
             ]);
 
             return [
@@ -482,6 +483,7 @@ class TeacherAssignmentService
                     'title' => 'Tutor menerima permintaan',
                     'message' => "{$lockedTeacher->name} menerima permintaan. Tagihan sudah tersedia sampai {$paymentDueAt->translatedFormat('H:i')} WIB.",
                     'type' => 'success',
+                    'target_url' => '/student/packages',
                 ]);
             }
 

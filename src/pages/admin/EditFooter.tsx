@@ -1,8 +1,8 @@
+import { notify } from "@/lib/notify";
 import { API_BASE_URL } from "@/lib/http";
 import React, { useEffect, useState } from "react";
 import AdminLayout from "../../components/AdminLayout";
 import axios from "axios";
-import { toast } from "sonner";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { 
   Save, Loader2, Plus, Trash2, MapPin, Phone, Mail, 
@@ -72,7 +72,7 @@ export default function EditFooter() {
         await fetchSocials();
 
       } catch {
-        toast.error("Gagal memuat data");
+        notify.error("Gagal memuat data");
       } finally {
         setIsLoading(false);
       }
@@ -84,7 +84,7 @@ export default function EditFooter() {
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isValidPhone(formData.footer_phone)) {
-      toast.error("Nomor telepon atau WhatsApp harus berisi 8–15 angka.");
+      notify.error("Nomor telepon atau WhatsApp harus berisi 8–15 angka.");
       return;
     }
     setIsSaving(true);
@@ -93,9 +93,9 @@ export default function EditFooter() {
       await axios.post(`${API_BASE_URL}/admin/settings/footer`, formData, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      toast.success("Informasi kontak berhasil diperbarui!");
+      notify.success("Informasi kontak berhasil diperbarui!");
     } catch {
-      toast.error("Gagal menyimpan kontak.");
+      notify.error("Gagal menyimpan kontak.");
     } finally {
       setIsSaving(false);
     }
@@ -111,7 +111,7 @@ export default function EditFooter() {
           extensions: ["jpg", "jpeg", "png", "webp"],
         });
         if (error) {
-          toast.error(error);
+          notify.error(error);
           e.target.value = "";
           return;
         }
@@ -125,10 +125,10 @@ export default function EditFooter() {
   // --- HANDLER TAMBAH SOSMED ---
   const handleAddSocial = async () => {
     if (!newName || !newLink || !newFile) {
-      return toast.error("Nama, Link, dan Icon wajib diisi!");
+      return notify.error("Nama, Link, dan Icon wajib diisi!");
     }
     if (!isValidHttpUrl(newLink)) {
-      return toast.error("Tautan media sosial harus diawali http:// atau https://.");
+      return notify.error("Tautan media sosial harus diawali http:// atau https://.");
     }
 
     setIsUploading(true);
@@ -147,7 +147,7 @@ export default function EditFooter() {
         }
       });
 
-      toast.success("Sosial media berhasil ditambahkan!");
+      notify.success("Sosial media berhasil ditambahkan!");
       
       // Reset Form
       setNewName("");
@@ -158,7 +158,7 @@ export default function EditFooter() {
 
     } catch (error) {
       console.error(error);
-      toast.error("Gagal upload data.");
+      notify.error("Gagal upload data.");
     } finally {
       setIsUploading(false);
     }
@@ -179,10 +179,10 @@ export default function EditFooter() {
         await axios.delete(`${API_BASE_URL}/admin/socials/${id}`, {
             headers: { Authorization: `Bearer ${token}` }
         });
-        toast.success("Berhasil dihapus.");
+        notify.success("Berhasil dihapus.");
         fetchSocials();
     } catch {
-        toast.error("Gagal menghapus.");
+        notify.error("Gagal menghapus.");
     }
   };
 

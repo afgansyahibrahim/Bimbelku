@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { FormEvent, useEffect, useState } from "react";
 import {
   BookOpenCheck,
@@ -12,8 +13,6 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { toast } from "sonner";
-
 import AdminLayout from "@/components/AdminLayout";
 import { ResponsiveMultiSelect, ResponsiveSelect } from "@/components/ResponsiveSelect";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
@@ -84,7 +83,7 @@ export default function StageFiveManagement() {
       setSubjectOptions(catalogRes.data.subject_options || []);
       setTimeSlots(slotRes.data);
     } catch (error) {
-      toast.error(getApiError(error, "Data Tahap 5 gagal dimuat."));
+      notify.error(getApiError(error, "Data Tahap 5 gagal dimuat."));
     } finally {
       setLoading(false);
     }
@@ -106,10 +105,10 @@ export default function StageFiveManagement() {
     try {
       const singular = type === "plans" ? "plans" : type;
       const response = await http.delete(`/admin/stage-five/${singular}/${id}`);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await load();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     }
   };
 
@@ -187,10 +186,10 @@ function Editor({ editor, plans, subjectOptions, close, saved }: { editor: { typ
           await http.post(`/admin/stage-five/tutorial-steps/${step.id}/image`, payload);
         }));
       }
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await saved();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setSaving(false);
     }
@@ -258,11 +257,11 @@ function TimeSlotManager({ items, changed }: { items: TimeSlot[]; changed: () =>
         sort_order: Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5)),
         is_active: true,
       });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setLabel("");
       await changed();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setSaving(false);
     }
@@ -275,10 +274,10 @@ function TimeSlotManager({ items, changed }: { items: TimeSlot[]; changed: () =>
         sort_order: slot.sort_order,
         is_active: !slot.is_active,
       });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await changed();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     }
   };
   const remove = async (slot: TimeSlot) => {
@@ -291,10 +290,10 @@ function TimeSlotManager({ items, changed }: { items: TimeSlot[]; changed: () =>
     if (!approved) return;
     try {
       const response = await http.delete(`/admin/stage-five/time-slots/${slot.id}`);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await changed();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     }
   };
   return <section className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-6"><div className="flex items-center gap-3"><div className="grid h-11 w-11 place-items-center rounded-2xl bg-indigo-50 text-indigo-600"><Clock3 size={20} /></div><div><h3 className="font-black text-slate-900">Pilihan slot 60 menit</h3><p className="text-xs text-slate-500">Murid hanya dapat memilih jam penuh yang aktif di sini.</p></div></div><form onSubmit={add} className="mt-4 grid gap-3 sm:grid-cols-[140px_1fr_auto]"><Select value={time} onValueChange={setTime}><SelectTrigger aria-label="Jam slot belajar" className="form-field h-12 min-w-0 focus:ring-2 focus:ring-indigo-100 focus:ring-offset-0"><SelectValue placeholder="Pilih jam" /></SelectTrigger><SelectContent position="popper" sideOffset={6} collisionPadding={12} className="z-[300] max-h-[min(18rem,calc(100dvh-2rem))] rounded-2xl border-slate-200 bg-white shadow-2xl">{FULL_HOUR_OPTIONS.map((option) => <SelectItem key={option} value={option} className="min-h-10 rounded-xl py-2.5 text-sm font-bold">{option.replace(":", ".")}</SelectItem>)}</SelectContent></Select><input value={label} onChange={(event) => setLabel(event.target.value)} className="form-field" placeholder="Label, contoh: Pagi" /><button disabled={saving} className="rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white disabled:opacity-50">{saving ? "Menyimpan…" : "Tambah Slot"}</button></form><div className="mt-4 flex flex-wrap gap-2">{items.map((slot) => <div key={slot.id} className={`flex items-center gap-2 rounded-2xl border px-3 py-2 ${slot.is_active ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50 opacity-60"}`}><button type="button" onClick={() => toggle(slot)} className="text-left"><p className="text-sm font-black text-slate-800">{slot.start_time.slice(0, 5).replace(":", ".")}</p><p className="text-[10px] font-bold text-slate-500">{slot.is_active ? "Aktif" : "Nonaktif"} · {slot.label || "Tanpa label"}</p></button><button type="button" aria-label={`Hapus slot ${slot.start_time}`} onClick={() => remove(slot)} className="rounded-lg p-1 text-rose-500"><Trash2 size={14} /></button></div>)}</div></section>;

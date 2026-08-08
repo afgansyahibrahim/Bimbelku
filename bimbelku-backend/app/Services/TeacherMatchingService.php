@@ -87,10 +87,35 @@ class TeacherMatchingService
             ?? now()->addHours($this->maximumSearchHours());
 
         if (now()->greaterThanOrEqualTo($acceptanceCutoff) || now()->greaterThanOrEqualTo($maximumSearchDeadline)) {
-            $this->updateRequestGroup($bookingRequest, [
-                'status' => 'expired',
-                'teacher_response_deadline' => null,
-            ]);
+            if ($bookingRequest->status !== 'no_teacher') {
+                $failure = [
+                    'code' => 'search_deadline_exhausted',
+                    'message' => 'Batas waktu pencarian tutor telah berakhir. Kamu dapat mengubah jadwal, mencoba pencarian sesuai opsi yang tersedia, atau membatalkan pesanan.',
+                    'recommended_action' => 'change_schedule',
+                ];
+                MatchingOperationLog::create([
+                    'booking_request_id' => $bookingRequest->id,
+                    'actor_id' => null,
+                    'action' => 'matching_exhausted',
+                    'reason' => $failure['message'],
+                    'before_state' => ['status' => $bookingRequest->status, 'search_radius_km' => (int) $bookingRequest->search_radius_km],
+                    'after_state' => ['status' => 'no_teacher', 'search_radius_km' => (int) $bookingRequest->search_radius_km],
+                    'metadata' => $failure,
+                ]);
+                $bookingRequest->packageSubject?->update(['status' => 'no_teacher']);
+                $this->updateRequestGroup($bookingRequest, [
+                    'status' => 'no_teacher',
+                    'matched_teacher_id' => null,
+                    'teacher_response_deadline' => null,
+                ]);
+                Notification::create([
+                    'user_id' => $bookingRequest->student_id,
+                    'title' => 'Batas pencarian tutor berakhir',
+                    'message' => $failure['message'],
+                    'type' => 'warning',
+                    'target_url' => '/student/packages',
+                ]);
+            }
             return null;
         }
 
@@ -98,8 +123,13 @@ class TeacherMatchingService
         $offerRequestIds = $bookingRequest->group_pool_id
             ? $bookingRequest->groupPool->members()->pluck('booking_request_id')
             : collect([$bookingRequest->id]);
+        $offerCycleResetAt = $bookingRequest->matchingOperationLogs()
+            ->where('action', 'schedule_changed')
+            ->latest('created_at')
+            ->value('created_at');
         $alreadyOffered = TeacherOffer::query()
             ->whereIn('booking_request_id', $offerRequestIds)
+            ->when($offerCycleResetAt, fn ($query) => $query->where('offered_at', '>=', $offerCycleResetAt))
             ->pluck('teacher_id');
         $candidates = $this->candidateQuery($bookingRequest, $alreadyOffered, $startAt, $endAt)
             ->limit(500)
@@ -107,19 +137,35 @@ class TeacherMatchingService
         $candidate = $this->rankCandidates($bookingRequest, $candidates)->first();
 
         if (!$candidate) {
+            $failure = $this->matchingFailureContext($bookingRequest, $alreadyOffered);
             $this->updateRequestGroup($bookingRequest, [
                 'status' => 'no_teacher',
                 'matched_teacher_id' => null,
                 'teacher_response_deadline' => null,
             ]);
 
+            MatchingOperationLog::create([
+                'booking_request_id' => $bookingRequest->id,
+                'actor_id' => null,
+                'action' => 'matching_exhausted',
+                'reason' => $failure['message'],
+                'before_state' => [
+                    'status' => 'matching',
+                    'search_radius_km' => (int) $bookingRequest->search_radius_km,
+                ],
+                'after_state' => [
+                    'status' => 'no_teacher',
+                    'search_radius_km' => (int) $bookingRequest->search_radius_km,
+                ],
+                'metadata' => $failure,
+            ]);
+
             Notification::create([
                 'user_id' => $bookingRequest->student_id,
                 'title' => 'Tutor belum ditemukan',
-                'message' => $bookingRequest->learning_mode === 'offline' && $bookingRequest->search_radius_km < 12
-                    ? "Belum ada tutor dalam radius {$bookingRequest->search_radius_km} km. Radius dapat diperluas dari halaman pencarian."
-                    : 'Belum ada tutor yang cocok. Jadwal, materi, atau mode belajar dapat diubah.',
+                'message' => $failure['message'],
                 'type' => 'warning',
+                'target_url' => '/student/packages',
             ]);
 
             return null;
@@ -176,6 +222,7 @@ class TeacherMatchingService
             'title' => 'Permintaan bimbel baru',
             'message' => "Permintaan {$bookingRequest->subject_name} menunggu jawaban sampai {$expiresAt->translatedFormat('d M Y, H:i')} WIB.",
             'type' => 'info',
+            'target_url' => '/guru/permintaan',
         ]);
 
         return $offer;
@@ -819,7 +866,95 @@ class TeacherMatchingService
             'title' => 'Penerimaan murid dibatasi',
             'message' => "Permintaan tidak dijawab. Penawaran baru dihentikan selama {$result['hours']} jam.",
             'type' => 'warning',
+            'target_url' => '/guru/permintaan',
         ]);
+    }
+
+    private function matchingFailureContext(BookingRequest $bookingRequest, Collection $alreadyOffered): array
+    {
+        $modeColumn = $bookingRequest->learning_mode === 'offline' ? 'is_offline' : 'is_online';
+        $classTypeColumn = $bookingRequest->class_type === 'group' ? 'is_group_active' : 'is_private_active';
+
+        $qualified = User::query()
+            ->where('role', 'teacher')
+            ->where('status', 'active')
+            ->whereHas('teacherProfile', function ($query) {
+                $query->whereNotNull('verified_at')
+                    ->where('is_accepting_requests', true)
+                    ->where('points', '>', 0)
+                    ->where(fn ($cooldown) => $cooldown->whereNull('suspended_until')->orWhere('suspended_until', '<=', now()));
+            })
+            ->whereHas('teacherProfile.subjects', function ($query) use ($bookingRequest, $modeColumn, $classTypeColumn) {
+                $query->where('name', $bookingRequest->subject_name)
+                    ->where('is_active', true)
+                    ->where($modeColumn, true)
+                    ->where($classTypeColumn, true)
+                    ->where(function ($levels) use ($bookingRequest) {
+                        $levels->whereNull('levels')->orWhereJsonContains('levels', $bookingRequest->education_level);
+                    });
+            })
+            ->with(['teacherProfile', 'availabilities'])
+            ->limit(500)
+            ->get();
+
+        if ($qualified->isEmpty()) {
+            return [
+                'code' => 'no_qualified_tutor',
+                'message' => "Belum ada tutor aktif yang sesuai untuk {$bookingRequest->subject_name}, jenjang {$bookingRequest->education_level}, dan mode belajar ini. Kamu dapat mengubah jadwal atau membatalkan pesanan.",
+                'recommended_action' => 'change_schedule',
+            ];
+        }
+
+        $withinScope = $qualified;
+        if ($bookingRequest->learning_mode === 'offline') {
+            $radius = max(1, min(12, (int) $bookingRequest->search_radius_km));
+            $withinScope = $qualified->filter(function (User $teacher) use ($bookingRequest, $radius) {
+                $profile = $teacher->teacherProfile;
+                if ($bookingRequest->latitude === null || $bookingRequest->longitude === null || $profile?->latitude === null || $profile?->longitude === null) {
+                    return false;
+                }
+                $distance = $this->distanceKm(
+                    (float) $bookingRequest->latitude,
+                    (float) $bookingRequest->longitude,
+                    (float) $profile->latitude,
+                    (float) $profile->longitude
+                );
+                return $distance <= $radius && (!$profile->max_travel_km || $distance <= (int) $profile->max_travel_km);
+            })->values();
+
+            if ($withinScope->isEmpty()) {
+                return [
+                    'code' => $radius < 12 ? 'radius_exhausted' : 'radius_max_exhausted',
+                    'message' => $radius < 12
+                        ? "Belum ada tutor yang memenuhi syarat dalam radius {$radius} km. Kamu masih dapat memperluas jangkauan pencarian."
+                        : 'Radius maksimum 12 km sudah dicapai dan belum ada tutor yang memenuhi lokasi ini. Coba ubah jadwal atau batalkan pesanan jika tidak ingin menunggu.',
+                    'recommended_action' => $radius < 12 ? 'expand_radius' : 'change_schedule',
+                ];
+            }
+        }
+
+        $scheduleReady = $withinScope->filter(fn (User $teacher) => $this->teacherCanCoverRequestSchedule($teacher, $bookingRequest))->values();
+        if ($scheduleReady->isEmpty()) {
+            return [
+                'code' => 'schedule_unavailable',
+                'message' => "Ada tutor yang sesuai untuk {$bookingRequest->subject_name}, tetapi belum ada yang tersedia untuk seluruh jadwal yang kamu pilih. Mengubah hari atau jam belajar dapat membuka kandidat baru.",
+                'recommended_action' => 'change_schedule',
+            ];
+        }
+
+        if ($scheduleReady->every(fn (User $teacher) => $alreadyOffered->contains($teacher->id))) {
+            return [
+                'code' => 'candidates_exhausted',
+                'message' => 'Semua tutor yang cocok untuk jadwal ini sudah pernah mendapat penawaran dan belum ada yang menerima. Kamu dapat mengecek tutor baru sekali lagi, mengubah jadwal, atau membatalkan pesanan.',
+                'recommended_action' => 'retry_once',
+            ];
+        }
+
+        return [
+            'code' => 'no_current_candidate',
+            'message' => 'Belum ada tutor yang dapat menerima permintaan ini saat ini. Kamu dapat mencoba pencarian sekali lagi atau mengubah jadwal.',
+            'recommended_action' => 'retry_once',
+        ];
     }
 
     private function updateRequestGroup(
@@ -861,9 +996,9 @@ class TeacherMatchingService
         );
     }
 
-    private function maximumSearchHours(): int
+    public function maximumSearchHours(): int
     {
-        return max(1, (int) (Setting::where('key', 'maximum_search_hours')->value('value') ?? 48));
+        return min(48, max(1, (int) (Setting::where('key', 'maximum_search_hours')->value('value') ?? 48)));
     }
 
     private function indonesianDayName(int $isoDay): string

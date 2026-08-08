@@ -1,7 +1,6 @@
-import { API_BASE_URL } from "@/lib/http";
+import { notify } from "@/lib/notify";
+import { API_BASE_URL } from "@/lib/apiBase";
 import { useState } from "react";
-import axios from "axios";
-import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { Loader2, ArrowLeft, Mail } from "lucide-react";
 
@@ -15,11 +14,12 @@ const ForgotPassword = () => {
     setIsLoading(true);
 
     try {
+      const { default: axios } = await import("axios");
       await axios.post(`${API_BASE_URL}/forgot-password`, { email });
       setIsSent(true);
-      toast.success("Email terkirim! Cek inbox/spam Anda.");
+      notify.success("Email terkirim! Cek inbox/spam Anda.");
     } catch (error: any) {
-      toast.error("Gagal mengirim permintaan.");
+      notify.error("Gagal mengirim permintaan.");
     } finally {
       setIsLoading(false);
     }

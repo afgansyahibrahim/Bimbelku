@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -12,7 +13,6 @@ import {
   ShieldAlert,
   ShieldCheck,
 } from "lucide-react";
-import { toast } from "sonner";
 import AdminLayout from "@/components/AdminLayout";
 import { ResponsiveSelect } from "@/components/ResponsiveSelect";
 import http, { getApiError } from "@/lib/http";
@@ -98,7 +98,7 @@ export default function AdminAuditLog() {
       });
       setData(response.data);
     } catch (error) {
-      toast.error(getApiError(error, "Audit perubahan tidak dapat dimuat."));
+      notify.error(getApiError(error, "Audit perubahan tidak dapat dimuat."));
     } finally {
       setLoading(false);
     }

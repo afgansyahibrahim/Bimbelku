@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -10,7 +11,6 @@ import {
   UserRound,
   WifiOff,
 } from "lucide-react";
-import { toast } from "sonner";
 import LearningSessionHub from "@/components/LearningSessionHub";
 import StudentLayout from "@/components/StudentLayout";
 import { Button } from "@/components/ui/button";
@@ -65,7 +65,7 @@ export default function StudentWorkspaceList({ mode }: { mode: WorkspaceMode }) 
       setClasses(Array.isArray(response.data) ? response.data : []);
     } catch (requestError) {
       setError(true);
-      toast.error(getApiError(requestError, isMessages ? "Percakapan gagal dimuat." : "Perkembangan belajar gagal dimuat."));
+      notify.error(getApiError(requestError, isMessages ? "Percakapan gagal dimuat." : "Perkembangan belajar gagal dimuat."));
     } finally {
       setLoading(false);
     }

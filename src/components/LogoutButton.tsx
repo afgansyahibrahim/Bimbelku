@@ -1,8 +1,7 @@
 import { ChevronRight, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
-import http from "@/lib/http";
+import { notify } from "@/lib/notify";
 
 interface LogoutButtonProps {
   accent?: "student" | "teacher" | "admin";
@@ -24,13 +23,14 @@ export default function LogoutButton({ accent = "student" }: LogoutButtonProps) 
     if (!approved) return;
 
     try {
+      const { default: http } = await import("@/lib/http");
       await http.post("/logout");
     } catch {
       // Token lokal tetap harus dihapus ketika sesi server sudah kedaluwarsa.
     } finally {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
-      toast.success("Anda telah keluar dari akun.");
+      notify.success("Anda telah keluar dari akun.");
       navigate("/", { replace: true });
     }
   };
@@ -45,7 +45,7 @@ export default function LogoutButton({ accent = "student" }: LogoutButtonProps) 
     <button
       type="button"
       onClick={handleLogout}
-      className={`flex w-full items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-5 py-3.5 text-sm font-bold text-slate-600 transition-all duration-300 hover:border-rose-100 hover:bg-rose-50 hover:text-rose-600 ${activeColor}`}
+      className={`group flex w-full items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-5 py-3.5 text-sm font-bold text-slate-600 transition-all duration-300 hover:border-rose-100 hover:bg-rose-50 hover:text-rose-600 ${activeColor}`}
     >
       <span className="flex items-center gap-3">
         <LogOut size={18} className="text-slate-400 transition-colors group-hover:text-rose-500" />

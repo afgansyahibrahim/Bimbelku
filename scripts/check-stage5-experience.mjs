@@ -74,7 +74,7 @@ expect(
   routes.indexOf("/student/promotions/preview") < routes.indexOf("/student/promotions/{promotion}/claim"),
   "rute pratinjau promo harus ditempatkan sebelum route model promo",
 );
-expect(routes.includes("['throttle:5,1', 'idempotency']"), "pembuatan paket wajib memakai idempotency");
+expect(routes.includes("['throttle:student-package-create', 'idempotency']"), "pembuatan paket wajib memakai limiter terpisah dan idempotency");
 expect(studentController.includes("Jumlah jadwal harus tepat"), "jumlah sesi paket wajib sama dengan paket");
 expect(studentController.includes("slot jam penuh yang aktif"), "slot paket wajib berasal dari daftar jam penuh aktif admin");
 expect(studentController.includes("Gunakan satu voucher atau satu kode promo"), "satu transaksi hanya boleh memakai satu promo");

@@ -1,0 +1,47 @@
+BIMBELKU - PERFORMANCE WHOLE-SITE REVISION
+Tanggal: 8 Agustus 2026
+
+Fokus:
+- Mobile terlebih dahulu, Desktop tetap dijaga.
+- Seluruh route/layout, bukan hanya /student/my-classes.
+- Tidak mengubah desain, fitur, role, authorization, business logic, atau API contract.
+
+Perubahan utama:
+1. Current-route early preload untuk mengurangi waterfall lazy route.
+2. Static Sonner imports turun dari 54 menjadi 1; toast dimuat saat benar-benar digunakan.
+3. Landing below-fold section benar-benar deferred berdasarkan viewport.
+4. Login/Forgot/Reset tidak memuat Axios sebelum submit.
+5. Register mendefer CameraCapture dan SubjectCombobox teacher-only.
+6. Student/Teacher layout tidak membiarkan request non-kritis berebut critical page fetch.
+7. Student/Teacher MobileBottomNav tidak dimount di Desktop.
+8. Tutorial global dijadwalkan non-kritis, fallback tutorial tetap tersedia.
+9. MyClasses, ManageClasses, Search: critical hero tidak lagi menunggu data API.
+10. LearningSessionHub/CameraCapture interaction-only dilazy-load.
+11. Class list menggunakan content-visibility untuk card di luar viewport.
+12. /student/classes dan /teacher/classes menggunakan cache/in-flight dedupe GET singkat.
+13. /teacher/classes backend: unread count N+1 diganti withCount.
+14. /student/classes backend: latest progress memakai latestOfMany, tidak memuat semua report lalu unique di PHP.
+15. Dashboard teacher/admin menggunakan cache singkat; refresh manual tetap force network.
+
+Validasi source-level:
+- 60 React routes / 177 literal links mapped.
+- 190 API actions memiliki controller/method menurut checker.
+- 121 TS/TSX files: 0 syntax parse issue.
+- PHP controllers yang diubah: php -l PASS.
+- check:performance-revision1 PASS.
+- check:performance-whole-site PASS.
+
+CATATAN PENTING:
+Environment pembuatan revisi tidak dapat menjalankan npm production build karena dependency Vite tidak tersedia di sandbox dan registry package environment gagal. Oleh karena itu skor Lighthouse sesudah revisi TIDAK dikarang.
+
+Setelah replace project:
+1. npm ci  (atau npm install sesuai workflow lokal)
+2. npm run check:performance-revision1
+3. npm run check:performance-whole-site
+4. npm run build
+5. npm run preview -- --port 8080
+6. Benchmark Chrome Guest tanpa extension, 3x Mobile + 3x Desktop, gunakan median.
+
+Baca:
+- PERFORMANCE_AUDIT_WHOLE_SITE.md
+- VALIDASI_LIGHTHOUSE_WHOLE_SITE.md

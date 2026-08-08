@@ -1,5 +1,7 @@
+import { notify } from "@/lib/notify";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import {
+  ArrowLeft,
   BarChart3,
   CalendarClock,
   CheckCircle2,
@@ -15,7 +17,6 @@ import {
   UserCheck,
   Users,
 } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -183,6 +184,8 @@ interface LearningSessionHubProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialTab?: HubTab;
+  backLabel?: string;
+  onBack?: () => void;
 }
 
 const dateTime = (value?: string) => value
@@ -199,7 +202,7 @@ const emptyPlan = {
   target_score: "",
 };
 
-export default function LearningSessionHub({ bookingId, open, onOpenChange, initialTab = "session" }: LearningSessionHubProps) {
+export default function LearningSessionHub({ bookingId, open, onOpenChange, initialTab = "session", backLabel, onBack }: LearningSessionHubProps) {
   const [hub, setHub] = useState<HubData | null>(null);
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -269,7 +272,7 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
         }));
       }
     } catch (error) {
-      if (!quiet) toast.error(getApiError(error, "Ruang belajar gagal dimuat."));
+      if (!quiet) notify.error(getApiError(error, "Ruang belajar gagal dimuat."));
     } finally {
       if (!quiet) setLoading(false);
     }
@@ -292,11 +295,11 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
     setProcessing(true);
     try {
       const response = await http.post(`/bookings/${bookingId}/messages`, { body: message.trim() });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setMessage("");
       await load(true);
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setProcessing(false);
     }
@@ -309,10 +312,10 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
       const response = await http.post(`/student/bookings/${bookingId}/session-pin`);
       setSessionPin(response.data.pin);
       setPinExpiresAt(response.data.expires_at);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await load(true);
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setProcessing(false);
     }
@@ -333,7 +336,7 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
   const checkIn = async () => {
     if (!bookingId || !hub) return;
     if (!/^\d{6}$/.test(teacherPin)) {
-      toast.error("PIN harus berisi enam angka.");
+      notify.error("PIN harus berisi enam angka.");
       return;
     }
     setProcessing(true);
@@ -351,7 +354,7 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
         pin: teacherPin,
         ...locationPayload,
       });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setTeacherPin("");
       await load();
     } catch (error) {
@@ -363,7 +366,7 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
       const message = isLocationError
         ? "Lokasi harus diizinkan untuk check-in offline."
         : getApiError(error);
-      toast.error(message);
+      notify.error(message);
     } finally {
       setProcessing(false);
     }
@@ -374,10 +377,10 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
     setProcessing(true);
     try {
       const response = await http.post(`/teacher/bookings/${bookingId}/check-out`);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await load();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setProcessing(false);
     }
@@ -394,10 +397,10 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
     setProcessing(true);
     try {
       const response = await http.put(`/teacher/bookings/${bookingId}/participant-attendance`, { attendances });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await load();
     } catch (error) {
-      toast.error(getApiError(error, "Kehadiran murid gagal disimpan."));
+      notify.error(getApiError(error, "Kehadiran murid gagal disimpan."));
     } finally {
       setProcessing(false);
     }
@@ -412,10 +415,10 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
         params: { scope: scheduleScope, date: scheduleDate || undefined },
       });
       setScheduleOptions(response.data.data || []);
-      if (!(response.data.data || []).length) toast.error(response.data.message);
+      if (!(response.data.data || []).length) notify.error(response.data.message);
     } catch (error) {
       setScheduleOptions([]);
-      toast.error(getApiError(error, "Pilihan jadwal tutor gagal dimuat."));
+      notify.error(getApiError(error, "Pilihan jadwal tutor gagal dimuat."));
     } finally {
       setLoadingScheduleOptions(false);
     }
@@ -425,7 +428,7 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
     event.preventDefault();
     if (!bookingId) return;
     if (!proposedStartAt) {
-      toast.error("Pilih salah satu slot tutor yang tersedia.");
+      notify.error("Pilih salah satu slot tutor yang tersedia.");
       return;
     }
     setProcessing(true);
@@ -435,14 +438,14 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
         scope: scheduleScope,
         reason: scheduleReason.trim(),
       });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setProposedStartAt("");
       setScheduleOptions([]);
       setScheduleDate("");
       setScheduleReason("");
       await load();
     } catch (error) {
-      toast.error(getApiError(error, "Perubahan jadwal gagal diajukan."));
+      notify.error(getApiError(error, "Perubahan jadwal gagal diajukan."));
     } finally {
       setProcessing(false);
     }
@@ -456,10 +459,10 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
         decision,
         notes: decision === "rejected" ? scheduleResponseNotes[changeId]?.trim() : null,
       });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await load();
     } catch (error) {
-      toast.error(getApiError(error, "Jawaban perubahan jadwal gagal disimpan."));
+      notify.error(getApiError(error, "Jawaban perubahan jadwal gagal disimpan."));
     } finally {
       setProcessing(false);
     }
@@ -475,10 +478,10 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
         baseline_score: planForm.baseline_score === "" ? null : Number(planForm.baseline_score),
         target_score: planForm.target_score === "" ? null : Number(planForm.target_score),
       });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await load();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setProcessing(false);
     }
@@ -489,10 +492,10 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
     setProcessing(true);
     try {
       const response = await http.post(`/student/bookings/${bookingId}/learning-plan/acknowledge`);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await load();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setProcessing(false);
     }
@@ -518,7 +521,7 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
         progress_percent: hub?.learning_topics.length ? undefined : Number(reportForm.progress_percent),
         topic_updates: selectedTopics,
       });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setReportForm((current) => ({
         ...current,
         material_covered: "",
@@ -531,7 +534,7 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
       setTopicUpdates((current) => Object.fromEntries(Object.entries(current).map(([id, value]) => [id, { ...value, selected: false, notes: "" }])));
       await load();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setProcessing(false);
     }
@@ -540,6 +543,16 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[94dvh] overflow-y-auto rounded-[2rem] sm:max-w-4xl">
+        {backLabel && onBack && (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onBack}
+            className="w-fit -ml-3 rounded-xl text-slate-600 hover:bg-slate-50 hover:text-indigo-700"
+          >
+            <ArrowLeft size={16} className="mr-2" />{backLabel}
+          </Button>
+        )}
         <DialogHeader>
           <DialogTitle className="text-2xl">Ruang belajar {hub?.booking.subject || ""}</DialogTitle>
           <DialogDescription>

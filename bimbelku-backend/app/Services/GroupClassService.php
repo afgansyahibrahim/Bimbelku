@@ -202,6 +202,7 @@ class GroupClassService
                                 'title' => 'Keputusan kelompok berakhir',
                                 'message' => 'Permintaan dibatalkan tanpa tagihan karena pilihan privat atau batal tidak diberikan sampai tenggat.',
                                 'type' => 'warning',
+                                'target_url' => '/student/packages',
                             ]);
                         }
 
@@ -371,6 +372,7 @@ class GroupClassService
                 'title' => 'Pembayaran kelompok dibuka',
                 'message' => 'Semua anggota aktif telah menyetujui tutor. Selesaikan transfer sebelum batas waktu.',
                 'type' => 'info',
+                'target_url' => '/student/packages',
             ]);
         }
 
@@ -421,6 +423,7 @@ class GroupClassService
                     'title' => 'Kelompok dibatalkan',
                     'message' => 'Jumlah peserta turun di bawah minimum. Refund penuh masuk antrean transfer admin.',
                     'type' => 'warning',
+                    'target_url' => '/student/history',
                 ]);
                 continue;
             }
@@ -434,6 +437,7 @@ class GroupClassService
                 'title' => 'Kelompok dibatalkan',
                 'message' => 'Jumlah peserta turun di bawah minimum sehingga tagihan dibatalkan.',
                 'type' => 'warning',
+                'target_url' => '/student/history',
             ]);
         }
 
@@ -451,6 +455,7 @@ class GroupClassService
                 'title' => 'Kelas kelompok dibatalkan',
                 'message' => $reason.'. Slot jadwal kembali tersedia setelah status diperbarui.',
                 'type' => 'warning',
+                'target_url' => '/guru/kelas',
             ]);
         }
     }

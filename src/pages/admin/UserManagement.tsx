@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { API_BASE_URL } from "@/lib/http";
 import { useCallback, useState, useEffect } from "react";
 import AdminLayout from "../../components/AdminLayout";
@@ -7,7 +8,6 @@ import {
   Phone, UserRoundCheck,
 } from "lucide-react";
 import axios from "axios";
-import { toast } from "sonner";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { openProtectedFile } from "@/components/ProtectedImage";
 
@@ -34,7 +34,7 @@ export default function UserManagement() {
       setUsers(response.data);
     } catch (error) {
       console.error(error);
-      toast.error("Gagal memuat data pengguna.");
+      notify.error("Gagal memuat data pengguna.");
     } finally {
       setIsLoading(false);
     }
@@ -68,11 +68,11 @@ export default function UserManagement() {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      toast.success(newStatus === 'banned' ? "User berhasil diblokir" : "User berhasil diaktifkan");
+      notify.success(newStatus === 'banned' ? "User berhasil diblokir" : "User berhasil diaktifkan");
       fetchUsers(); 
 
     } catch (error: any) {
-      toast.error(error.response?.data?.message || "Gagal mengubah status pengguna.");
+      notify.error(error.response?.data?.message || "Gagal mengubah status pengguna.");
     }
   };
 
@@ -198,7 +198,7 @@ export default function UserManagement() {
                                 onClick={() => void openProtectedFile(
                                   selectedUser.teacher_profile.cv_url,
                                   `cv-${selectedUser.name}.pdf`,
-                                ).catch(() => toast.error("CV gagal dibuka."))}
+                                ).catch(() => notify.error("CV gagal dibuka."))}
                                 className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:bg-orange-50 hover:border-orange-200 transition group cursor-pointer bg-white"
                              >
                                 <div className="p-2 bg-red-100 text-red-600 rounded-lg">

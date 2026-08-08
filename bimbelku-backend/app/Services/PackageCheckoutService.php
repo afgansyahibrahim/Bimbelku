@@ -180,6 +180,7 @@ class PackageCheckoutService
                     'title' => 'Permintaan perpanjangan tutor',
                     'message' => "Murid lama ingin melanjutkan {$lockedRequest->subject_name}. Periksa seluruh jadwal paket.",
                     'type' => 'info',
+                    'target_url' => '/guru/permintaan',
                 ]);
 
                 return $offer;
@@ -289,6 +290,7 @@ class PackageCheckoutService
                     'title' => 'Tutor paket ditemukan',
                     'message' => "{$teacher->name} menerima {$subject->subject_name}. Pencarian mapel lain masih berjalan.",
                     'type' => 'success',
+                    'target_url' => '/student/packages',
                 ]);
 
                 return ['package' => $package->fresh('subjects.assignedTeacher'), 'package_activated' => false];
@@ -361,6 +363,7 @@ class PackageCheckoutService
                     'title' => 'Pembayaran paket masuk antrean refund',
                     'message' => 'Bukti diterima setelah sesi pertama dimulai. Dana dikembalikan penuh dan voucher tersedia kembali.',
                     'type' => 'warning',
+                    'target_url' => '/student/history',
                 ]);
 
                 return [];
@@ -386,7 +389,7 @@ class PackageCheckoutService
                     'payment_due_at' => null,
                     'search_radius_km' => 3,
                     'search_started_at' => now(),
-                    'search_expires_at' => now()->addHours(48),
+                    'search_expires_at' => now()->addHours($this->matchingService->maximumSearchHours()),
                 ]);
                 foreach ($subject->sessions as $session) {
                     $session->update(['status' => 'planned', 'booking_id' => null]);
@@ -401,6 +404,7 @@ class PackageCheckoutService
                 'title' => 'Pembayaran diterima',
                 'message' => "Pembayaran {$package->package_code} diterima. Sistem mulai mencari tutor untuk setiap mata pelajaran.",
                 'type' => 'success',
+                'target_url' => '/student/packages',
             ]);
 
             return $package->subjects->pluck('id')->all();
@@ -428,14 +432,16 @@ class PackageCheckoutService
         return $noTeacher ? 'no_teacher' : 'matching';
     }
 
-    public function rejectPackagePayment(Order $order, string $reason): void
+    public function rejectPackagePayment(Order $order, string $reason, ?User $admin = null): void
     {
-        DB::transaction(function () use ($order, $reason) {
+        DB::transaction(function () use ($order, $reason, $admin) {
             $lockedOrder = Order::query()->lockForUpdate()->findOrFail($order->id);
             abort_unless($lockedOrder->status === 'submitted', 422, 'Pembayaran ini sudah diproses.');
             $lockedOrder->update([
                 'status' => 'rejected',
                 'payment_rejection_reason' => $reason,
+                'verified_at' => now(),
+                'verified_by' => $admin?->id,
             ]);
             $lockedOrder->learningPackage?->update(['status' => 'payment_rejected']);
             $lockedOrder->learningPackage?->subjects()->update(['status' => 'payment_rejected']);
@@ -449,6 +455,7 @@ class PackageCheckoutService
                 'title' => 'Pembayaran paket ditolak',
                 'message' => 'Bukti pembayaran ditolak: '.$reason,
                 'type' => 'warning',
+                'target_url' => '/student/packages',
             ]);
         }, 3);
     }
@@ -527,6 +534,7 @@ class PackageCheckoutService
             'title' => 'Tagihan paket tersedia',
             'message' => "Periksa dan bayar paket {$package->package_code}. Pencarian tutor dimulai setelah pembayaran diterima.",
             'type' => 'success',
+            'target_url' => '/student/packages',
         ]);
 
         return $order->fresh(['booking', 'learningPackage']);
@@ -647,6 +655,7 @@ class PackageCheckoutService
             'title' => 'Semua tutor ditemukan',
             'message' => "Paket {$package->package_code} aktif. Seluruh sesi sudah masuk ke Kelas Saya.",
             'type' => 'success',
+            'target_url' => '/student/my-classes',
         ]);
     }
 

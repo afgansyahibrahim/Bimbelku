@@ -4,6 +4,7 @@ import { CheckCircle2, ChevronLeft, ChevronRight, HelpCircle, X } from "lucide-r
 import { useLocation } from "react-router-dom";
 
 import { getCached } from "@/lib/http";
+import { scheduleNonCriticalTask } from "@/lib/schedule";
 
 type Role = "student" | "teacher";
 type Callout = { selector?: string; target?: string } | string | null;
@@ -229,18 +230,24 @@ function RoleQuickGuideContent({ role }: { role: Role }) {
     let mounted = true;
     setTutorial(tutorialFor(role, context));
     setStep(0);
-    void getCached<Tutorial[]>("/content/tutorials", {
-      params: { role, context },
-      maxAgeMs: 60_000,
-    })
-      .then((response) => {
-        if (!mounted) return;
-        setTutorial(response.data[0]?.steps?.length ? response.data[0] : tutorialFor(role, context));
-        setStep(0);
+
+    const fetchTutorial = () => {
+      void getCached<Tutorial[]>("/content/tutorials", {
+        params: { role, context },
+        maxAgeMs: 60_000,
       })
-      .catch(() => undefined);
+        .then((response) => {
+          if (!mounted) return;
+          setTutorial(response.data[0]?.steps?.length ? response.data[0] : tutorialFor(role, context));
+          setStep(0);
+        })
+        .catch(() => undefined);
+    };
+
+    const cancelScheduledFetch = scheduleNonCriticalTask(fetchTutorial);
     return () => {
       mounted = false;
+      cancelScheduledFetch();
     };
   }, [context, role]);
 
@@ -458,7 +465,7 @@ function RoleQuickGuideContent({ role }: { role: Role }) {
             <X size={19} />
           </button>
           <div className="absolute bottom-4 left-5 right-16 text-white">
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/70">Langkah {step + 1} dari {tutorial.steps.length}</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/90">Langkah {step + 1} dari {tutorial.steps.length}</p>
             <h2 id="tutorial-title" className="mt-1 text-xl font-black sm:text-2xl">{activeStep.title}</h2>
           </div>
         </header>
@@ -475,7 +482,7 @@ function RoleQuickGuideContent({ role }: { role: Role }) {
         </div>
 
         <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-100 bg-white p-4 sm:px-6">
-          <button type="button" onClick={closeGuide} className="min-h-11 px-2 text-sm font-bold text-slate-400 hover:text-slate-700">Lewati</button>
+          <button type="button" onClick={closeGuide} className="min-h-11 px-2 text-sm font-bold text-slate-500 hover:text-slate-700">Lewati</button>
           <div className="flex gap-2">
             {step > 0 && (
               <button type="button" onClick={() => setStep((value) => value - 1)} className="grid h-12 w-12 place-items-center rounded-2xl border border-slate-200 text-slate-600" aria-label="Langkah sebelumnya">
@@ -497,7 +504,7 @@ function RoleQuickGuideContent({ role }: { role: Role }) {
         type="button"
         onClick={openGuide}
         aria-label="Buka tutorial"
-        className="rounded-full p-2.5 text-slate-400 transition hover:bg-white hover:text-indigo-600 hover:shadow-md"
+        className="rounded-full p-2.5 text-slate-500 transition hover:bg-white hover:text-indigo-600 hover:shadow-md"
       >
         <HelpCircle size={20} />
       </button>

@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { API_BASE_URL } from "@/lib/http";
 import React, { useState, useEffect, useRef } from "react";
 import { 
@@ -5,7 +6,6 @@ import {
   ImagePlus, X, Paperclip, ChevronLeft, Lock, FileText, Search
 } from "lucide-react";
 import axios from "axios";
-import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import ProtectedImage from "@/components/ProtectedImage";
 import { validateUpload } from "@/lib/validation";
@@ -93,7 +93,7 @@ export default function HelpCenter() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if(!subject || !message) return toast.error("Isi judul dan pesan!");
+    if(!subject || !message) return notify.error("Isi judul dan pesan!");
     
     setIsSending(true);
     try {
@@ -107,11 +107,11 @@ export default function HelpCenter() {
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" }
       });
       
-      toast.success("Permintaan bantuan berhasil dikirim!");
+      notify.success("Permintaan bantuan berhasil dikirim!");
       setSubject(""); setMessage(""); clearImage();
       fetchTickets();
       setView("list");
-    } catch(e) { toast.error("Gagal kirim tiket."); }
+    } catch(e) { notify.error("Gagal kirim tiket."); }
     finally { setIsSending(false); }
   };
 
@@ -132,7 +132,7 @@ export default function HelpCenter() {
 
       setMessage(""); clearImage();
       fetchChatDetail(activeTicket.id); 
-    } catch(e) { toast.error("Gagal kirim balasan."); }
+    } catch(e) { notify.error("Gagal kirim balasan."); }
     finally { setIsSending(false); }
   };
 
@@ -145,7 +145,7 @@ export default function HelpCenter() {
           extensions: ["jpg", "jpeg", "png", "webp"],
         });
         if (error) {
-          toast.error(error);
+          notify.error(error);
           e.target.value = "";
           return;
         }

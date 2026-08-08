@@ -1,0 +1,364 @@
+diff --git a/mnt/data/bimbelku_perf/Website_Bimbelku/package.json b/mnt/data/Website_Bimbelku_Performance_Revisi1/package.json
+index 0c6e635..5afa881 100644
+--- a/mnt/data/bimbelku_perf/Website_Bimbelku/package.json
++++ b/mnt/data/Website_Bimbelku_Performance_Revisi1/package.json
+@@ -32,7 +32,8 @@
+     "check:checkpoint3": "node scripts/check-checkpoint3.mjs",
+     "check:checkpoint4": "node scripts/check-checkpoint4.mjs",
+     "check:checkpoint5": "node scripts/check-checkpoint5.mjs",
+-    "check:final": "npm run check"
++    "check:final": "npm run check",
++    "check:performance-revision1": "node scripts/check-performance-revision1.mjs"
+   },
+   "dependencies": {
+     "@radix-ui/react-alert-dialog": "^1.1.14",
+diff --git a/mnt/data/bimbelku_perf/Website_Bimbelku/src/lib/http.ts b/mnt/data/Website_Bimbelku_Performance_Revisi1/src/lib/http.ts
+index ed9700e..274ad0e 100644
+--- a/mnt/data/bimbelku_perf/Website_Bimbelku/src/lib/http.ts
++++ b/mnt/data/Website_Bimbelku_Performance_Revisi1/src/lib/http.ts
+@@ -27,6 +27,32 @@ const financialMutationKeys = new Map<string, { key: string; expiresAt: number }
+ const MAX_CACHE_ENTRIES = 80;
+ let cacheGeneration = 0;
+ 
++const PUBLIC_GET_ENDPOINTS = new Set([
++  "/learning-catalog",
++  "/settings/footer",
++  "/socials",
++  "/settings/teacher-cover",
++  "/package-plans",
++  "/learning-time-slots",
++  "/content/banners",
++  "/content/tutorials",
++  "/content/promotions",
++]);
++
++const requestPathname = (url: string): string => {
++  const withoutBase = url.startsWith(API_BASE_URL)
++    ? url.slice(API_BASE_URL.length)
++    : url;
++  return withoutBase.split("?")[0] || "/";
++};
++
++const isPublicGetRequest = (method: string | undefined, url: string): boolean => {
++  if ((method || "get").toLowerCase() !== "get") return false;
++  const pathname = requestPathname(url);
++  return PUBLIC_GET_ENDPOINTS.has(pathname)
++    || pathname.startsWith("/content/promotions/");
++};
++
+ type FinancialRequestConfig = AxiosRequestConfig & {
+   bimbelkuFinanceKeySlot?: string;
+ };
+@@ -116,12 +142,12 @@ export async function getCached<T = unknown>(
+ }
+ 
+ http.interceptors.request.use((config) => {
++  const method = config.method?.toLowerCase();
++  const url = String(config.url || "");
+   const token = localStorage.getItem("token");
+-  if (token) {
++  if (token && !isPublicGetRequest(method, url)) {
+     config.headers.Authorization = `Bearer ${token}`;
+   }
+-  const method = config.method?.toLowerCase();
+-  const url = String(config.url || "");
+   const financialMutation = method && !["get", "head", "options"].includes(method) && (
+     /\/orders\/\d+\/pay$/.test(url)
+     || url === "/student/packages"
+diff --git a/mnt/data/bimbelku_perf/Website_Bimbelku/src/components/StudentLayout.tsx b/mnt/data/Website_Bimbelku_Performance_Revisi1/src/components/StudentLayout.tsx
+index 2510c61..9fdef9c 100644
+--- a/mnt/data/bimbelku_perf/Website_Bimbelku/src/components/StudentLayout.tsx
++++ b/mnt/data/Website_Bimbelku_Performance_Revisi1/src/components/StudentLayout.tsx
+@@ -14,6 +14,7 @@ import {
+ } from "lucide-react";
+ 
+ const RoleQuickGuide = lazy(() => import("@/components/RoleQuickGuide"));
++const DESKTOP_MEDIA_QUERY = "(min-width: 1280px)";
+ 
+ const storedUser = () => {
+   try {
+@@ -30,6 +31,7 @@ interface StudentLayoutProps {
+ 
+ export default function StudentLayout({ children, title }: StudentLayoutProps) {
+   const [sidebarOpen, setSidebarOpen] = useState(false);
++  const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_MEDIA_QUERY).matches);
+   const [userData, setUserData] = useState<any>(() => storedUser());
+   const [guideReady, setGuideReady] = useState(false);
+ 
+@@ -58,6 +60,14 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
+     setShowNotifDropdown(false);
+   }, [location.pathname]);
+ 
++  useEffect(() => {
++    const mediaQuery = window.matchMedia(DESKTOP_MEDIA_QUERY);
++    const syncBreakpoint = () => setIsDesktop(mediaQuery.matches);
++    syncBreakpoint();
++    mediaQuery.addEventListener("change", syncBreakpoint);
++    return () => mediaQuery.removeEventListener("change", syncBreakpoint);
++  }, []);
++
+   useEffect(() => {
+     const idleWindow = window as typeof window & {
+       requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+@@ -338,15 +348,15 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
+         <div id="student-scroll-container" className="flex-1 overflow-x-hidden overflow-y-auto scroll-smooth p-3 pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-24 xl:p-8 xl:pb-8">
+           <div className="mx-auto w-full min-w-0 max-w-7xl pb-6 sm:pb-10">{children}</div>
+         </div>
+-        <MobileBottomNav role="student" />
+-        <Link
++        {!isDesktop && <MobileBottomNav role="student" />}
++        {isDesktop && <Link
+           to="/student/messages"
+           aria-label="Buka pesan kelas"
+           title="Pesan kelas"
+           className="fixed bottom-7 right-7 z-20 hidden h-14 w-14 place-items-center rounded-full bg-slate-950 text-white shadow-xl transition hover:-translate-y-1 hover:bg-indigo-700 xl:grid"
+         >
+           <MessageSquare size={21} />
+-        </Link>
++        </Link>}
+ 
+         {/* --- [FIXED] MODAL DETAIL NOTIFIKASI SISWA --- */}
+         {selectedNotif && (
+diff --git a/mnt/data/bimbelku_perf/Website_Bimbelku/src/pages/students/PackageBuilder.tsx b/mnt/data/Website_Bimbelku_Performance_Revisi1/src/pages/students/PackageBuilder.tsx
+index 6c96752..c9df9cf 100644
+--- a/mnt/data/bimbelku_perf/Website_Bimbelku/src/pages/students/PackageBuilder.tsx
++++ b/mnt/data/Website_Bimbelku_Performance_Revisi1/src/pages/students/PackageBuilder.tsx
+@@ -279,6 +279,7 @@ export default function PackageBuilder() {
+   const [hasMultiSubjectPackage, setHasMultiSubjectPackage] = useState(false);
+   const [tutorialStatusLoaded, setTutorialStatusLoaded] = useState(false);
+   const multiSubjectGuideOpened = useRef(false);
++  const quoteRequestIdRef = useRef(0);
+ 
+   const plan = plans.find((item) => item.id === planId);
+   const availableTimeSlots = useMemo(
+@@ -602,10 +603,15 @@ export default function PackageBuilder() {
+ 
+   useEffect(() => {
+     if (!draftValid) {
++      quoteRequestIdRef.current += 1;
+       setQuote(null);
++      setQuoting(false);
+       return;
+     }
++
++    const controller = new AbortController();
+     const timer = window.setTimeout(async () => {
++      const requestId = ++quoteRequestIdRef.current;
+       setQuoting(true);
+       const { default: http, getApiError } = await import("@/lib/http");
+       try {
+@@ -620,10 +626,15 @@ export default function PackageBuilder() {
+             curriculum_subject_id: item.curriculum_subject_id,
+             session_count: item.session_count,
+           })),
++        }, {
++          signal: controller.signal,
+         });
++
++        if (requestId !== quoteRequestIdRef.current) return;
+         setQuote(response.data);
+         setPromoError(null);
+       } catch (error) {
++        if (controller.signal.aborted || requestId !== quoteRequestIdRef.current) return;
+         setQuote(null);
+         if (promoCode.trim() || voucherId) {
+           const fallback = promoCode.trim()
+@@ -635,10 +646,16 @@ export default function PackageBuilder() {
+           notify.error(getApiError(error, "Harga paket tidak dapat dihitung."));
+         }
+       } finally {
+-        setQuoting(false);
++        if (requestId === quoteRequestIdRef.current) {
++          setQuoting(false);
++        }
+       }
+     }, 450);
+-    return () => window.clearTimeout(timer);
++
++    return () => {
++      window.clearTimeout(timer);
++      controller.abort();
++    };
+   }, [draftValid, durationHours, level, mode, planId, promoCode, subjects, voucherId]);
+ 
+   const changeDuration = (nextDuration: DurationHours) => {
+diff --git a/mnt/data/bimbelku_perf/Website_Bimbelku/bimbelku-backend/config/cors.php b/mnt/data/Website_Bimbelku_Performance_Revisi1/bimbelku-backend/config/cors.php
+index cd33c69..3684895 100644
+--- a/mnt/data/bimbelku_perf/Website_Bimbelku/bimbelku-backend/config/cors.php
++++ b/mnt/data/Website_Bimbelku_Performance_Revisi1/bimbelku-backend/config/cors.php
+@@ -33,7 +33,7 @@ return [
+ 
+     'exposed_headers' => [],
+ 
+-    'max_age' => 0,
++    'max_age' => (int) env('CORS_MAX_AGE', 600),
+ 
+     'supports_credentials' => false,
+ 
+diff --git a/mnt/data/bimbelku_perf/Website_Bimbelku/bimbelku-backend/.env.example b/mnt/data/Website_Bimbelku_Performance_Revisi1/bimbelku-backend/.env.example
+index d0f861e..9bcc3d0 100644
+--- a/mnt/data/bimbelku_perf/Website_Bimbelku/bimbelku-backend/.env.example
++++ b/mnt/data/Website_Bimbelku_Performance_Revisi1/bimbelku-backend/.env.example
+@@ -5,6 +5,7 @@ APP_DEBUG=true
+ APP_URL=http://127.0.0.1:8000
+ FRONTEND_URL=http://127.0.0.1:8080
+ FRONTEND_ORIGINS=http://127.0.0.1:8080,http://localhost:8080
++CORS_MAX_AGE=600
+ APP_TIMEZONE=Asia/Jakarta
+ POLICY_VERSION=2026-07-29
+ PRIMARY_ADMIN_EMAIL=admin@bimbelku.com
+diff --git a/mnt/data/bimbelku_perf/Website_Bimbelku/bimbelku-backend/app/Http/Controllers/Api/StudentPackageController.php b/mnt/data/Website_Bimbelku_Performance_Revisi1/bimbelku-backend/app/Http/Controllers/Api/StudentPackageController.php
+index fd26380..c47b147 100644
+--- a/mnt/data/bimbelku_perf/Website_Bimbelku/bimbelku-backend/app/Http/Controllers/Api/StudentPackageController.php
++++ b/mnt/data/Website_Bimbelku_Performance_Revisi1/bimbelku-backend/app/Http/Controllers/Api/StudentPackageController.php
+@@ -872,16 +872,29 @@ class StudentPackageController extends Controller
+             ->whereIn('id', collect($validated['subjects'])->pluck('curriculum_subject_id'))
+             ->get()
+             ->keyBy('id');
+-        $subtotal = collect($validated['subjects'])->sum(function (array $item) use ($subjects, $validated, $rateService, $durationHours) {
++        $lines = collect($validated['subjects'])->map(function (array $item) use ($subjects, $validated, $rateService, $durationHours) {
+             $subject = $subjects[$item['curriculum_subject_id']] ?? null;
+             abort_unless($subject, 422, 'Mata pelajaran tidak ditemukan.');
+-            return $rateService->resolve(
++
++            $unit = $rateService->resolve(
+                 $subject->name,
+                 $validated['education_level'],
+                 'private',
+                 $validated['learning_mode']
+-            ) * $durationHours * $item['session_count'];
+-        });
++            );
++
++            return [
++                'curriculum_subject_id' => $subject->id,
++                'subject_name' => $subject->name,
++                'session_count' => $item['session_count'],
++                'duration_hours' => $durationHours,
++                'unit_price' => $unit,
++                'meeting_price' => $unit * $durationHours,
++                'subtotal_amount' => $unit * $durationHours * $item['session_count'],
++            ];
++        })->values();
++
++        $subtotal = (int) $lines->sum('subtotal_amount');
+         $discount = $promotion
+             ? $checkoutService->calculateDiscount(
+                 $promotion,
+@@ -899,24 +912,7 @@ class StudentPackageController extends Controller
+             'promotion' => $promotion,
+             'duration_hours' => $durationHours,
+             'total_learning_hours' => $durationHours * collect($validated['subjects'])->sum('session_count'),
+-            'lines' => collect($validated['subjects'])->map(function (array $item) use ($subjects, $validated, $rateService, $durationHours) {
+-                $subject = $subjects[$item['curriculum_subject_id']];
+-                $unit = $rateService->resolve(
+-                    $subject->name,
+-                    $validated['education_level'],
+-                    'private',
+-                    $validated['learning_mode']
+-                );
+-                return [
+-                    'curriculum_subject_id' => $subject->id,
+-                    'subject_name' => $subject->name,
+-                    'session_count' => $item['session_count'],
+-                    'duration_hours' => $durationHours,
+-                    'unit_price' => $unit,
+-                    'meeting_price' => $unit * $durationHours,
+-                    'subtotal_amount' => $unit * $durationHours * $item['session_count'],
+-                ];
+-            })->values(),
++            'lines' => $lines,
+             'subtotal_amount' => $subtotal,
+             'discount_amount' => $discount,
+             'total_amount' => $subtotal - $discount,
+diff --git a/mnt/data/bimbelku_perf/Website_Bimbelku/bimbelku-backend/app/Services/HourlyRateService.php b/mnt/data/Website_Bimbelku_Performance_Revisi1/bimbelku-backend/app/Services/HourlyRateService.php
+index 6e2a977..e0b629e 100644
+--- a/mnt/data/bimbelku_perf/Website_Bimbelku/bimbelku-backend/app/Services/HourlyRateService.php
++++ b/mnt/data/Website_Bimbelku_Performance_Revisi1/bimbelku-backend/app/Services/HourlyRateService.php
+@@ -8,9 +8,11 @@ use Illuminate\Support\Facades\Cache;
+ 
+ class HourlyRateService
+ {
++    private ?int $cacheVersion = null;
++
+     public function resolve(string $subjectName, string $educationLevel, string $classType, string $learningMode): int
+     {
+-        $version = (int) Cache::get('hourly_rate.cache_version', 1);
++        $version = $this->cacheVersion ??= (int) Cache::get('hourly_rate.cache_version', 1);
+         $cacheKey = 'hourly_rate.'.$version.'.'.sha1(
+             mb_strtolower($subjectName).'|'.$educationLevel.'|'.$classType.'|'.$learningMode
+         );
+@@ -51,7 +53,8 @@ class HourlyRateService
+ 
+     public function clearCache(): void
+     {
+-        $nextVersion = (int) Cache::get('hourly_rate.cache_version', 1) + 1;
++        $nextVersion = ($this->cacheVersion ?? (int) Cache::get('hourly_rate.cache_version', 1)) + 1;
+         Cache::forever('hourly_rate.cache_version', $nextVersion);
++        $this->cacheVersion = $nextVersion;
+     }
+ }
+diff --git a/mnt/data/Website_Bimbelku_Performance_Revisi1/scripts/check-performance-revision1.mjs b/mnt/data/Website_Bimbelku_Performance_Revisi1/scripts/check-performance-revision1.mjs
+new file mode 100644
+index 0000000..8e6c249
+--- /dev/null
++++ b/mnt/data/Website_Bimbelku_Performance_Revisi1/scripts/check-performance-revision1.mjs
+@@ -0,0 +1,58 @@
++import fs from 'node:fs';
++
++const read = (path) => fs.readFileSync(path, 'utf8');
++const expect = (condition, message) => {
++  if (!condition) throw new Error(`Performance Revisi 1 gagal: ${message}`);
++};
++
++const http = read('src/lib/http.ts');
++const layout = read('src/components/StudentLayout.tsx');
++const builder = read('src/pages/students/PackageBuilder.tsx');
++const routes = read('bimbelku-backend/routes/api.php');
++const cors = read('bimbelku-backend/config/cors.php');
++const packages = read('bimbelku-backend/app/Http/Controllers/Api/StudentPackageController.php');
++const rates = read('bimbelku-backend/app/Services/HourlyRateService.php');
++
++const publicGetEndpoints = [
++  '/learning-catalog',
++  '/settings/footer',
++  '/socials',
++  '/settings/teacher-cover',
++  '/package-plans',
++  '/learning-time-slots',
++  '/content/banners',
++  '/content/tutorials',
++  '/content/promotions',
++];
++
++for (const endpoint of publicGetEndpoints) {
++  expect(routes.includes(`'${endpoint}'`), `rute publik ${endpoint} tidak ditemukan`);
++  expect(http.includes(`"${endpoint}"`), `allowlist GET publik ${endpoint} tidak ditemukan`);
++}
++
++expect(
++  http.includes('token && !isPublicGetRequest(method, url)'),
++  'Authorization masih dipasang tanpa membedakan GET publik',
++);
++expect(
++  cors.includes("env('CORS_MAX_AGE', 600)"),
++  'preflight cache CORS belum diaktifkan',
++);
++expect(
++  builder.includes('new AbortController()') && builder.includes('signal: controller.signal'),
++  'request quote lama belum dapat dibatalkan',
++);
++expect(
++  packages.includes("'lines' => $lines") && packages.includes("$subtotal = (int) $lines->sum('subtotal_amount')"),
++  'quote masih menghitung rate/line lebih dari satu lintasan',
++);
++expect(
++  rates.includes('private ?int $cacheVersion = null') && rates.includes('$this->cacheVersion ??='),
++  'versi cache hourly rate belum dimemoisasi per service instance',
++);
++expect(
++  layout.includes('window.matchMedia(DESKTOP_MEDIA_QUERY)') && layout.includes('{!isDesktop && <MobileBottomNav role="student" />}'),
++  'mobile bottom navigation masih dimount pada desktop',
++);
++
++console.log('Performance Revisi 1 lulus pemeriksaan source-level.');

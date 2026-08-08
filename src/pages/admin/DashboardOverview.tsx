@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -17,9 +18,8 @@ import {
   Users,
   WalletCards,
 } from "lucide-react";
-import { toast } from "sonner";
 import AdminLayout from "../../components/AdminLayout";
-import http, { getApiError } from "@/lib/http";
+import { getApiError, getCached } from "@/lib/http";
 
 interface WorkQueueItem {
   key: string;
@@ -130,12 +130,12 @@ export default function DashboardOverview() {
     setError("");
 
     try {
-      const response = await http.get<DashboardData>("/admin/dashboard-stats");
+      const response = await getCached<DashboardData>("/admin/dashboard-stats", { maxAgeMs: 10_000, force: silent });
       setData(response.data);
     } catch (requestError) {
       const message = getApiError(requestError, "Data operasional admin gagal dimuat.");
       setError(message);
-      if (silent) toast.error(message);
+      if (silent) notify.error(message);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);

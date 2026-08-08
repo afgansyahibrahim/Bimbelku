@@ -1,10 +1,10 @@
+import { notify } from "@/lib/notify";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertCircle, ArrowRight, Banknote, Bell, BookOpen, CalendarClock, ClipboardCheck, Loader2, MapPin, MessageSquare, Monitor, RefreshCw, ShieldCheck, Star, Users } from "lucide-react";
-import { toast } from "sonner";
 import TeacherLayout from "@/components/TeacherLayout";
 import { Button } from "@/components/ui/button";
-import http, { getApiError } from "@/lib/http";
+import { getApiError, getCached } from "@/lib/http";
 
 type DashboardData = {
   teacher: { name: string; points: number; is_accepting_requests: boolean; suspended_until?: string | null };
@@ -21,10 +21,10 @@ export default function TeacherDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setLoading(true); setFailed(false);
-    try { const response = await http.get<DashboardData>("/teacher/dashboard-v2"); setData(response.data); }
-    catch (error) { setFailed(true); toast.error(getApiError(error, "Dashboard tutor gagal dimuat.")); }
+    try { const response = await getCached<DashboardData>("/teacher/dashboard-v2", { maxAgeMs: 10_000, force }); setData(response.data); }
+    catch (error) { setFailed(true); notify.error(getApiError(error, "Dashboard tutor gagal dimuat.")); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -40,10 +40,10 @@ export default function TeacherDashboard() {
   return <TeacherLayout title="Beranda Tutor"><div className="space-y-5 pb-10 sm:space-y-7">
     <section className="relative overflow-hidden rounded-[1.7rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-5 text-white shadow-xl sm:rounded-[2rem] sm:p-8">
       <div className="absolute -right-16 -top-16 h-56 w-56 rounded-full bg-indigo-400/20 blur-3xl" />
-      <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-100"><ShieldCheck size={13} />{data?.teacher.points || 0} poin · {data?.teacher.is_accepting_requests ? "menerima permintaan" : "permintaan dijeda"}</span><h1 className="mt-4 text-2xl font-black sm:text-4xl">Halo, {data?.teacher.name?.split(" ")[0] || "Tutor"}</h1><p className="mt-2 max-w-xl text-sm leading-6 text-indigo-100/75">Selesaikan pekerjaan mendesak lebih dahulu, lalu lanjutkan sesi mengajar dan pencairan.</p></div><Button onClick={() => void load()} variant="outline" className="h-11 rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"><RefreshCw size={16} className="mr-2" />Muat ulang</Button></div>
+      <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-100"><ShieldCheck size={13} />{data?.teacher.points || 0} poin · {data?.teacher.is_accepting_requests ? "menerima permintaan" : "permintaan dijeda"}</span><h1 className="mt-4 text-2xl font-black sm:text-4xl">Halo, {data?.teacher.name?.split(" ")[0] || "Tutor"}</h1><p className="mt-2 max-w-xl text-sm leading-6 text-indigo-100/75">Selesaikan pekerjaan mendesak lebih dahulu, lalu lanjutkan sesi mengajar dan pencairan.</p></div><Button onClick={() => void load(true)} variant="outline" className="h-11 rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"><RefreshCw size={16} className="mr-2" />Muat ulang</Button></div>
     </section>
 
-    {loading ? <div className="grid min-h-72 place-items-center rounded-[2rem] bg-white"><Loader2 className="animate-spin text-indigo-600" size={30} /></div> : failed || !data ? <div className="rounded-[2rem] border border-rose-100 bg-white p-12 text-center"><AlertCircle className="mx-auto text-rose-400" /><p className="mt-3 font-black">Dashboard belum dapat dimuat</p><Button onClick={() => void load()} className="mt-4 rounded-xl bg-indigo-600">Coba lagi</Button></div> : <>
+    {loading ? <div className="grid min-h-72 place-items-center rounded-[2rem] bg-white"><Loader2 className="animate-spin text-indigo-600" size={30} /></div> : failed || !data ? <div className="rounded-[2rem] border border-rose-100 bg-white p-12 text-center"><AlertCircle className="mx-auto text-rose-400" /><p className="mt-3 font-black">Dashboard belum dapat dimuat</p><Button onClick={() => void load(true)} className="mt-4 rounded-xl bg-indigo-600">Coba lagi</Button></div> : <>
       <section><div className="mb-3 flex items-center justify-between"><div><h2 className="text-lg font-black text-slate-900">Perlu dikerjakan</h2><p className="mt-1 text-xs text-slate-500">Diurutkan berdasarkan pekerjaan yang menunggu tindakanmu.</p></div></div>{priorityItems.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{priorityItems.map(({ label, count, to, icon: Icon, color }) => <Link key={label} to={to} className="group flex items-center gap-3 rounded-[1.4rem] border border-slate-100 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"><span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${color}`}><Icon size={18} /></span><span className="min-w-0 flex-1"><span className="block text-2xl font-black text-slate-900">{count}</span><span className="block text-xs font-bold text-slate-500">{label}</span></span><ArrowRight className="shrink-0 text-slate-300 group-hover:text-indigo-500" size={17} /></Link>)}</div> : <div className="rounded-[1.4rem] border border-emerald-100 bg-emerald-50 p-5 text-sm font-bold text-emerald-800"><ShieldCheck className="mr-2 inline" size={17} />Tidak ada pekerjaan mendesak saat ini.</div>}</section>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Metric icon={BookOpen} label="Kelas aktif" value={String(data.classes.active)} /><Metric icon={Users} label="Murid aktif" value={String(data.classes.student_count)} /><Metric icon={Star} label="Penilaian" value={data.rating.count ? `${data.rating.average.toFixed(1)} / 5` : "-"} /><Metric icon={Banknote} label="Siap dicairkan" value={rupiah(data.earnings.available)} /></section>

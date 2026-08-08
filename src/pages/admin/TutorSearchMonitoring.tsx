@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -22,7 +23,6 @@ import {
   UsersRound,
   Wifi,
 } from "lucide-react";
-import { toast } from "sonner";
 import AdminLayout from "@/components/AdminLayout";
 import { ResponsiveSelect } from "@/components/ResponsiveSelect";
 import {
@@ -268,7 +268,7 @@ export default function TutorSearchMonitoring() {
       const response = await http.get<{ data: SearchDetail }>(`/admin/tutor-searches/${id}`);
       setDetail(response.data.data);
     } catch (requestError) {
-      toast.error(getApiError(requestError, "Detail pencarian tutor gagal dimuat."));
+      notify.error(getApiError(requestError, "Detail pencarian tutor gagal dimuat."));
     } finally {
       setDetailLoading(false);
     }
@@ -322,10 +322,10 @@ export default function TutorSearchMonitoring() {
     setSyncing(true);
     try {
       const response = await http.post<{ message: string }>(`/admin/tutor-searches/${detail.id}/synchronize`);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await Promise.all([fetchSearches(), loadDetail(detail.id)]);
     } catch (requestError) {
-      toast.error(getApiError(requestError, "Pencarian tutor gagal disinkronkan."));
+      notify.error(getApiError(requestError, "Pencarian tutor gagal disinkronkan."));
     } finally {
       setSyncing(false);
     }
@@ -335,7 +335,7 @@ export default function TutorSearchMonitoring() {
   const expandRadius = async () => {
     if (!detail || !detail.next_radius_km) return;
     if (expandReason.trim().length < 10) {
-      toast.error("Tuliskan alasan perluasan radius minimal 10 karakter.");
+      notify.error("Tuliskan alasan perluasan radius minimal 10 karakter.");
       return;
     }
 
@@ -345,12 +345,12 @@ export default function TutorSearchMonitoring() {
         `/admin/tutor-searches/${detail.id}/expand-radius`,
         { reason: expandReason.trim() },
       );
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setExpandOpen(false);
       setExpandReason("");
       await Promise.all([fetchSearches(), loadDetail(detail.id)]);
     } catch (requestError) {
-      toast.error(getApiError(requestError, "Radius pencarian gagal diperluas."));
+      notify.error(getApiError(requestError, "Radius pencarian gagal diperluas."));
     } finally {
       setExpanding(false);
     }
@@ -371,7 +371,7 @@ export default function TutorSearchMonitoring() {
       ));
     } catch (requestError) {
       setCandidates([]);
-      toast.error(getApiError(requestError, "Kandidat tutor gagal dimuat."));
+      notify.error(getApiError(requestError, "Kandidat tutor gagal dimuat."));
     } finally {
       setCandidatesLoading(false);
     }
@@ -397,15 +397,15 @@ export default function TutorSearchMonitoring() {
 
   const assignTeacher = async () => {
     if (!detail || !selectedTeacherId) {
-      toast.error("Pilih tutor yang akan ditetapkan.");
+      notify.error("Pilih tutor yang akan ditetapkan.");
       return;
     }
     if (assignmentReason.trim().length < 10) {
-      toast.error("Tuliskan alasan penetapan minimal 10 karakter.");
+      notify.error("Tuliskan alasan penetapan minimal 10 karakter.");
       return;
     }
     if (!confirmedTeacherConsent) {
-      toast.error("Konfirmasi bahwa tutor sudah menyatakan bersedia.");
+      notify.error("Konfirmasi bahwa tutor sudah menyatakan bersedia.");
       return;
     }
 
@@ -419,12 +419,12 @@ export default function TutorSearchMonitoring() {
           confirmed_teacher_consent: true,
         },
       );
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setAssignOpen(false);
       closeDetail();
       await fetchSearches();
     } catch (requestError) {
-      toast.error(getApiError(requestError, "Tutor gagal ditetapkan."));
+      notify.error(getApiError(requestError, "Tutor gagal ditetapkan."));
     } finally {
       setAssigning(false);
     }

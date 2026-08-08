@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import http, { getApiError } from "@/lib/http";
 import { useState, useEffect, useRef } from "react";
 import AdminLayout from "../../components/AdminLayout";
@@ -11,7 +12,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
 import { openProtectedFile } from "@/components/ProtectedImage";
 import { validateUpload } from "@/lib/validation";
 
@@ -80,7 +80,7 @@ export default function FinanceReport() {
       }
 
     } catch (error) {
-      toast.error(getApiError(error, "Gagal mengambil data keuangan."));
+      notify.error(getApiError(error, "Gagal mengambil data keuangan."));
     } finally {
       setIsLoading(false);
     }
@@ -90,16 +90,16 @@ export default function FinanceReport() {
   const handleUpdateFee = async () => {
     const feeValue = parseInt(newFee);
     if (isNaN(feeValue) || feeValue < 0 || feeValue > 100) {
-      return toast.error("Persentase harus angka 0 - 100");
+      return notify.error("Persentase harus angka 0 - 100");
     }
 
     try {
       await http.post("/admin/commission-setting", { admin_fee: feeValue });
-      toast.success("Persentase Keuntungan berhasil diupdate!");
+      notify.success("Persentase Keuntungan berhasil diupdate!");
       setIsFeeModalOpen(false);
       fetchFinanceData(); // Refresh data agar angka rupiah berubah
     } catch (error) {
-      toast.error(getApiError(error, "Gagal memperbarui persentase."));
+      notify.error(getApiError(error, "Gagal memperbarui persentase."));
     }
   };
 
@@ -134,7 +134,7 @@ export default function FinanceReport() {
         extensions: ["jpg", "jpeg", "png", "webp"],
       });
       if (error) {
-        toast.error(error);
+        notify.error(error);
         e.target.value = "";
         return;
       }
@@ -147,7 +147,7 @@ export default function FinanceReport() {
   };
 
   const handleConfirmTransfer = async () => {
-    if (!selectedPayout || !proofFile) return toast.error("Upload bukti transfer dulu.");
+    if (!selectedPayout || !proofFile) return notify.error("Upload bukti transfer dulu.");
     const approved = await confirm({
       title: "Catat pencairan tutor?",
       description: `Pastikan transfer ${formatRupiah(selectedPayout.netAmount)} ke rekening ${selectedPayout.bankDetails.number} sudah benar. Semua sesi terpilih akan ditandai telah dicairkan.`,
@@ -175,10 +175,10 @@ export default function FinanceReport() {
       };
       setHistory([newHistoryItem, ...history]);
       setPayouts(payouts.filter(p => p.queueKey !== selectedPayout.queueKey));
-      toast.success("Berhasil dicairkan!");
+      notify.success("Berhasil dicairkan!");
       handleCloseTransfer();
     } catch (error) {
-      toast.error(getApiError(error, "Gagal memproses pencairan."));
+      notify.error(getApiError(error, "Gagal memproses pencairan."));
     } finally {
       setIsProcessing(false);
     }
@@ -334,7 +334,7 @@ export default function FinanceReport() {
                             <td className="px-8 py-5 text-right">
                                <div className="flex items-center justify-end gap-2">
                                   <div className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold"><CheckCircle2 size={12}/> Berhasil</div>
-                                  {h.proof_url && <Button type="button" size="sm" variant="ghost" className="h-8 rounded-lg text-xs text-indigo-600" onClick={() => void openProtectedFile(h.proof_url, `struk-pencairan-${h.id}`).catch(() => toast.error("Struk tidak dapat dibuka."))}><FileText size={14} className="mr-1" />Struk</Button>}
+                                  {h.proof_url && <Button type="button" size="sm" variant="ghost" className="h-8 rounded-lg text-xs text-indigo-600" onClick={() => void openProtectedFile(h.proof_url, `struk-pencairan-${h.id}`).catch(() => notify.error("Struk tidak dapat dibuka."))}><FileText size={14} className="mr-1" />Struk</Button>}
                                </div>
                             </td>
                          </tr>

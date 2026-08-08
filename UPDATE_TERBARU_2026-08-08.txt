@@ -1,0 +1,20 @@
+WEBSITE BIMBELKU - FULL SOURCE TERBARU
+Tanggal paket: 08 Agustus 2026
+
+Paket ini sudah menggabungkan:
+1. Revisi Performa 1.
+2. Revisi 2: tombol Kembali pada halaman utama Cari Les dihapus.
+3. Revisi 3: Kelas Saya mendapat filter mata pelajaran, urutan jadwal terdekat/terjauh, serta navigasi kembali pada halaman detail/subhalaman yang relevan.
+4. FIX Revisi 2-3: source terbaru sudah di-overlay dan folder dist lama sengaja dihapus.
+
+PENTING:
+Folder dist tidak disertakan karena bundle sebelumnya stale/lama.
+Setelah replace project, jalankan dari root frontend:
+  npm install        (hanya jika node_modules belum ada)
+  npm run build
+  npm run preview -- --port 8080
+
+Untuk development cepat:
+  npm run dev
+
+Jangan menyalin dist dari paket lama ke project ini.

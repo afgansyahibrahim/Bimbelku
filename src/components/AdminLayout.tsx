@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
@@ -30,6 +30,13 @@ import {
 } from "lucide-react";
 import LogoutButton from "@/components/LogoutButton";
 import { ADMIN_PERMISSIONS, canAdmin } from "@/lib/adminPermissions";
+import { scheduleNonCriticalTask } from "@/lib/schedule";
+import {
+  hasAdminMobileMenuAttention,
+  hasSidebarAttention,
+  unreadIdsForCurrentPage,
+  type AttentionNotification,
+} from "@/lib/navigationAttention";
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -121,6 +128,7 @@ const readAdmin = () => {
 
 export default function AdminLayout({ children, title, subtitle = "Pusat operasional BimbelKu" }: AdminLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [attentionNotifications, setAttentionNotifications] = useState<AttentionNotification[]>([]);
   const location = useLocation();
   const admin = useMemo(readAdmin, []);
   const visibleNavigation = useMemo(
@@ -152,9 +160,57 @@ export default function AdminLayout({ children, title, subtitle = "Pusat operasi
     return location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
   };
 
+  const fetchAttentionNotifications = useCallback(async (force = false) => {
+    if (!localStorage.getItem("token")) return;
+    try {
+      const { getCached } = await import("@/lib/http");
+      const response = await getCached<{ attention_notifications?: AttentionNotification[] }>("/notifications", {
+        params: { per_page: 1 },
+        maxAgeMs: force ? 5_000 : 15_000,
+        force,
+      });
+      setAttentionNotifications(
+        Array.isArray(response.data.attention_notifications) ? response.data.attention_notifications : [],
+      );
+    } catch {
+      // Badge navigasi bersifat pendukung dan tidak boleh mengganggu halaman admin.
+    }
+  }, []);
+
   useEffect(() => {
     setSidebarOpen(false);
   }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    let disposed = false;
+    const start = () => { if (!disposed) void fetchAttentionNotifications(false); };
+    const cancelScheduledStart = scheduleNonCriticalTask(start);
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void fetchAttentionNotifications(true);
+    }, 60_000);
+    return () => {
+      disposed = true;
+      cancelScheduledStart();
+      window.clearInterval(interval);
+    };
+  }, [fetchAttentionNotifications]);
+
+  useEffect(() => {
+    const ids = unreadIdsForCurrentPage("admin", location.pathname, attentionNotifications);
+    if (!ids.length) return;
+
+    const idSet = new Set(ids);
+    setAttentionNotifications((current) => current.filter((item) => !idSet.has(item.id)));
+
+    let cancelled = false;
+    void import("@/lib/http")
+      .then(({ default: http }) => http.post("/notifications/read-batch", { ids }))
+      .catch(() => {
+        if (!cancelled) void fetchAttentionNotifications(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [attentionNotifications, fetchAttentionNotifications, location.pathname]);
 
   return (
     <div className="flex h-dvh w-full max-w-full overflow-hidden bg-slate-50 font-sans text-slate-800">
@@ -199,7 +255,7 @@ export default function AdminLayout({ children, title, subtitle = "Pusat operasi
               </p>
               <div className="space-y-1">
                 {section.items.map((item) => (
-                  <NavItem key={item.to} item={item} active={isActive(item)} />
+                  <NavItem key={item.to} item={item} active={isActive(item)} attention={hasSidebarAttention("admin", item.to, attentionNotifications)} />
                 ))}
               </div>
             </div>
@@ -251,6 +307,7 @@ export default function AdminLayout({ children, title, subtitle = "Pusat operasi
           items={mobileNavigation}
           isActive={isActive}
           menuActive={!mobileNavigation.some((item) => isActive(item))}
+          attentionNotifications={attentionNotifications}
           onOpenMenu={() => setSidebarOpen(true)}
         />
       </main>
@@ -258,7 +315,7 @@ export default function AdminLayout({ children, title, subtitle = "Pusat operasi
   );
 }
 
-function NavItem({ item, active }: { item: NavigationItem; active: boolean }) {
+function NavItem({ item, active, attention = false }: { item: NavigationItem; active: boolean; attention?: boolean }) {
   const Icon = item.icon;
 
   return (
@@ -271,11 +328,14 @@ function NavItem({ item, active }: { item: NavigationItem; active: boolean }) {
           : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
       }`}
     >
-      <Icon
-        size={19}
-        className={active ? "text-orange-400" : "text-slate-400 transition group-hover:text-orange-500"}
-        strokeWidth={active ? 2.5 : 2}
-      />
+      <span className="relative shrink-0">
+        <Icon
+          size={19}
+          className={active ? "text-orange-400" : "text-slate-400 transition group-hover:text-orange-500"}
+          strokeWidth={active ? 2.5 : 2}
+        />
+        {attention && <span aria-label="Ada pembaruan yang belum dilihat" className="absolute -right-1.5 -top-1.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />}
+      </span>
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
       {active && <span className="h-1.5 w-1.5 rounded-full bg-orange-400" />}
     </Link>
@@ -286,13 +346,17 @@ function AdminMobileBottomNav({
   items,
   isActive,
   menuActive,
+  attentionNotifications,
   onOpenMenu,
 }: {
   items: NavigationItem[];
   isActive: (item: NavigationItem) => boolean;
   menuActive: boolean;
+  attentionNotifications: AttentionNotification[];
   onOpenMenu: () => void;
 }) {
+  const mobileRoutes = items.map((item) => item.to);
+  const menuAttention = hasAdminMobileMenuAttention(mobileRoutes, attentionNotifications);
   return (
     <nav
       aria-label="Navigasi utama admin"
@@ -302,6 +366,7 @@ function AdminMobileBottomNav({
         {items.map((item) => {
           const active = isActive(item);
           const Icon = item.icon;
+          const attention = hasSidebarAttention("admin", item.to, attentionNotifications);
           const shortLabel = item.to === "/admin"
             ? "Beranda"
             : item.to === "/admin/guru"
@@ -324,7 +389,10 @@ function AdminMobileBottomNav({
                   : "text-slate-400 hover:bg-slate-50 hover:text-slate-600"
               }`}
             >
-              <Icon size={19} strokeWidth={active ? 2.7 : 2} />
+              <span className="relative">
+                <Icon size={19} strokeWidth={active ? 2.7 : 2} />
+                {attention && <span aria-label="Ada pembaruan yang belum dilihat" className="absolute -right-1.5 -top-1.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />}
+              </span>
               <span className="max-w-full truncate">{shortLabel}</span>
             </Link>
           );
@@ -340,7 +408,10 @@ function AdminMobileBottomNav({
               : "text-slate-400 hover:bg-slate-50 hover:text-slate-600"
           }`}
         >
-          <MoreHorizontal size={19} strokeWidth={menuActive ? 2.7 : 2} />
+          <span className="relative">
+            <MoreHorizontal size={19} strokeWidth={menuActive ? 2.7 : 2} />
+            {menuAttention && <span aria-label="Ada pembaruan di menu lain" className="absolute -right-1.5 -top-1.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />}
+          </span>
           <span className="max-w-full truncate">Menu</span>
         </button>
       </div>

@@ -1,7 +1,7 @@
+import { notify } from "@/lib/notify";
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import StudentLayout from "../../components/StudentLayout";
-import { toast } from "sonner";
 import { 
   AlertCircle, User, Mail, Lock, Save, Loader2, Camera, ShieldCheck, ImagePlus, CalendarDays, UserRoundCheck, RefreshCw, WifiOff,
   MapPin, FileText, HelpCircle, MessageCircle, Shield, ExternalLink, LocateFixed, ArrowLeft,
@@ -117,7 +117,7 @@ export default function Profile() {
         } else {
           setError("generic");
         }
-        toast.error("Gagal memuat data profil.");
+        notify.error("Gagal memuat data profil.");
       } finally {
         setIsLoading(false);
       }
@@ -174,7 +174,7 @@ export default function Profile() {
         } else {
           setError("generic");
         }
-        toast.error("Gagal memuat data profil.");
+        notify.error("Gagal memuat data profil.");
       } finally {
         setIsLoading(false);
       }
@@ -195,7 +195,7 @@ export default function Profile() {
 
   const useCurrentLocation = () => {
     if (!navigator.geolocation) {
-      toast.error("Perangkat atau browser ini tidak mendukung pengambilan lokasi.");
+      notify.error("Perangkat atau browser ini tidak mendukung pengambilan lokasi.");
       return;
     }
 
@@ -212,7 +212,7 @@ export default function Profile() {
           location_consent_at: current.location_consent_at || new Date().toISOString(),
         }));
         setIsLocating(false);
-        toast.success("Titik lokasi berhasil diambil. Lengkapi alamat sebelum menyimpan.");
+        notify.success("Titik lokasi berhasil diambil. Lengkapi alamat sebelum menyimpan.");
         window.setTimeout(() => addressInputRef.current?.focus(), 100);
       },
       (locationError) => {
@@ -222,7 +222,7 @@ export default function Profile() {
           : locationError.code === locationError.TIMEOUT
             ? "Pengambilan lokasi terlalu lama. Pastikan GPS atau lokasi perangkat aktif."
             : "Titik lokasi belum berhasil diambil. Coba lagi atau isi koordinat secara manual.";
-        toast.error(message);
+        notify.error(message);
       },
       { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 },
     );
@@ -238,7 +238,7 @@ export default function Profile() {
         extensions: ["jpg", "jpeg", "png", "webp"],
       });
       if (error) {
-        toast.error(error);
+        notify.error(error);
         e.target.value = "";
         return;
       }
@@ -261,7 +261,7 @@ export default function Profile() {
       extensions: ["jpg", "jpeg", "png", "webp"],
     });
     if (error) {
-      toast.error(error);
+      notify.error(error);
       e.target.value = "";
       return;
     }
@@ -278,25 +278,25 @@ export default function Profile() {
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isValidPersonName(user.name)) {
-      toast.error("Nama lengkap harus berisi huruf dan tidak boleh memuat angka.");
+      notify.error("Nama lengkap harus berisi huruf dan tidak boleh memuat angka.");
       return;
     }
     if (!isValidPhone(user.phone)) {
-      toast.error("Nomor WhatsApp/telepon harus berisi 8–15 angka.");
+      notify.error("Nomor WhatsApp/telepon harus berisi 8–15 angka.");
       return;
     }
     if (locationSetupRequested) {
       if (!user.address.trim()) {
-        toast.error("Alamat lengkap wajib diisi untuk kelas offline.");
+        notify.error("Alamat lengkap wajib diisi untuk kelas offline.");
         addressInputRef.current?.focus();
         return;
       }
       if (!user.latitude.trim() || !user.longitude.trim() || !Number.isFinite(Number(user.latitude)) || !Number.isFinite(Number(user.longitude))) {
-        toast.error("Ambil titik lokasi perangkat atau isi latitude dan longitude dengan benar.");
+        notify.error("Ambil titik lokasi perangkat atau isi latitude dan longitude dengan benar.");
         return;
       }
       if (!user.location_consent_at) {
-        toast.error("Centang persetujuan penggunaan lokasi terlebih dahulu.");
+        notify.error("Centang persetujuan penggunaan lokasi terlebih dahulu.");
         return;
       }
     }
@@ -373,16 +373,16 @@ export default function Profile() {
         && Number.isFinite(Number(savedLongitude)),
       );
       if (locationSetupRequested && returnTo && locationReady) {
-        toast.success("Lokasi tersimpan. Kamu dikembalikan ke pemesanan.");
+        notify.success("Lokasi tersimpan. Kamu dikembalikan ke pemesanan.");
         navigate(returnTo, { replace: true });
       } else {
-        toast.success("Profil berhasil diperbarui!");
+        notify.success("Profil berhasil diperbarui!");
       }
 
     } catch (error: any) {
       console.error(error);
       const msg = error.response?.data?.message || "Gagal memperbarui profil.";
-      toast.error(msg);
+      notify.error(msg);
     } finally {
       setIsSaving(false);
     }

@@ -1,7 +1,7 @@
+import { notify } from "@/lib/notify";
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import AdminLayout from "../../components/AdminLayout";
-import { toast } from "sonner";
 import http, { getApiError } from "@/lib/http";
 import { 
   ArrowLeft, Calendar, MapPin, Video, CheckCircle2,
@@ -23,7 +23,7 @@ export default function ClassDetail() {
         const res = await http.get(`/admin/classes/${id}`);
         setData(res.data);
       } catch (error) {
-        toast.error(getApiError(error, "Detail kelas gagal dimuat."));
+        notify.error(getApiError(error, "Detail kelas gagal dimuat."));
       } finally {
         setIsLoading(false);
       }

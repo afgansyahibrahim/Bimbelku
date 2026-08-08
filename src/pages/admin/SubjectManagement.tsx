@@ -1,6 +1,6 @@
+import { notify } from "@/lib/notify";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { BookOpen, CheckCircle2, Loader2, Pencil, Plus, Power, Search, Trash2 } from "lucide-react";
-import { toast } from "sonner";
 import AdminLayout from "@/components/AdminLayout";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
@@ -54,7 +54,7 @@ export default function SubjectManagement() {
       const response = await http.get<Subject[]>("/admin/subjects?all=1");
       setSubjects(response.data || []);
     } catch (error) {
-      toast.error(getApiError(error, "Daftar mata pelajaran gagal dimuat."));
+      notify.error(getApiError(error, "Daftar mata pelajaran gagal dimuat."));
     } finally {
       setLoading(false);
     }
@@ -91,7 +91,7 @@ export default function SubjectManagement() {
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (!form.education_levels.length) {
-      toast.error("Pilih minimal satu jenjang.");
+      notify.error("Pilih minimal satu jenjang.");
       return;
     }
     setSaving(true);
@@ -106,11 +106,11 @@ export default function SubjectManagement() {
       const response = editing
         ? await http.put(`/admin/subjects/${editing.id}`, payload)
         : await http.post("/admin/subjects", payload);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setEditing(undefined);
       await load();
     } catch (error) {
-      toast.error(getApiError(error, "Mata pelajaran gagal disimpan."));
+      notify.error(getApiError(error, "Mata pelajaran gagal disimpan."));
     } finally {
       setSaving(false);
     }
@@ -128,10 +128,10 @@ export default function SubjectManagement() {
     if (!approved) return;
     try {
       const response = await http.delete(`/admin/subjects/${subject.id}`);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await load();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     }
   };
 
@@ -148,10 +148,10 @@ export default function SubjectManagement() {
         edition: subject.edition,
         source_url: subject.source_url,
       });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await load();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     }
   };
 

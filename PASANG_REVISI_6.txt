@@ -1,0 +1,18 @@
+REVISI 6 - ADMIN PAYMENT VERIFICATION FIX
+
+1. Timpa file patch ke root project BimbelKu sesuai struktur folder.
+2. Jalankan dari frontend root:
+   npm run check:admin-payment-fix
+   npm run build
+3. Jalankan backend seperti biasa.
+4. Uji:
+   - Murid kirim bukti pembayaran.
+   - Admin buka Pembayaran murid > Bukti > Tolak.
+   - Isi alasan minimal 10 karakter > Tolak bukti.
+   - Dialog konfirmasi harus tampil DI ATAS modal, bukan tersembunyi.
+   - Konfirmasi penolakan.
+   - Data harus pindah dari Perlu diperiksa ke Riwayat dan berstatus Ditolak.
+   - Murid harus menerima alasan penolakan.
+5. Uji juga Bukti > Terima pembayaran dari modal preview.
+
+Jika murid sudah membatalkan tagihan dari state pending/rejected, admin tidak perlu menolak lagi. Bila halaman admin masih stale, server mengembalikan pesan spesifik dan daftar akan dimuat ulang otomatis.

@@ -392,6 +392,7 @@ class TeacherOfferController extends Controller
                     'title' => 'Tutor menerima permintaan',
                     'message' => "{$lockedTeacher->name} menerima permintaan. Tagihan sudah tersedia sampai {$paymentDueAt->translatedFormat('H:i')} WIB.",
                     'type' => 'success',
+                    'target_url' => '/student/packages',
                 ]);
             }
 

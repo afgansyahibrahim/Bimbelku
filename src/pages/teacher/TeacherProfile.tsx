@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -19,7 +20,6 @@ import {
   ImagePlus,
   ScanSearch,
 } from "lucide-react";
-import { toast } from "sonner";
 import TeacherLayout from "@/components/TeacherLayout";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import CameraCapture from "@/components/CameraCapture";
@@ -160,7 +160,7 @@ export default function TeacherProfile() {
         is_offline: subject?.is_offline ?? true,
       });
     } catch (error) {
-      toast.error(getApiError(error, "Profil tutor gagal dimuat."));
+      notify.error(getApiError(error, "Profil tutor gagal dimuat."));
     } finally {
       setLoading(false);
     }
@@ -174,7 +174,7 @@ export default function TeacherProfile() {
       extensions: ["jpg", "jpeg", "png", "webp"],
     });
     if (error) {
-      toast.error(error);
+      notify.error(error);
       return;
     }
     if (photoPreviewUrlRef.current) URL.revokeObjectURL(photoPreviewUrlRef.current);
@@ -191,7 +191,7 @@ export default function TeacherProfile() {
       extensions: ["jpg", "jpeg", "png", "webp"],
     });
     if (error) {
-      toast.error(error);
+      notify.error(error);
       return;
     }
     if (coverPreviewUrlRef.current) URL.revokeObjectURL(coverPreviewUrlRef.current);
@@ -215,7 +215,7 @@ export default function TeacherProfile() {
       extensions: selfieOnly ? ["jpg", "jpeg", "png", "webp"] : ["jpg", "jpeg", "png", "webp", "pdf"],
     });
     if (error) {
-      toast.error(error);
+      notify.error(error);
       return;
     }
     setProfile((current) => ({
@@ -227,15 +227,15 @@ export default function TeacherProfile() {
   const saveProfile = async (event: FormEvent) => {
     event.preventDefault();
     if (!isValidPersonName(profile.name)) {
-      toast.error("Nama lengkap harus berisi huruf dan tidak boleh memuat angka.");
+      notify.error("Nama lengkap harus berisi huruf dan tidak boleh memuat angka.");
       return;
     }
     if (!isValidPhone(profile.whatsapp_number)) {
-      toast.error("Nomor WhatsApp/telepon harus berisi 8–15 angka.");
+      notify.error("Nomor WhatsApp/telepon harus berisi 8–15 angka.");
       return;
     }
     if (!isValidRegionName(profile.location)) {
-      toast.error("Kota atau wilayah wajib mengandung huruf dan tidak boleh hanya berisi angka atau simbol.");
+      notify.error("Kota atau wilayah wajib mengandung huruf dan tidak boleh hanya berisi angka atau simbol.");
       return;
     }
     setSavingProfile(true);
@@ -258,7 +258,7 @@ export default function TeacherProfile() {
       });
 
       const response = await http.post("/teacher/profile", formData);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       if (response.data.reverification_required) {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
@@ -275,7 +275,7 @@ export default function TeacherProfile() {
       }
       await loadProfile();
     } catch (error) {
-      toast.error(getApiError(error, "Profil gagal disimpan."));
+      notify.error(getApiError(error, "Profil gagal disimpan."));
     } finally {
       setSavingProfile(false);
     }
@@ -283,15 +283,15 @@ export default function TeacherProfile() {
 
   const saveSubject = async () => {
     if (!profile.subject.trim()) {
-      toast.error("Mata pelajaran utama wajib diisi.");
+      notify.error("Mata pelajaran utama wajib diisi.");
       return;
     }
     if (profile.subjectLevels.length === 0) {
-      toast.error("Pilih minimal satu jenjang.");
+      notify.error("Pilih minimal satu jenjang.");
       return;
     }
     if (!profile.is_online && !profile.is_offline) {
-      toast.error("Aktifkan minimal satu mode mengajar.");
+      notify.error("Aktifkan minimal satu mode mengajar.");
       return;
     }
 
@@ -313,7 +313,7 @@ export default function TeacherProfile() {
           is_offline: profile.is_offline,
         }],
       });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       if (response.data.reverification_required) {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
@@ -322,7 +322,7 @@ export default function TeacherProfile() {
       }
       await loadProfile();
     } catch (error) {
-      toast.error(getApiError(error, "Mata pelajaran gagal disimpan."));
+      notify.error(getApiError(error, "Mata pelajaran gagal disimpan."));
     } finally {
       setSavingSubject(false);
     }
@@ -339,7 +339,7 @@ export default function TeacherProfile() {
 
   const detectLocation = () => {
     if (!navigator.geolocation) {
-      toast.error("Perangkat ini tidak mendukung deteksi lokasi.");
+      notify.error("Perangkat ini tidak mendukung deteksi lokasi.");
       return;
     }
 
@@ -352,11 +352,11 @@ export default function TeacherProfile() {
           longitude: position.coords.longitude.toFixed(7),
         }));
         setLocating(false);
-        toast.success("Titik lokasi tutor berhasil diisi.");
+        notify.success("Titik lokasi tutor berhasil diisi.");
       },
       () => {
         setLocating(false);
-        toast.error("Lokasi tidak dapat dibaca. Aktifkan izin lokasi pada browser.");
+        notify.error("Lokasi tidak dapat dibaca. Aktifkan izin lokasi pada browser.");
       },
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
     );
@@ -447,7 +447,7 @@ export default function TeacherProfile() {
                       type="button"
                       variant="outline"
                       className="h-9 w-full rounded-xl text-xs font-bold"
-                      onClick={() => void openProtectedFile(profile.documentUrls.live_selfie, "Foto wajah langsung").catch(() => toast.error("Foto tidak dapat dibuka."))}
+                      onClick={() => void openProtectedFile(profile.documentUrls.live_selfie, "Foto wajah langsung").catch(() => notify.error("Foto tidak dapat dibuka."))}
                     >
                       <ScanSearch size={14} className="mr-2" />Lihat foto tersimpan
                     </Button>
@@ -523,7 +523,7 @@ function DocumentInput({ label, icon: Icon, current, accept, capture, onChange }
           <button
             type="button"
             className="inline-flex h-9 items-center justify-center rounded-lg border border-indigo-100 bg-indigo-50 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
-            onClick={() => void openProtectedFile(current, label).catch(() => toast.error("Dokumen tidak dapat dibuka."))}
+            onClick={() => void openProtectedFile(current, label).catch(() => notify.error("Dokumen tidak dapat dibuka."))}
           >
             <ScanSearch size={14} className="mr-1.5" />Lihat
           </button>

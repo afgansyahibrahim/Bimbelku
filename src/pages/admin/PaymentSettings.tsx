@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import http, { getApiError } from "@/lib/http";
 import { useState, useEffect } from "react";
 import AdminLayout from "../../components/AdminLayout";
@@ -5,7 +6,6 @@ import {
   Save, CreditCard, QrCode, Building, 
   User, CheckCircle2, Loader2, ImagePlus, Landmark, Wifi 
 } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
@@ -85,7 +85,7 @@ export default function PaymentSettings() {
       }
     } catch (error) {
       console.error("Gagal load settings:", error);
-      toast.error(getApiError(error, "Gagal memuat pengaturan."));
+      notify.error(getApiError(error, "Gagal memuat pengaturan."));
     } finally {
       setIsLoading(false);
     }
@@ -101,38 +101,38 @@ export default function PaymentSettings() {
         extensions: ["jpg", "jpeg", "png", "webp"],
       });
       if (error) {
-        toast.error(error);
+        notify.error(error);
         e.target.value = "";
         return;
       }
       setQrisFile(file);
       replaceQrisPreview(URL.createObjectURL(file));
       setQrisLoadFailed(false);
-      toast.success("Gambar dipilih. QRIS belum aktif sebelum tombol Simpan Perubahan ditekan.");
+      notify.success("Gambar dipilih. QRIS belum aktif sebelum tombol Simpan Perubahan ditekan.");
     }
   };
 
   // 3. HANDLER SIMPAN KE DATABASE
   const handleSave = async () => {
     if (!merchantName.trim() || !bankName.trim() || !accountNumber.trim() || !accountName.trim()) {
-      toast.error("Lengkapi seluruh data rekening sebelum menyimpan.");
+      notify.error("Lengkapi seluruh data rekening sebelum menyimpan.");
       return;
     }
 
     if (!containsLetter(merchantName)) {
-      toast.error("Nama merchant wajib mengandung huruf.");
+      notify.error("Nama merchant wajib mengandung huruf.");
       return;
     }
     if (!containsLetter(bankName)) {
-      toast.error("Nama bank atau e-wallet wajib mengandung huruf.");
+      notify.error("Nama bank atau e-wallet wajib mengandung huruf.");
       return;
     }
     if (!isValidAccountNumber(accountNumber)) {
-      toast.error("Nomor rekening harus berisi 6–50 angka.");
+      notify.error("Nomor rekening harus berisi 6–50 angka.");
       return;
     }
     if (!isValidPersonName(accountName)) {
-      toast.error("Nama pemilik rekening harus berisi huruf dan tidak boleh memuat angka.");
+      notify.error("Nama pemilik rekening harus berisi huruf dan tidak boleh memuat angka.");
       return;
     }
 
@@ -164,14 +164,14 @@ export default function PaymentSettings() {
       setQrisFile(null);
       await fetchSettings();
 
-      toast.success("Pengaturan disimpan!", {
+      notify.success("Pengaturan disimpan!", {
         description: hadNewQris ? "QRIS telah aktif dan akan tampil pada halaman pembayaran murid." : "Metode pembayaran telah diperbarui.",
         icon: <CheckCircle2 className="text-green-600" />,
       });
 
     } catch (error) {
       console.error(error);
-      toast.error(getApiError(error, "Gagal menyimpan pengaturan."));
+      notify.error(getApiError(error, "Gagal menyimpan pengaturan."));
     } finally {
       setIsSaving(false);
     }

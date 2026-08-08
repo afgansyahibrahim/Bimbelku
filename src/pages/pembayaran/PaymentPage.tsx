@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -20,14 +21,14 @@ import {
   WalletCards,
   XCircle,
 } from "lucide-react";
-import { toast } from "sonner";
 import StudentLayout from "@/components/StudentLayout";
 import OrderProgress from "@/components/OrderProgress";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import http, { getApiError } from "@/lib/http";
+import http, { getApiError, getApiErrorDetails } from "@/lib/http";
+import { showFilePreview } from "@/lib/filePreview";
 import {
   containsLetter,
   isValidAccountNumber,
@@ -64,10 +65,46 @@ interface OrderData {
 }
 
 type State = "loading" | "pending" | "submitted" | "paid" | "expired" | "cancelled" | "refund_pending" | "refunded";
+type PaymentIssue = {
+  message: string;
+  title: string;
+  tone: "amber" | "rose";
+  code?: string;
+};
 
 const rupiah = (value: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
 const PAYMENT_ACCOUNT_MIN_DIGITS = 8;
 const PAYMENT_ACCOUNT_MAX_DIGITS = 20;
+
+const describePaymentIssue = (error: unknown): PaymentIssue => {
+  const details = getApiErrorDetails(error, "Bukti pembayaran gagal dikirim. Coba lagi setelah memeriksa data yang diisi.");
+
+  if (!details.status) {
+    return {
+      title: "Koneksi ke server terputus",
+      message: "Status pengiriman bukti belum dapat dipastikan. Periksa status pembayaran sebelum mengirim ulang agar tidak terjadi pengiriman ganda.",
+      tone: "amber",
+      code: "network_error",
+    };
+  }
+  if (details.code === "payment_rate_limited" || details.status === 429) {
+    return { title: "Tunggu sebentar", message: details.message, tone: "amber", code: details.code };
+  }
+  if (details.code === "schedule_conflict") {
+    return { title: "Jadwal bertabrakan", message: details.message, tone: "rose", code: details.code };
+  }
+  if (details.code === "payment_expired") {
+    return { title: "Batas pembayaran berakhir", message: details.message, tone: "rose", code: details.code };
+  }
+  if (details.code === "payment_settings_unavailable") {
+    return { title: "Metode pembayaran belum siap", message: details.message, tone: "amber", code: details.code };
+  }
+  if (details.code === "invoice_not_payable" || details.code === "package_not_payable" || details.code === "session_inactive") {
+    return { title: "Tagihan tidak dapat diproses", message: details.message, tone: "rose", code: details.code };
+  }
+
+  return { title: "Bukti belum terkirim", message: details.message, tone: "rose", code: details.code };
+};
 
 export default function PaymentPage() {
   const location = useLocation();
@@ -82,13 +119,14 @@ export default function PaymentPage() {
   const [senderAccountNumber, setSenderAccountNumber] = useState("");
   const [proof, setProof] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [submitIssue, setSubmitIssue] = useState<PaymentIssue | null>(null);
   const [now, setNow] = useState(Date.now());
   const [paymentMethod, setPaymentMethod] = useState<"qris" | "bank">("bank");
   const [qrisObjectUrl, setQrisObjectUrl] = useState<string | null>(null);
   const [qrisLoading, setQrisLoading] = useState(false);
   const [qrisLoadFailed, setQrisLoadFailed] = useState(false);
 
-  const checkStatus = useCallback(async (orderId: number, notify = true) => {
+  const checkStatus = useCallback(async (orderId: number, showNotification = true) => {
     try {
       const response = await http.get(`/student/orders/${orderId}/status`);
       const status = response.data.status as string;
@@ -111,9 +149,9 @@ export default function PaymentPage() {
       } else if (status === "expired") {
         setState("expired");
       }
-      if (notify) toast.success("Status pembayaran diperbarui.");
+      if (showNotification) notify.success("Status pembayaran diperbarui.");
     } catch (error) {
-      if (notify) toast.error(getApiError(error));
+      if (showNotification) notify.error(getApiError(error));
     }
   }, []);
 
@@ -155,7 +193,7 @@ export default function PaymentPage() {
       sessionStorage.setItem("bimbelku_payment_order", JSON.stringify(resolved));
       await checkStatus(resolved.orderId, false);
     } catch (error) {
-      toast.error(getApiError(error, "Tagihan gagal dimuat."));
+      notify.error(getApiError(error, "Tagihan gagal dimuat."));
       setState("expired");
     }
   }, [checkStatus, location.state]);
@@ -231,9 +269,9 @@ export default function PaymentPage() {
   const copy = async (value: string, label: string) => {
     try {
       await navigator.clipboard.writeText(value);
-      toast.success(`${label} berhasil disalin.`);
+      notify.success(`${label} berhasil disalin.`);
     } catch {
-      toast.error(`${label} tidak dapat disalin otomatis. Salin secara manual.`);
+      notify.error(`${label} tidak dapat disalin otomatis. Salin secara manual.`);
     }
   };
 
@@ -241,11 +279,11 @@ export default function PaymentPage() {
     event.preventDefault();
     if (!order || !proof) return;
     if (!isValidPersonName(senderName)) {
-      toast.error("Nama pemilik rekening harus berisi huruf dan tidak boleh memuat angka.");
+      notify.error("Nama pemilik rekening harus berisi huruf dan tidak boleh memuat angka.");
       return;
     }
     if (!containsLetter(bankName)) {
-      toast.error("Nama bank atau e-wallet wajib mengandung huruf.");
+      notify.error("Nama bank atau e-wallet wajib mengandung huruf.");
       return;
     }
     if (
@@ -253,11 +291,11 @@ export default function PaymentPage() {
       || senderAccountNumber.length < PAYMENT_ACCOUNT_MIN_DIGITS
       || senderAccountNumber.length > PAYMENT_ACCOUNT_MAX_DIGITS
     ) {
-      toast.error(`Nomor rekening atau e-wallet harus berisi ${PAYMENT_ACCOUNT_MIN_DIGITS}–${PAYMENT_ACCOUNT_MAX_DIGITS} digit.`);
+      notify.error(`Nomor rekening atau e-wallet harus berisi ${PAYMENT_ACCOUNT_MIN_DIGITS}–${PAYMENT_ACCOUNT_MAX_DIGITS} digit.`);
       return;
     }
     if (!paymentDestinationReady) {
-      toast.error("Metode pembayaran belum dikonfigurasi admin.");
+      notify.error("Metode pembayaran belum dikonfigurasi admin.");
       return;
     }
     const payload = new FormData();
@@ -265,27 +303,35 @@ export default function PaymentPage() {
     payload.append("sender_name", senderName);
     payload.append("bank_name", bankName);
     payload.append("sender_account_number", senderAccountNumber);
+    setSubmitIssue(null);
     setSubmitting(true);
     try {
       const response = await http.post(`/orders/${order.orderId}/pay`, payload);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setState("submitted");
       setReason("");
     } catch (error) {
-      toast.error(getApiError(error, "Bukti pembayaran gagal dikirim."));
+      const issue = describePaymentIssue(error);
+      setSubmitIssue(issue);
+      if (issue.tone === "amber") notify.warning(issue.message);
+      else notify.error(issue.message);
+      if (["payment_expired", "invoice_not_payable", "package_not_payable", "session_inactive"].includes(issue.code || "")) {
+        void checkStatus(order.orderId, false);
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
   const selectProof = (file?: File) => {
+    setSubmitIssue(null);
     const error = validateUpload(file, {
       label: "Bukti transfer",
       maxSizeMb: 5,
       extensions: ["jpg", "jpeg", "png", "webp"],
     });
     if (error) {
-      toast.error(error);
+      notify.error(error);
       setProof(null);
       return;
     }
@@ -303,11 +349,11 @@ export default function PaymentPage() {
     if (!approved) return;
     try {
       const response = await http.post(`/orders/${order.orderId}/cancel`);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       sessionStorage.removeItem("bimbelku_payment_order");
       navigate(order.packageName ? "/student/packages" : "/search", { replace: true });
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     }
   };
 
@@ -344,9 +390,21 @@ export default function PaymentPage() {
   return (
     <StudentLayout title="Pembayaran">
       <div className="mx-auto max-w-6xl space-y-6 pb-12">
-        <button onClick={() => navigate(order.packageName ? "/student/packages" : "/search")} className="inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-slate-900"><ArrowLeft size={17} />Kembali</button>
+        <button type="button" onClick={() => navigate(order.packageName ? "/student/packages" : "/search")} className="inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-slate-900"><ArrowLeft size={17} />Kembali</button>
         {order.packageName && <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm"><OrderProgress status="awaiting_payment" /></div>}
         {reason && <div className="flex gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-5 text-rose-800"><AlertCircle className="shrink-0" /><div><p className="font-black">Bukti sebelumnya ditolak</p><p className="mt-1 text-sm leading-6">{reason}</p></div></div>}
+        {submitIssue && (
+          <div className={`flex gap-3 rounded-2xl border p-5 ${submitIssue.tone === "amber" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-rose-200 bg-rose-50 text-rose-800"}`}>
+            <AlertCircle className="shrink-0" />
+            <div className="min-w-0">
+              <p className="font-black">{submitIssue.title}</p>
+              <p className="mt-1 break-words text-sm leading-6">{submitIssue.message}</p>
+              {submitIssue.code === "network_error" && (
+                <Button type="button" variant="outline" size="sm" className="mt-3 rounded-lg bg-white" onClick={() => void checkStatus(order.orderId)}>Periksa status pembayaran</Button>
+              )}
+            </div>
+          </div>
+        )}
         {!paymentDestinationReady && !qrisLoading && <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900"><AlertCircle className="shrink-0" /><div><p className="font-black">Metode pembayaran belum tersedia</p><p className="mt-1 text-sm leading-6">Admin perlu mengaktifkan QRIS atau melengkapi rekening tujuan. Jangan membayar sebelum salah satu metode tampil lengkap.</p></div></div>}
         {paymentExpired && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm font-bold text-rose-700">Batas waktu telah berakhir. Muat ulang status untuk menutup tagihan.</div>}
 
@@ -354,7 +412,7 @@ export default function PaymentPage() {
           <section className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm">
             <div className="bg-gradient-to-br from-slate-950 to-indigo-950 p-5 text-white sm:p-6"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-bold uppercase tracking-widest text-indigo-200">Tagihan</p><p className="mt-2 break-all font-mono text-lg font-black sm:text-xl">{order.invoiceId || `#${order.orderId}`}</p></div><span className="rounded-full bg-orange-500 px-3 py-1.5 text-xs font-bold">Belum dibayar</span></div></div>
             <div className="space-y-5 p-5 sm:p-6">
-              <div><p className="text-xs font-bold uppercase tracking-widest text-slate-400">{order.packageName ? "Paket" : "Kelas"}</p><h1 className="mt-2 text-xl font-black text-slate-900 sm:text-2xl">{order.packageName || order.subject}</h1>{order.packageName && <p className="mt-1 text-sm font-semibold text-slate-600">{order.subject}</p>}<p className="mt-1 text-sm text-slate-500">{order.type}{order.packageName ? ` · ${order.durationHours || 1} jam/pertemuan · tutor dicari setelah pembayaran` : ` · tutor ${order.tutorName}`}</p>{Boolean(order.totalLearningHours) && <p className="mt-2 inline-flex rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">Total {order.totalLearningHours} jam belajar</p>}</div>
+              <div><p className="text-xs font-bold uppercase tracking-widest text-slate-500">{order.packageName ? "Paket" : "Kelas"}</p><h1 className="mt-2 text-xl font-black text-slate-900 sm:text-2xl">{order.packageName || order.subject}</h1>{order.packageName && <p className="mt-1 text-sm font-semibold text-slate-600">{order.subject}</p>}<p className="mt-1 text-sm text-slate-500">{order.type}{order.packageName ? ` · ${order.durationHours || 1} jam/pertemuan · tutor dicari setelah pembayaran` : ` · tutor ${order.tutorName}`}</p>{Boolean(order.totalLearningHours) && <p className="mt-2 inline-flex rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">Total {order.totalLearningHours} jam belajar</p>}</div>
               <div className="flex flex-col gap-2 rounded-2xl bg-indigo-50 p-4 sm:flex-row sm:items-end sm:justify-between">
                 <span className="text-sm font-bold text-indigo-700">Total transfer</span>
                 <div className="text-left sm:text-right">
@@ -374,7 +432,7 @@ export default function PaymentPage() {
               <div className="rounded-2xl border border-slate-100 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Pilih cara bayar</p>
+                    <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Pilih cara bayar</p>
                     <p className="mt-1 text-sm font-semibold text-slate-700">Bayar memakai QRIS atau transfer bank.</p>
                   </div>
                   {qrisPaymentReady && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700">QRIS aktif</span>}
@@ -403,13 +461,32 @@ export default function PaymentPage() {
 
                 {paymentMethod === "qris" && qrisPaymentReady && qrisObjectUrl ? (
                   <div className="mt-4 rounded-2xl border-2 border-indigo-100 bg-indigo-50/40 p-4 text-center">
-                    <div className="rounded-xl bg-white p-3 shadow-sm">
-                      <img src={qrisObjectUrl} alt={`QRIS ${settings.merchant_name}`} className="mx-auto max-h-[22rem] w-full object-contain" />
-                    </div>
+                    <button
+                      type="button"
+                      aria-label={`Perbesar QRIS ${settings.merchant_name}`}
+                      onClick={() => showFilePreview({
+                        url: qrisObjectUrl,
+                        filename: `QRIS ${settings.merchant_name}`,
+                        contentType: "image/png",
+                      })}
+                      className="group relative block w-full overflow-hidden rounded-xl bg-white p-3 shadow-sm focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-200"
+                    >
+                      <img src={qrisObjectUrl} alt={`QRIS ${settings.merchant_name}`} loading="lazy" decoding="async" className="mx-auto max-h-[22rem] w-full object-contain" />
+                      <span className="absolute bottom-4 right-4 rounded-lg bg-slate-950/80 px-3 py-1.5 text-xs font-black text-white shadow-lg transition group-hover:bg-indigo-700">Perbesar</span>
+                    </button>
                     <p className="mt-3 text-base font-black text-slate-900">Scan QRIS {settings.merchant_name}</p>
                     <p className="mt-1 text-sm font-bold text-indigo-700">Bayar tepat {rupiah(order.price)}</p>
-                    <Button type="button" variant="outline" className="mt-3 w-full rounded-xl bg-white" onClick={() => window.open(qrisObjectUrl, "_blank", "noopener,noreferrer")}>
-                      <QrCode size={16} className="mr-2" />Buka QRIS ukuran penuh
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="mt-3 w-full rounded-xl bg-white"
+                      onClick={() => showFilePreview({
+                        url: qrisObjectUrl,
+                        filename: `QRIS ${settings.merchant_name}`,
+                        contentType: "image/png",
+                      })}
+                    >
+                      <QrCode size={16} className="mr-2" />Perbesar QRIS
                     </Button>
                     <ol className="mt-4 space-y-2 text-left text-xs leading-5 text-slate-600">
                       <li><strong>1.</strong> Buka aplikasi bank atau e-wallet yang mendukung QRIS.</li>
@@ -420,12 +497,12 @@ export default function PaymentPage() {
                   </div>
                 ) : paymentMethod === "bank" && bankPaymentReady ? (
                   <div className="mt-4 rounded-2xl border border-slate-100 p-4">
-                    <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Rekening admin</p>
+                    <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Rekening admin</p>
                     <div className="mt-4 space-y-3 text-sm">
                       <Row icon={Building2} label="Bank" value={settings.bank_name} />
                       <Row icon={UserRound} label="Atas nama" value={settings.account_name} />
                       <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3">
-                        <div><p className="text-xs text-slate-400">Nomor rekening</p><p className="mt-1 font-mono font-black text-slate-900">{settings.account_number}</p></div>
+                        <div><p className="text-xs text-slate-500">Nomor rekening</p><p className="mt-1 font-mono font-black text-slate-900">{settings.account_number}</p></div>
                         <Button type="button" aria-label="Salin nomor rekening" variant="ghost" size="icon" onClick={() => copy(settings.account_number, "Nomor rekening")}><Copy size={17} /></Button>
                       </div>
                     </div>
@@ -451,7 +528,7 @@ export default function PaymentPage() {
               <div><Label className="flex items-center gap-2 font-bold"><UserRound size={16} />Nama pemilik rekening</Label><Input required className="mt-2 h-12 rounded-xl" value={senderName} onChange={(event) => setSenderName(sanitizePersonName(event.target.value, 150))} /></div>
               <div><Label className="flex items-center gap-2 font-bold"><WalletCards size={16} />Bank/e-wallet asal</Label><Input required className="mt-2 h-12 rounded-xl" value={bankName} onChange={(event) => setBankName(event.target.value)} /></div>
               <div><Label className="flex items-center gap-2 font-bold"><CreditCard size={16} />Nomor rekening/e-wallet asal</Label><Input required inputMode="numeric" minLength={PAYMENT_ACCOUNT_MIN_DIGITS} maxLength={PAYMENT_ACCOUNT_MAX_DIGITS} className="mt-2 h-12 rounded-xl" value={senderAccountNumber} onChange={(event) => setSenderAccountNumber(sanitizeDigits(event.target.value, PAYMENT_ACCOUNT_MAX_DIGITS))} /><p className="mt-2 text-xs leading-5 text-slate-500">Masukkan {PAYMENT_ACCOUNT_MIN_DIGITS}–{PAYMENT_ACCOUNT_MAX_DIGITS} digit. Nomor ini dipakai sebagai tujuan pengembalian dana jika refund disetujui.</p></div>
-              <label className={`block cursor-pointer rounded-2xl border-2 border-dashed p-6 text-center transition ${proof ? "border-emerald-300 bg-emerald-50" : "border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40"}`}><Input required type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={(event) => selectProof(event.target.files?.[0])} />{proof ? <><FileImage className="mx-auto text-emerald-600" /><p className="mt-3 truncate text-sm font-black text-emerald-800">{proof.name}</p><p className="mt-1 text-xs text-emerald-600">Klik untuk mengganti</p></> : <><Upload className="mx-auto text-indigo-500" /><p className="mt-3 text-sm font-black text-slate-800">Pilih foto bukti pembayaran</p><p className="mt-1 text-xs text-slate-400">JPG, PNG, atau WebP · maks. 5 MB</p></>}</label>
+              <label className={`block cursor-pointer rounded-2xl border-2 border-dashed p-6 text-center transition ${proof ? "border-emerald-300 bg-emerald-50" : "border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40"}`}><Input required type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={(event) => selectProof(event.target.files?.[0])} />{proof ? <><FileImage className="mx-auto text-emerald-600" /><p className="mt-3 truncate text-sm font-black text-emerald-800">{proof.name}</p><p className="mt-1 text-xs text-emerald-600">Klik untuk mengganti</p></> : <><Upload className="mx-auto text-indigo-500" /><p className="mt-3 text-sm font-black text-slate-800">Pilih foto bukti pembayaran</p><p className="mt-1 text-xs text-slate-500">JPG, PNG, atau WebP · maks. 5 MB</p></>}</label>
             </div>
             <Button disabled={submitting || paymentExpired || !proof || !paymentDestinationReady} className="mt-7 h-12 w-full rounded-xl bg-indigo-600 font-black hover:bg-indigo-700">{submitting ? <Loader2 size={18} className="mr-2 animate-spin" /> : <CreditCard size={18} className="mr-2" />}Kirim untuk diperiksa</Button>
             <Button type="button" variant="ghost" onClick={cancel} className="mt-2 w-full rounded-xl text-rose-600 hover:bg-rose-50 hover:text-rose-700">Batalkan tagihan</Button>

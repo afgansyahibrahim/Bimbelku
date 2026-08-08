@@ -183,6 +183,7 @@ class SessionWorkflowController extends Controller
                     'title' => 'Ketidakhadiran dilaporkan',
                     'message' => 'Tutor melaporkan ketidakhadiran Anda. Admin akan memeriksa kronologi dan bukti.',
                     'type' => 'warning',
+                    'target_url' => '/student/my-classes',
                 ]);
 
                 return $report;
@@ -281,6 +282,7 @@ class SessionWorkflowController extends Controller
                                 ? 'Refund penuh sedang diproses admin.'
                                 : 'Tagihan dibatalkan dan tidak perlu dibayar.',
                             'type' => 'warning',
+                            'target_url' => '/student/history',
                         ]);
                     });
 
@@ -412,6 +414,7 @@ class SessionWorkflowController extends Controller
                     'title' => 'Murid mengajukan keberatan',
                     'message' => 'Pencairan ditahan sampai admin menyelesaikan pemeriksaan.',
                     'type' => 'warning',
+                    'target_url' => '/guru/kelas',
                 ]);
 
                 return $dispute;
@@ -493,6 +496,7 @@ class SessionWorkflowController extends Controller
                     'title' => 'Ketidakhadiran Anda dilaporkan',
                     'message' => 'Murid mengirim kronologi dan bukti. Admin akan memeriksa laporan sebelum memutus refund dan sanksi.',
                     'type' => 'warning',
+                    'target_url' => '/guru/performa',
                 ]);
 
                 return $report;
@@ -620,6 +624,9 @@ class SessionWorkflowController extends Controller
                     ? 'Keberatan disetujui. Refund penuh masuk antrean transfer.'
                     : 'Bukti tutor dinyatakan memadai dan pembayaran diteruskan.',
                 'type' => 'info',
+                'target_url' => $validated['resolution'] === 'student_refund'
+                    ? '/student/history'
+                    : '/student/my-classes',
             ]);
         });
 
@@ -676,6 +683,7 @@ class SessionWorkflowController extends Controller
                         ? 'Laporan keadaan darurat diterima. Refund peserta tetap diproses.'
                         : 'Laporan keadaan darurat ditolak. Refund peserta tetap diproses dan sanksi poin diterapkan.',
                     'type' => $accepted ? 'info' : 'warning',
+                    'target_url' => '/guru/performa',
                 ]);
                 return;
             }
@@ -715,6 +723,7 @@ class SessionWorkflowController extends Controller
                                 'title' => 'Refund ketidakhadiran tutor',
                                 'message' => 'Laporan diterima. Refund penuh masuk antrean transfer admin.',
                                 'type' => 'success',
+                                'target_url' => '/student/history',
                             ]);
                         });
                     $booking->update([
@@ -763,6 +772,7 @@ class SessionWorkflowController extends Controller
                             ? 'Laporan Anda belum terbukti. Laporan peserta lain pada sesi yang sama masih diperiksa.'
                             : 'Laporan belum terbukti. Sesi dikembalikan ke proses pelaksanaan.',
                         'type' => 'info',
+                        'target_url' => '/student/my-classes',
                     ]);
                 }
                 return;
@@ -823,6 +833,7 @@ class SessionWorkflowController extends Controller
                     ? 'Laporan diterima. Pembayaran sesi dinyatakan hangus sesuai kebijakan.'
                     : 'Laporan ditolak. Status keikutsertaan Anda dikembalikan.',
                 'type' => $accepted ? 'warning' : 'info',
+                'target_url' => '/student/my-classes',
             ]);
             Notification::create([
                 'user_id' => $booking->teacher_id,
@@ -831,6 +842,7 @@ class SessionWorkflowController extends Controller
                     ? 'Laporan diterima dan pembayaran murid dihitung sebagai pendapatan sesi.'
                     : 'Laporan ditolak dan sanksi poin diterapkan.',
                 'type' => $accepted ? 'success' : 'warning',
+                'target_url' => '/guru/performa',
             ]);
         });
 
@@ -1151,6 +1163,7 @@ class SessionWorkflowController extends Controller
                 ? 'Penyelesaian disahkan. Pendapatan siap masuk proses pencairan admin.'
                 : 'Sesi ditutup tanpa pendapatan tutor.',
             'type' => 'success',
+            'target_url' => $earningParticipants > 0 ? '/guru/gaji' : '/guru/kelas',
         ]);
     }
 

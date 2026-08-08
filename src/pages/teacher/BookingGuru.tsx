@@ -1,3 +1,4 @@
+import { notify } from "@/lib/notify";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -15,7 +16,6 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { toast } from "sonner";
 import TeacherLayout from "@/components/TeacherLayout";
 import { openProtectedFile } from "@/components/ProtectedImage";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
@@ -122,7 +122,7 @@ export default function BookingGuru() {
       const response = await http.get("/teacher/offers");
       setOffers(response.data.data || []);
     } catch (error) {
-      toast.error(getApiError(error, "Permintaan bimbel gagal dimuat."));
+      notify.error(getApiError(error, "Permintaan bimbel gagal dimuat."));
     } finally {
       if (showLoader) setLoading(false);
     }
@@ -143,10 +143,10 @@ export default function BookingGuru() {
     setProcessingId(offer.id);
     try {
       const response = await http.post(`/teacher/offers/${offer.id}/accept`);
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       await fetchOffers();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setProcessingId(null);
     }
@@ -157,12 +157,12 @@ export default function BookingGuru() {
     setProcessingId(rejectingOffer.id);
     try {
       const response = await http.post(`/teacher/offers/${rejectingOffer.id}/reject`, { reason, note });
-      toast.success(response.data.message);
+      notify.success(response.data.message);
       setRejectingOffer(null);
       setNote("");
       await fetchOffers();
     } catch (error) {
-      toast.error(getApiError(error));
+      notify.error(getApiError(error));
     } finally {
       setProcessingId(null);
     }
@@ -172,7 +172,7 @@ export default function BookingGuru() {
     try {
       await openProtectedFile(url, "lampiran-murid");
     } catch (error) {
-      toast.error(getApiError(error, "Lampiran gagal dibuka."));
+      notify.error(getApiError(error, "Lampiran gagal dibuka."));
     }
   };
 

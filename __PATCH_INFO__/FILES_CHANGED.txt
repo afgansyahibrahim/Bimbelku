@@ -1,0 +1,9 @@
+CHECKPOINT_TAHAP_5_5_1_DEMO_SESSION_REMINDER_20260815.md
+bimbelku-backend/app/Console/Commands/DemoSessionReminder.php
+bimbelku-backend/app/Http/Controllers/Api/LearningSessionController.php
+bimbelku-backend/tests/Feature/StageOneSessionActionReminderTest.php
+package.json
+scripts/check-stage5-5-1-demo-session.mjs
+src/components/SessionActionReminder.tsx
+src/pages/students/MyClasses.tsx
+src/pages/teacher/ManageClasses.tsx

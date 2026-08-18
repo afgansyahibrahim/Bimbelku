@@ -1,0 +1,74 @@
+import fs from "node:fs";
+
+const read = (file) => fs.readFileSync(file, "utf8");
+const checks = [];
+const add = (label, ok) => checks.push([label, Boolean(ok)]);
+
+const migration = read("bimbelku-backend/database/migrations/2026_08_15_000220_harden_customer_wallet_and_enable_store_credit.php");
+const walletModel = read("bimbelku-backend/app/Models/CustomerWallet.php");
+const walletTxModel = read("bimbelku-backend/app/Models/CustomerWalletTransaction.php");
+const orderModel = read("bimbelku-backend/app/Models/Order.php");
+const refundModel = read("bimbelku-backend/app/Models/Refund.php");
+const walletService = read("bimbelku-backend/app/Services/CustomerWalletService.php");
+const integrity = read("bimbelku-backend/app/Services/WalletIntegrityService.php");
+const verifyCommand = read("bimbelku-backend/app/Console/Commands/VerifyCustomerWallets.php");
+const ledger = read("bimbelku-backend/app/Services/FinancialLedgerService.php");
+const observer = read("bimbelku-backend/app/Observers/OrderObserver.php");
+const orderController = read("bimbelku-backend/app/Http/Controllers/Api/OrderController.php");
+const refundController = read("bimbelku-backend/app/Http/Controllers/Api/StudentRefundController.php");
+const sessionWorkflow = read("bimbelku-backend/app/Http/Controllers/Api/SessionWorkflowController.php");
+const routes = read("bimbelku-backend/routes/api.php");
+const http = read("src/lib/http.ts");
+const paymentPage = read("src/pages/pembayaran/PaymentPage.tsx");
+const history = read("src/pages/students/TransactionHistory.tsx");
+const adminRefund = read("src/pages/admin/RefundManagement.tsx");
+const adminPayments = read("src/pages/admin/PaymentVerification.tsx");
+const tests = read("bimbelku-backend/tests/Feature/StageTwoCustomerWalletPaymentTest.php");
+const terms = read("src/pages/rules/TermsConditions.tsx");
+
+add("migration adds wallet reserve and applied columns", migration.includes("reserved_balance") && migration.includes("wallet_reserved_amount") && migration.includes("wallet_applied_amount") && migration.includes("wallet_reservation_version"));
+add("migration links wallet transactions to orders", migration.includes("foreignId('order_id')") && migration.includes("destination_selected_at") && migration.includes("destination_selection_version"));
+add("wallet model cannot be mass-assigned", walletModel.includes("protected $guarded = ['*']"));
+add("wallet transactions are immutable and guarded", walletTxModel.includes("ImmutableFinancialRecord") && walletTxModel.includes("protected $guarded = ['*']"));
+add("order wallet accounting fields are mass-assignment guarded", orderModel.includes("wallet_reserved_amount") && orderModel.includes("wallet_applied_amount") && orderModel.includes("wallet_reservation_version") && orderModel.includes("payment_provider"));
+add("wallet reserve is transactional and row-locked", walletService.includes("public function reserveForPayment") && walletService.includes("return DB::transaction") && walletService.includes("lockForUpdate()"));
+add("wallet reserve uses server-calculated balance and expected guard", walletService.includes("min($available, $this->money($lockedOrder->amount))") && walletService.includes("Saldo yang tersedia berubah"));
+add("wallet mutation fails closed on cache or hold tampering", walletService.includes("private function assertMutationBaseline") && walletService.includes("latest('id')") && walletService.includes("sum('wallet_reserved_amount')") && walletService.includes("pemeriksaan integritas diperlukan") && walletService.match(/assertMutationBaseline\(\$wallet\)/g)?.length >= 4);
+add("wallet hold can release and capture", walletService.includes("public function releaseReserved") && walletService.includes("public function captureReserved") && walletService.includes("payment_release"));
+add("legacy booking order is excluded from wallet", walletService.includes("return $order->learning_package_id !== null || $order->cheap_class_enrollment_id !== null"));
+add("wallet integrity reconciles transaction chain and order holds", integrity.includes("Mutasi wallet") && integrity.includes("wallet_reserved_amount") && integrity.includes("reserved_balance"));
+add("wallet integrity reconciles financial liability", integrity.includes("customer_wallet_liability") && integrity.includes("Total kewajiban wallet"));
+add("finance wallet verification command exists", verifyCommand.includes("finance:verify-wallets"));
+add("ledger splits external cash and wallet liability", ledger.includes("customer_wallet_liability") && ledger.includes("$external") && ledger.includes("$wallet") && ledger.includes("customer_funds"));
+add("order status lifecycle releases or captures wallet hold", observer.includes("['rejected', 'cancelled', 'expired']") && observer.includes("releaseReserved") && observer.includes("captureReserved"));
+add("student wallet quote endpoint exists", routes.includes("/student/orders/{order}/wallet-quote") && routes.includes("CustomerWalletController::class, 'quote'"));
+add("student owns refund destination endpoint", routes.includes("/student/refunds/{refund}/destination") && refundController.includes("abort_unless((int) $refund->user_id") && refundController.includes("destination_selected_at"));
+add("refund destination mutation is idempotent and audited", http.includes("/student\\/refunds\\/\\d+\\/destination") && routes.includes("finance.audit:refund_destination_select"));
+add("admin cannot choose student refund destination", !adminRefund.includes("setDestinationMethod") && adminRefund.includes("Admin tidak dapat mengganti tujuan refund") && !sessionWorkflow.includes("'destination_method' => ['required'"));
+add("refund completion rechecks destination under lock", sessionWorkflow.includes("requestedDestinationMethod") && sessionWorkflow.includes("requestedDestinationVersion") && sessionWorkflow.includes("Tujuan refund berubah saat diproses") && sessionWorkflow.includes("destination_selection_version"));
+add("admin refund uses student destination concurrency version", adminRefund.includes("destination_selection_version") && sessionWorkflow.includes("Pilihan tujuan refund sudah diperbarui oleh murid"));
+add("student refund UI offers wallet or bank destination", history.includes("Pilih tujuan refund") && history.includes("Saldo BimbelKu") && history.includes("Rekening / e-wallet") && history.includes("Simpan tujuan refund"));
+add("student refund UI states wallet is non-withdrawable", history.includes("tidak bisa ditarik") || history.includes("tidak dapat ditarik"));
+add("payment page supports full and partial wallet payment", paymentPage.includes("wallet_expected_amount") && paymentPage.includes("use_wallet") && paymentPage.includes("externalDue") && paymentPage.includes("Bayar dengan saldo"));
+add("payment backend ignores client price and calculates wallet server-side", orderController.includes("quoteForOrder") && orderController.includes("wallet_balance_changed") && orderController.includes("$externalDue = round(max(0, (float) $order->amount - $walletAmount)"));
+add("payment backend supports full-wallet package and cheap class", orderController.includes("payPackage") && orderController.includes("payCheapClass") && orderController.includes("Pembayaran dengan Saldo BimbelKu"));
+add("full-wallet auto-settlement is atomic", orderController.includes("Full-wallet checkout harus atomik") && orderController.includes("Reserve + auto-settlement full wallet") && orderController.includes("$autoVerifyResult = DB::transaction") && orderController.includes("$activationResult = $packageCheckoutService->activatePaidPackage"));
+add("wallet integrity lock has user-facing payment state", orderController.includes("wallet_integrity_locked") && paymentPage.includes("Saldo sedang diamankan") && paymentPage.includes("wallet_integrity_locked"));
+add("admin verifies only external remainder", adminPayments.includes("external_payment_amount ?? payment.amount") && adminPayments.includes("Transfer eksternal"));
+add("security regression covers self-credit, double-spend, release, ledger, integrity", tests.includes("has_no_self_credit_endpoint") && tests.includes("cannot_double_spend_wallet") && tests.includes("status' => 'rejected'") && tests.includes("customer_wallet_liability") && tests.includes("detects_direct_balance_tampering") && tests.includes("test_tampered_balance_cannot_be_spent") && tests.includes("test_tampered_reserved_balance_cannot_be_released") && tests.includes("test_full_wallet_package_checkout_rolls_back_hold_if_auto_settlement_fails"));
+add("full wallet checkout regression requires no transfer proof", tests.includes("test_full_wallet_package_checkout_needs_no_transfer_proof") && tests.includes("wallet_expected_amount") && tests.includes("external_due"));
+add("refund destination stale snapshot regression exists", tests.includes("test_admin_refund_rejects_stale_student_destination_snapshot") && tests.includes("destination_selection_version"));
+add("refund model preserves original payment tender", refundModel.includes("public function tenderBreakdown") && refundModel.includes("wallet_funded_amount") && refundModel.includes("external_funded_amount"));
+add("fully wallet-funded refund cannot be cashed out", refundController.includes("seluruhnya berasal dari Saldo BimbelKu") && tests.includes("test_fully_wallet_funded_refund_cannot_be_selected_as_bank_withdrawal"));
+add("mixed refund returns wallet-funded portion to store credit", sessionWorkflow.includes("wallet_funded_amount") && sessionWorkflow.includes("creditRefund(") && tests.includes("test_partial_wallet_refund_to_bank_returns_wallet_part_to_balance"));
+add("refund ledger splits wallet liability and external cash", ledger.includes("tenderBreakdown") && ledger.includes("customer_wallet_liability") && ledger.includes("external_funded_amount"));
+add("student and admin refund UI explain tender-preserving split", history.includes("selalu kembali ke saldo") && adminRefund.includes("otomatis kembali ke Saldo BimbelKu"));
+add("terms explain store credit, student-owned destination, and non-cashout refund", terms.includes("Saldo BimbelKu adalah kredit belajar") && terms.includes("tidak dapat ditarik tunai") && terms.includes("admin hanya mengeksekusi pilihan terakhir") && terms.includes("bagian refund yang berasal dari saldo selalu dikembalikan"));
+
+let failed = 0;
+for (const [label, ok] of checks) {
+  console.log(`${ok ? "PASS" : "FAIL"}  ${label}`);
+  if (!ok) failed += 1;
+}
+if (failed) process.exit(1);
+console.log(`\n${checks.length}/${checks.length} wallet/store-credit checks PASS`);

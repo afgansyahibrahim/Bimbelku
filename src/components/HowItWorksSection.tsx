@@ -1,0 +1,13 @@
+import { BookOpenCheck, CalendarCheck2, CreditCard, GraduationCap, Laptop2, Radar, ShieldCheck } from "lucide-react";
+import Reveal from "@/components/Reveal";
+
+const steps = [
+  [BookOpenCheck, CalendarCheck2, "Pilih kebutuhan", "Pilih paket, mapel, jenjang, cara belajar, serta hari dan jam yang kamu mau.", "Jadwal dipilih sejak awal"],
+  [CreditCard, CreditCard, "Periksa dan bayar", "Lihat ringkasan pesanan, lalu bayar satu tagihan untuk paket belajarmu.", "Pembayaran dicatat rapi"],
+  [Radar, ShieldCheck, "Tutor dicari", "Sesudah pembayaran dicek, sistem mencari tutor yang sesuai dengan kebutuhanmu.", "Tutor dan jadwal diperiksa"],
+  [GraduationCap, Laptop2, "Kelas dimulai", "Belajar sesuai jadwal. Kelas Saya menyimpan jadwal dan sesi, sedangkan perkembangan materi dipantau dari halaman Progress.", "Bisa online atau offline"],
+] as const;
+
+export default function HowItWorksSection() {
+  return <section id="cara-kerja" className="bg-slate-50 py-20"><div className="container mx-auto px-4"><div className="mx-auto max-w-3xl text-center"><p className="inline-flex items-center rounded-full bg-indigo-50 px-4 py-2 text-xs font-black uppercase tracking-wider text-indigo-700">Satu pesanan, empat tahap</p><h2 className="mt-4 text-3xl font-black text-slate-900 md:text-4xl">Dari pilih les sampai kelas dimulai</h2><p className="mt-3 text-slate-500">Keempat hal di bawah bukan fitur terpisah. Semuanya terjadi berurutan saat kamu memesan bimbingan.</p></div><div className="relative mt-12 grid gap-4 md:grid-cols-4"><div className="absolute left-[12%] right-[12%] top-9 hidden h-px bg-gradient-to-r from-orange-300 via-violet-300 to-indigo-300 md:block" />{steps.map(([Icon, PromiseIcon, title, description, promise], index) => <Reveal key={title} delay={index * .1} width="100%"><article className="relative flex h-full flex-col rounded-3xl border border-slate-100 bg-white p-5 shadow-sm"><div className="grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-orange-50 to-violet-50 text-primary shadow-sm"><Icon size={26} /></div><span className="absolute right-5 top-5 text-3xl font-black text-slate-100">0{index + 1}</span><h3 className="mt-5 text-lg font-black text-slate-900">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{description}</p><div className="mt-5 flex items-start gap-2 rounded-2xl border border-indigo-100 bg-indigo-50 px-3 py-3 text-xs font-black leading-5 text-indigo-900"><PromiseIcon className="mt-0.5 shrink-0 text-indigo-600" size={16} /><span><span className="block text-[10px] uppercase tracking-wider text-indigo-500">BimbelKu memastikan</span>{promise}</span></div></article></Reveal>)}</div></div></section>;
+}

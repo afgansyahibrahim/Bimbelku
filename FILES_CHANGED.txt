@@ -1,0 +1,4 @@
+CHECKPOINT_TAHAP_5_2_PROGRESS_VISUAL_REFIT_20260815.md
+src/pages/students/LearningProgress.tsx
+src/pages/students/LearningProgressDetail.tsx
+src/pages/teacher/TeacherLearningProgressDetail.tsx

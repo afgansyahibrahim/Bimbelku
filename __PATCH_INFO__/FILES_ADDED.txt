@@ -1,0 +1,2 @@
+CHECKPOINT_TAHAP_5_3_PROGRESS_OLD_THEME_LANDING_MOBILE_20260815.md
+scripts/check-stage5-3-progress-theme-subject-mobile.mjs

@@ -1,0 +1,83 @@
+<?php
+namespace App\Models;
+use App\Models\Concerns\HasAutomaticPublicCode;
+use Illuminate\Database\Eloquent\Model;
+
+class Order extends Model
+{
+    use HasAutomaticPublicCode;
+
+    protected $guarded = ['id', 'wallet_reserved_amount', 'wallet_applied_amount', 'wallet_reservation_version', 'payment_provider'];
+    protected $hidden = ['payment_proof'];
+    protected $appends = ['payment_proof_url'];
+
+    protected $casts = [
+        'amount' => 'decimal:2',
+        'wallet_reserved_amount' => 'decimal:2',
+        'wallet_applied_amount' => 'decimal:2',
+        'class_details_snapshot' => 'array',
+        'payment_submitted_at' => 'datetime',
+        'verified_at' => 'datetime',
+        'subtotal_amount' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
+    ];
+
+    protected function automaticPublicCodeColumn(): string
+    {
+        return 'order_id';
+    }
+
+    protected function buildAutomaticPublicCode(): string
+    {
+        if ($this->cheap_class_enrollment_id) {
+            return 'INV-KM-'.($this->created_at?->format('Ymd') ?? now()->format('Ymd')).'-'.$this->paddedPublicId();
+        }
+
+        return 'ORD-'.$this->paddedPublicId();
+    }
+
+    public function user() {
+        return $this->belongsTo(User::class);
+    }
+
+    public function verifier() {
+        return $this->belongsTo(User::class, 'verified_by');
+    }
+
+    public function classroom() {
+        return $this->belongsTo(Classroom::class);
+    }
+
+    public function booking() {
+        return $this->belongsTo(Booking::class);
+    }
+
+    public function legacyBooking() {
+        return $this->hasOne(Booking::class);
+    }
+
+    public function participant() {
+        return $this->hasOne(BookingParticipant::class);
+    }
+
+    public function refund() {
+        return $this->hasOne(Refund::class);
+    }
+
+    public function learningPackage() {
+        return $this->belongsTo(LearningPackage::class);
+    }
+
+    public function cheapClassEnrollment() {
+        return $this->belongsTo(CheapClassEnrollment::class);
+    }
+
+    public function promotion() {
+        return $this->belongsTo(Promotion::class);
+    }
+
+    public function getPaymentProofUrlAttribute(): ?string
+    {
+        return $this->payment_proof ? "orders/{$this->id}/payment-proof" : null;
+    }
+}

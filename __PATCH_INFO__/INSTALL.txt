@@ -1,0 +1,8 @@
+Baseline: Tahap 5.5.1 Demo Session Reminder.
+Copy/overwrite files preserving folder structure.
+No migration required.
+Then run:
+  cd bimbelku-backend
+  php artisan optimize:clear
+  php artisan demo:session-reminder setup
+  php artisan demo:session-reminder status

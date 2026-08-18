@@ -1,0 +1,28 @@
+{
+  "baseline": "Tahap 5.5 Session Action Reminder",
+  "modified": [
+    "bimbelku-backend/app/Http/Controllers/Api/LearningSessionController.php",
+    "bimbelku-backend/tests/Feature/StageOneSessionActionReminderTest.php",
+    "package.json",
+    "src/components/SessionActionReminder.tsx",
+    "src/pages/students/MyClasses.tsx",
+    "src/pages/teacher/ManageClasses.tsx"
+  ],
+  "added": [
+    "CHECKPOINT_TAHAP_5_5_1_DEMO_SESSION_REMINDER_20260815.md",
+    "bimbelku-backend/app/Console/Commands/DemoSessionReminder.php",
+    "scripts/check-stage5-5-1-demo-session.mjs"
+  ],
+  "deleted": [],
+  "sha256": {
+    "CHECKPOINT_TAHAP_5_5_1_DEMO_SESSION_REMINDER_20260815.md": "0eb41666bf88ddac6d5238dde258c852439aea461b196bb635e77e52ca743922",
+    "bimbelku-backend/app/Console/Commands/DemoSessionReminder.php": "ed99111eb01a990a80ddf0f0ddea9fc914f008a59ce890273978c708746fb37d",
+    "bimbelku-backend/app/Http/Controllers/Api/LearningSessionController.php": "cb1ed7f3a37d09654887ec2125a6e8ee92b2d480c6611e319b89d7539f29c533",
+    "bimbelku-backend/tests/Feature/StageOneSessionActionReminderTest.php": "a6d07e9d3950353e9c507515a9be246513011535c08712f44d79fe9afdc83cbe",
+    "package.json": "e2b150fdabf9dc07a7e97ec826c874a8ef41a09d2fbc6bd7d51ec97711012924",
+    "scripts/check-stage5-5-1-demo-session.mjs": "b370aa33361aff39bffe218636dc9c504e8854e9bced481bc93839d5d5d4fb0b",
+    "src/components/SessionActionReminder.tsx": "21708ee21f9cd100cc04efe96f90a3c34bc54b2fd82c443f749a992d5caacff0",
+    "src/pages/students/MyClasses.tsx": "fb5337d83cd632655359e1f2f5c93333d8b8490417a1f7ff2c8ff0bd6d5ecd69",
+    "src/pages/teacher/ManageClasses.tsx": "a0f64064ef8e8509f47118435a56657b83409a9e89a3d978a871d38a6a0bc367"
+  }
+}

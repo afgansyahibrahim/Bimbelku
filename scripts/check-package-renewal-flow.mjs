@@ -1,0 +1,56 @@
+import fs from "node:fs";
+
+const commandFile = "bimbelku-backend/app/Console/Commands/DemoPackageRenewal.php";
+const controllerFile = "bimbelku-backend/app/Http/Controllers/Api/StudentPackageController.php";
+const builderFile = "src/pages/students/PackageBuilder.tsx";
+const packagesFile = "src/pages/students/MyPackages.tsx";
+const testFile = "bimbelku-backend/tests/Feature/DemoPackageRenewalCommandTest.php";
+const checkoutFile = "bimbelku-backend/app/Services/PackageCheckoutService.php";
+
+const command = fs.readFileSync(commandFile, "utf8");
+const controller = fs.readFileSync(controllerFile, "utf8");
+const builder = fs.readFileSync(builderFile, "utf8");
+const packages = fs.readFileSync(packagesFile, "utf8");
+const test = fs.readFileSync(testFile, "utf8");
+const checkout = fs.readFileSync(checkoutFile, "utf8");
+
+const checks = [];
+const add = (label, ok) => checks.push([label, Boolean(ok)]);
+
+add("renewal demo command exists", command.includes("demo:package-renewal"));
+add("renewal demo is local/testing only", command.includes("environment(['local', 'testing'])"));
+add("completed package can renew immediately", controller.includes("if ($package->status === 'completed')") && controller.includes("return true;"));
+add("active package still keeps H-7 renewal rule", controller.includes("$package->status === 'active'") && controller.includes("subDays(7)"));
+add("new package keeps 72 hour booking lead", controller.includes("$bookingLeadHours = 72") && controller.includes("Jadwal paket paling cepat dimulai 72 jam dari sekarang."));
+add("same-tutor renewal gets 24 hour booking lead", controller.includes("renewalUsesSameTutors") && controller.includes("$bookingLeadHours = 24") && controller.includes("Perpanjangan dengan tutor yang sama paling cepat dimulai 24 jam dari sekarang."));
+add("renewal without old tutor stays on 72 hours", test.includes("demo-renewal-without-old-tutor") && test.includes("Jadwal paket paling cepat dimulai 72 jam dari sekarang."));
+add("renewal test proves a schedule under 72 hours can pass with old tutor", test.includes("collect([1, 3, 5, 7])") && test.includes("preferred_teacher_id") && test.includes("assertCreated()"));
+add("renewal builder exposes 24 hour lead while normal flow exposes 72", builder.includes("bookingLeadHours === 24") && builder.includes("minimal 24 jam") && builder.includes("minimal 72 jam"));
+add("builder no longer hardcodes a 96 hour date minimum", !builder.includes("Date.now() + 96 * 60 * 60 * 1000"));
+add("renewal chain cannot branch from the same source package", controller.includes("hasBlockingRenewal") && controller.includes("sudah memiliki paket lanjutan") && test.includes("assertJsonPath('can_renew', false)"));
+add("renewed topic progress starts fresh", controller.includes("'status' => 'not_started'") && controller.includes("'started_at' => null") && controller.includes("'completed_at' => null"));
+add("reselected completed topic is marked as reinforcement", controller.includes("$wasCompletedBefore") && controller.includes("'needs_review' => $wasCompletedBefore"));
+add("renewal builder does not preselect 100 percent completed material", builder.includes("learning_topic_ids: allCompleted") && builder.includes("? []"));
+add("renewal builder guides student to choose continuation material", builder.includes("Materi paket sebelumnya sudah selesai") && builder.includes("materi lanjutan"));
+add("renewal builder labels previous material state", builder.includes("Selesai sebelumnya") && builder.includes("Lanjutkan"));
+add("same-tutor renewal locks the selected subject", builder.includes("disabled={Boolean(renewalId && renewalSubjectId)}"));
+add("renewal package is visibly labelled in Kelas Saya", packages.includes("Paket lanjutan") && controller.includes("'renewal_of_id'"));
+add("demo setup provides a 100 percent completed source package", command.includes("materi lama 100%") && command.includes("'status' => 'completed'"));
+add("demo payment uses production PackageCheckoutService", command.includes("activatePaidPackage"));
+add("preferred tutor matching increments attempts with an integer-safe locked update", checkout.includes("'matching_attempts' => (int) $lockedRequest->matching_attempts + 1") && !checkout.includes("'matching_attempts' => DB::raw('matching_attempts + 1')"));
+add("demo requires tutor to accept real renewal offer", command.includes("Permintaan Bimbel") && command.includes("Tutor lama harus menerima"));
+add("demo can fast-forward to final renewal session", command.includes("final-session-ready") && command.includes("Pertemuan sebelumnya dianggap selesai hanya untuk demo lokal"));
+add("demo checkout always targets highest renewal session sequence", command.includes("orderByDesc('sequence')") && command.includes("whereNotNull('booking_id')"));
+add("demo keeps normal final private-session workflow", command.includes("Murid buat PIN") && command.includes("Selesaikan Sesi + foto"));
+add("feature test creates renewal through real student package API", test.includes("/api/student/packages") && test.includes("renewal_of_id"));
+add("feature test proves completed old material is not inherited as completed", test.includes("every(fn ($topic) => $topic->status === 'not_started')"));
+add("feature test covers real tutor offer acceptance", test.includes("/api/teacher/offers/") && test.includes("/accept"));
+add("feature test reaches student PIN on second package final session", test.includes("student_generate_pin"));
+
+let failed = 0;
+for (const [label, ok] of checks) {
+  console.log(`${ok ? "PASS" : "FAIL"}  ${label}`);
+  if (!ok) failed += 1;
+}
+if (failed) process.exit(1);
+console.log(`\n${checks.length}/${checks.length} Package Renewal checks PASS`);

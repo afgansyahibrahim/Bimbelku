@@ -1,0 +1,32 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up()
+{
+    Schema::create('ratings', function (Blueprint $table) {
+        $table->id();
+        $table->foreignId('classroom_id')->constrained()->onDelete('cascade'); // Relasi ke kelas
+        $table->foreignId('student_id')->constrained('users')->onDelete('cascade'); // Siapa yang menilai
+        $table->foreignId('teacher_id')->constrained('users')->onDelete('cascade'); // Siapa yang dinilai
+        $table->integer('rating'); // Bintang 1-5
+        $table->text('review')->nullable(); // Komentar
+        $table->timestamps();
+    });
+}
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('ratings');
+    }
+};

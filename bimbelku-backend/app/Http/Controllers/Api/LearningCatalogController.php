@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\CurriculumChapter;
 use App\Models\CurriculumSubject;
 use App\Models\HourlyRate;
-use App\Models\LearningTopic;
 use App\Models\TeacherSubject;
 use App\Support\EducationCatalog;
 use Illuminate\Http\Request;
@@ -39,7 +38,6 @@ class LearningCatalogController extends Controller
                 ->distinct()
                 ->pluck('name'))
                 ->merge(HourlyRate::query()->where('is_active', true)->distinct()->pluck('subject_name'))
-                ->merge(LearningTopic::query()->where('is_active', true)->distinct()->pluck('subject_name'))
                 ->merge($defaults)
                 ->filter()
                 ->unique()
@@ -64,7 +62,6 @@ class LearningCatalogController extends Controller
                 ?? $this->landingSubjects(collect($basePayload['subject_options'])),
         ];
         $chapters = collect();
-        $topics = collect();
 
         if (!$request->boolean('compact')) {
             $subjectName = trim((string) $request->query('subject_name', ''));
@@ -89,23 +86,6 @@ class LearningCatalogController extends Controller
                 ->orderBy('grade')
                 ->orderBy('sort_order');
 
-            $topicQuery = LearningTopic::query()
-                ->where('is_active', true)
-                ->when(
-                    $subjectName !== '',
-                    fn ($query) => $query->where('subject_name', $subjectName)
-                )
-                ->when(
-                    $educationLevel !== '',
-                    fn ($query) => $query->where('education_level', $educationLevel)
-                )
-                ->when($grade !== '', fn ($query) => $query->where('grade', $grade))
-                ->orderBy('subject_name')
-                ->orderBy('education_level')
-                ->orderBy('grade')
-                ->orderBy('sort_order')
-                ->orderBy('chapter');
-
             $chapters = $chapterQuery->get()->map(fn (CurriculumChapter $chapter) => [
                 'id' => $chapter->id,
                 'subject_id' => $chapter->curriculum_subject_id,
@@ -115,15 +95,15 @@ class LearningCatalogController extends Controller
                 'title' => $chapter->title,
                 'sort_order' => $chapter->sort_order,
             ]);
-            $topics = $topicQuery->get([
-                'id', 'subject_name', 'education_level', 'grade', 'chapter', 'name',
-            ]);
         }
 
         $payload = [
             ...$basePayload,
             'chapters' => $chapters,
-            'topics' => $topics,
+            // Kontrak API lama tetap menyediakan key `topics`, tetapi selalu
+            // kosong. Subbab sudah dipensiunkan dari runtime dan tidak lagi
+            // dibaca dari database.
+            'topics' => [],
             'education_levels' => EducationCatalog::LEVELS,
             'grades_by_level' => EducationCatalog::GRADES_BY_LEVEL,
             'class_types' => [

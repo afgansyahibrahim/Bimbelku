@@ -36,4 +36,4 @@ for (const [ok, label] of checks) {
   if (!ok) failed = true;
 }
 if (failed) process.exit(1);
-console.log('Pemeriksaan multi-mapel Kelas Murah lulus.');
+console.log('Pemeriksaan multi-mapel Kelas Kelompok lulus.');

@@ -15,7 +15,7 @@ const demoTest = read("bimbelku-backend/tests/Feature/DemoCheapClassCommandTest.
 add("global reminder runtime now includes admin", app.includes('["student", "teacher", "admin"].includes(role)'));
 add("teacher report-required popup is server driven", controller.includes("cheap_teacher_report_required") && reminder.includes('case "cheap_teacher_report_required"'));
 add("teacher revision popup includes admin reason", controller.includes("admin_review_notes") && reminder.includes("Admin mengembalikan laporan") && reminder.includes("Catatan admin:"));
-add("admin verification popup is server driven", controller.includes("cheap_admin_verify_report") && reminder.includes("Laporan Kelas Murah menunggu verifikasi"));
+add("admin verification popup is server driven", controller.includes("cheap_admin_verify_report") && reminder.includes("Laporan Kelas Kelompok menunggu verifikasi"));
 add("student progress popup comes from unread verified notification", controller.includes("cheap-class-session-verified:%:student:") && reminder.includes("Progress kelasmu sudah diperbarui"));
 add("student completed popup is informational", controller.includes("cheap_student_class_completed") && controller.includes("'informational' => true") && reminder.includes("Ini hanya informasi"));
 add("informational popup is marked read on dismiss or CTA", reminder.includes("dismissInformational") && reminder.includes("/notifications/${action.notification_id}/read"));
@@ -31,4 +31,4 @@ for (const [label, ok] of checks) {
 }
 
 if (failed) process.exit(1);
-console.log(`\n${checks.length}/${checks.length} Kelas Murah popup checks PASS`);
+console.log(`\n${checks.length}/${checks.length} Kelas Kelompok popup checks PASS`);

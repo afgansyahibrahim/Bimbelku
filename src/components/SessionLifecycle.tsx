@@ -45,7 +45,7 @@ export default function SessionLifecycle() {
     <div
       role="status"
       aria-live="assertive"
-      className="fixed inset-x-3 top-3 z-[300] mx-auto flex max-w-xl items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-bold text-amber-900 shadow-xl"
+      className="fixed inset-x-3 top-3 z-[var(--layer-alert)] mx-auto flex max-w-xl items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-bold text-amber-900 shadow-xl"
     >
       <span aria-hidden="true" className="text-base">●</span>
       Koneksi terputus. Data yang belum dikirim tetap berada di formulir.

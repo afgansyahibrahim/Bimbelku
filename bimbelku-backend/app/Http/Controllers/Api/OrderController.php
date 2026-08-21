@@ -11,7 +11,6 @@ use App\Models\PackageSession;
 use App\Models\PackageRenewal;
 use App\Models\PaymentSetting;
 use App\Models\User;
-use App\Services\GroupClassService;
 use App\Services\CheapClassService;
 use App\Services\PackageCheckoutService;
 use App\Services\CustomerWalletService;
@@ -25,7 +24,6 @@ class OrderController extends Controller
     public function pay(
         Request $request,
         int $id,
-        GroupClassService $groupService,
         CheapClassService $cheapClassService,
         PackageCheckoutService $packageCheckoutService,
         CustomerWalletService $wallets
@@ -51,7 +49,7 @@ class OrderController extends Controller
         $walletQuote = $wallets->quoteForOrder($order, (int) $request->user()->id);
         if ($useWallet && !$walletQuote['supported']) {
             return $this->paymentError(
-                'Saldo BimbelKu hanya tersedia untuk Paket Belajar dan Kelas Murah. Tagihan arsip lama tetap memakai transfer.',
+                'Saldo BimbelKu hanya tersedia untuk Paket Belajar dan Kelas Kelompok. Tagihan arsip lama tetap memakai transfer.',
                 422,
                 'wallet_not_supported'
             );
@@ -109,104 +107,20 @@ class OrderController extends Controller
             return $this->payCheapClass($request, $order, $validated, $cheapClassService);
         }
 
-        $booking = $order->booking;
-        if (!$booking || !$this->bookingAcceptsPayment($booking)) {
-            return $this->paymentError('Kelas pada tagihan ini sudah tidak aktif. Periksa Kelas Saya sebelum mengirim bukti pembayaran.', 422, 'session_inactive');
-        }
-        if ($booking->payment_due_at?->isPast()) {
-            $this->expireUnpaidOrder($order, $groupService);
-            return $this->paymentError('Batas pembayaran sudah berakhir. Tagihan tidak lagi menerima bukti transfer.', 422, 'payment_expired');
-        }
-        if ($conflict = $this->findBookingPaymentConflict($booking)) {
-            return $this->scheduleConflictResponse($conflict);
-        }
-
-        $path = $request->file('file')->store('payment_proofs', 'local');
-        $previousProof = null;
-        try {
-            DB::transaction(function () use ($order, $path, $validated, &$previousProof) {
-                $lockedOrder = Order::query()->lockForUpdate()->findOrFail($order->id);
-                if (!in_array($lockedOrder->status, ['pending', 'rejected'], true)) {
-                    abort(422, 'Tagihan ini sudah tidak dapat dibayar.');
-                }
-                $lockedBooking = $lockedOrder->booking()->lockForUpdate()->firstOrFail();
-                User::query()->lockForUpdate()->findOrFail($lockedOrder->user_id);
-                if (!$this->bookingAcceptsPayment($lockedBooking)) {
-                    abort(422, 'Kelas pada tagihan ini sudah tidak aktif. Periksa Kelas Saya sebelum mengirim bukti pembayaran.');
-                }
-                if ($lockedBooking->payment_due_at?->isPast()) {
-                    abort(422, 'Batas pembayaran sudah berakhir. Tagihan tidak lagi menerima bukti transfer.');
-                }
-                if ($conflict = $this->findBookingPaymentConflict($lockedBooking)) {
-                    abort(422, $conflict['message']);
-                }
-
-                $previousProof = $lockedOrder->payment_proof;
-                $details = $lockedOrder->class_details_snapshot ?? [];
-                unset($details['payment_rejection_reason']);
-                $lockedOrder->update([
-                    'status' => 'submitted',
-                    'payment_proof' => $path,
-                    'sender_name' => $validated['sender_name'],
-                    'bank_name' => $validated['bank_name'],
-                    'sender_account_number' => $validated['sender_account_number'],
-                    'payment_rejection_reason' => null,
-                    'class_details_snapshot' => $details,
-                    'payment_submitted_at' => now(),
-                ]);
-
-                $participant = $lockedOrder->participant()->lockForUpdate()->first();
-                $participant?->update(['status' => 'payment_submitted']);
-                $participant?->bookingRequest?->update(['status' => 'payment_submitted']);
-                $keepConfirmedGroup = $lockedBooking->class_type === 'group' && $lockedBooking->status === 'confirmed';
-                $lockedBooking->update([
-                    'status' => $keepConfirmedGroup
-                        ? 'confirmed'
-                        : ($lockedBooking->class_type === 'group' ? 'payment_collecting' : 'payment_submitted'),
-                ]);
-            });
-        } catch (\Throwable $exception) {
-            Storage::disk('local')->delete($path);
-            throw $exception;
-        }
-
-        if ($previousProof && $previousProof !== $path) {
-            Storage::disk('local')->delete($previousProof);
-            Storage::disk('public')->delete($previousProof);
-        }
-
-        User::query()->where('role', 'admin')->pluck('id')->each(function ($adminId) use ($order) {
-            Notification::create([
-                'user_id' => $adminId,
-                'title' => 'Bukti pembayaran baru',
-                'message' => "Tagihan {$order->order_id} sudah diunggah murid dan menunggu pemeriksaan.",
-                'type' => 'info',
-                'target_url' => '/admin/pembayaran',
-            ]);
-        });
-        if ($order->booking?->teacher_id) {
-            Notification::create([
-                'user_id' => $order->booking->teacher_id,
-                'title' => 'Pembayaran murid sedang diperiksa',
-                'message' => "Bukti untuk tagihan {$order->order_id} sudah masuk ke admin. Jadwal tetap ditahan selama pemeriksaan.",
-                'type' => 'info',
-                'target_url' => '/guru/kelas',
-            ]);
-        }
-
-        return response()->json([
-            'message' => 'Bukti transfer berhasil dikirim. Admin akan memeriksanya.',
-            'status' => 'submitted',
-        ]);
+        return $this->paymentError('Tagihan arsip pemesanan langsung sudah dipensiunkan.', 410, 'legacy_order_retired');
     }
 
-    public function getActiveOrder(Request $request, GroupClassService $groupService, CheapClassService $cheapClassService)
+    public function getActiveOrder(Request $request, CheapClassService $cheapClassService)
     {
         $cheapClassService->refreshLifecycle();
         $order = Order::query()
             ->where('user_id', $request->user()->id)
             ->whereIn('status', ['pending', 'rejected'])
-            ->with(['booking.teacher.teacherProfile', 'participant.bookingRequest', 'learningPackage.plan', 'cheapClassEnrollment.cheapClass'])
+            ->where(function ($query) {
+                $query->whereNotNull('learning_package_id')
+                    ->orWhereNotNull('cheap_class_enrollment_id');
+            })
+            ->with(['learningPackage.plan', 'cheapClassEnrollment.cheapClass'])
             ->latest()
             ->first();
 
@@ -227,12 +141,7 @@ class OrderController extends Controller
             if (!$enrollment || !$class || !in_array($enrollment->status, ['seat_held', 'payment_rejected'], true) || !$enrollment->seat_expires_at?->isFuture()) {
                 return response()->json(null);
             }
-        } elseif (!$order->booking) {
-            return response()->json(null);
-        } elseif ($order->booking->payment_due_at?->isPast()) {
-            $this->expireUnpaidOrder($order, $groupService);
-            return response()->json(null);
-        } elseif (!$this->bookingAcceptsPayment($order->booking)) {
+        } else {
             return response()->json(null);
         }
 
@@ -262,11 +171,11 @@ class OrderController extends Controller
             'status' => $order->status,
             'rejection_reason' => $order->payment_rejection_reason,
             'created_at' => $order->created_at,
-            'payment_due_at' => $order->learningPackage?->payment_due_at ?? $order->booking?->payment_due_at ?? $order->cheapClassEnrollment?->seat_expires_at,
+            'payment_due_at' => $order->learningPackage?->payment_due_at ?? $order->cheapClassEnrollment?->seat_expires_at,
             'subject' => $details['subject'] ?? 'Kelas',
             'type' => ucfirst((string) ($details['method'] ?? 'online')).' · '.(
                 $isCheapClass
-                    ? 'Kelas Murah'
+                    ? 'Kelas Kelompok'
                     : ($order->learning_package_id ? 'Paket Belajar' : 'Privat 1-on-1')
             ),
             'tutor_name' => $details['teacher_name'] ?? 'Tutor',
@@ -286,7 +195,7 @@ class OrderController extends Controller
         ]);
     }
 
-    public function cancelOrder(Request $request, int $id, GroupClassService $groupService, CheapClassService $cheapClassService)
+    public function cancelOrder(Request $request, int $id, CheapClassService $cheapClassService)
     {
         $order = Order::query()
             ->where('user_id', $request->user()->id)
@@ -295,7 +204,7 @@ class OrderController extends Controller
 
         if ($order->cheap_class_enrollment_id) {
             $cheapClassService->cancelEnrollment($order->cheapClassEnrollment, $request->user());
-            return response()->json(['message' => 'Keikutsertaan Kelas Murah berhasil dibatalkan.']);
+            return response()->json(['message' => 'Keikutsertaan Kelas Kelompok berhasil dibatalkan.']);
         }
 
         if (!in_array($order->status, ['pending', 'rejected'], true)) {
@@ -309,57 +218,10 @@ class OrderController extends Controller
             return response()->json(['message' => 'Tagihan paket berhasil dibatalkan.']);
         }
 
-        $attachmentToDelete = null;
-        DB::transaction(function () use ($order, $groupService, &$attachmentToDelete) {
-            $lockedOrder = Order::query()->lockForUpdate()->findOrFail($order->id);
-            if (!in_array($lockedOrder->status, ['pending', 'rejected'], true)) {
-                abort(422, 'Tagihan tidak dapat dibatalkan saat pembayaran sedang diperiksa.');
-            }
-
-            $participant = $lockedOrder->participant()->lockForUpdate()->first();
-            $bookingRequest = $participant?->bookingRequest()->lockForUpdate()->first();
-            $booking = $lockedOrder->booking()->lockForUpdate()->first();
-
-            $lockedOrder->update(['status' => 'cancelled']);
-            $participant?->update(['status' => 'cancelled']);
-            if ($bookingRequest) {
-                $attachmentToDelete = $bookingRequest->attachment;
-                $bookingRequest->update([
-                    'status' => 'cancelled',
-                    'attachment' => null,
-                ]);
-            }
-
-            if (!$booking) {
-                return;
-            }
-
-            if ($booking->class_type === 'private') {
-                $bookingRequest?->offers()
-                    ->where('status', 'accepted')
-                    ->update(['status' => 'cancelled']);
-                $booking->update(['status' => 'cancelled', 'payout_status' => 'cancelled']);
-                return;
-            }
-
-            if ($bookingRequest) {
-                $groupService->leave($bookingRequest);
-            }
-            $groupService->settleAfterProfileDecision(
-                $booking,
-                'Peserta membatalkan pembayaran kelas kelompok'
-            );
-        });
-
-        if ($attachmentToDelete) {
-            Storage::disk('local')->delete($attachmentToDelete);
-            Storage::disk('public')->delete($attachmentToDelete);
-        }
-
-        return response()->json(['message' => 'Tagihan berhasil dibatalkan.']);
+        return response()->json(['message' => 'Tagihan arsip pemesanan langsung sudah dipensiunkan.'], 410);
     }
 
-    public function index(Request $request, GroupClassService $groupService, CheapClassService $cheapClassService)
+    public function index(Request $request, CheapClassService $cheapClassService)
     {
         $cheapClassService->refreshLifecycle();
         Order::query()
@@ -373,19 +235,13 @@ class OrderController extends Controller
             ->get()
             ->each(fn (Order $order) => $this->expirePackageOrder($order));
 
-        Order::query()
-            ->where('user_id', $request->user()->id)
-            ->whereIn('status', ['pending', 'rejected'])
-            ->whereHas('booking', fn ($bookings) => $bookings
-                ->whereNotNull('payment_due_at')
-                ->where('payment_due_at', '<=', now()))
-            ->with(['booking', 'participant.bookingRequest'])
-            ->get()
-            ->each(fn (Order $order) => $this->expireUnpaidOrder($order, $groupService));
-
         $orders = Order::query()
             ->where('user_id', $request->user()->id)
-            ->with(['booking.teacher', 'refund', 'learningPackage.plan', 'cheapClassEnrollment.cheapClass'])
+            ->where(function ($query) {
+                $query->whereNotNull('learning_package_id')
+                    ->orWhereNotNull('cheap_class_enrollment_id');
+            })
+            ->with(['refund', 'learningPackage.plan', 'cheapClassEnrollment.cheapClass'])
             ->latest()
             ->paginate(20);
 
@@ -394,7 +250,7 @@ class OrderController extends Controller
                 ? $order->class_details_snapshot
                 : json_decode((string) $order->class_details_snapshot, true);
             $isCheapClass = $order->cheap_class_enrollment_id !== null;
-            $orderKind = $isCheapClass ? 'cheap_class' : ($order->learning_package_id ? 'package' : 'booking');
+            $orderKind = $isCheapClass ? 'cheap_class' : 'package';
             $cheapEnrollment = $order->cheapClassEnrollment;
             $cheapClass = $cheapEnrollment?->cheapClass;
             $refundPayload = null;
@@ -418,11 +274,11 @@ class OrderController extends Controller
                 'tutor_name' => $details['teacher_name'] ?? '-',
                 'type' => ucfirst((string) ($details['method'] ?? 'online')).' · '.(
                     $orderKind === 'cheap_class'
-                        ? 'Kelas Murah'
-                        : ($orderKind === 'package' ? 'Paket Belajar' : 'Privat 1-on-1')
+                        ? 'Kelas Kelompok'
+                        : 'Paket Belajar'
                 ),
                 'schedule' => $details['start_at'] ?? null,
-                'payment_due_at' => $order->learningPackage?->payment_due_at ?? $order->booking?->payment_due_at ?? $order->cheapClassEnrollment?->seat_expires_at,
+                'payment_due_at' => $order->learningPackage?->payment_due_at ?? $order->cheapClassEnrollment?->seat_expires_at,
                 'booking_id' => $order->booking_id,
                 'learning_package_id' => $order->learning_package_id,
                 'package_name' => $order->learningPackage?->plan?->name,
@@ -444,62 +300,6 @@ class OrderController extends Controller
         });
 
         return response()->json($orders);
-    }
-
-    private function expireUnpaidOrder(Order $order, GroupClassService $groupService): void
-    {
-        DB::transaction(function () use ($order, $groupService) {
-            $lockedOrder = Order::query()->lockForUpdate()->find($order->id);
-            if (!$lockedOrder || !in_array($lockedOrder->status, ['pending', 'rejected'], true)) {
-                return;
-            }
-
-            $lockedOrder->update(['status' => 'expired']);
-            $lockedOrder->participant?->update(['status' => 'payment_expired']);
-            $bookingRequest = $lockedOrder->participant?->bookingRequest;
-            $bookingRequest?->update(['status' => 'payment_expired']);
-
-            $booking = $lockedOrder->booking;
-            if (!$booking) {
-                return;
-            }
-
-            if ($booking->class_type === 'private') {
-                $bookingRequest?->offers()
-                    ->where('status', 'accepted')
-                    ->update(['status' => 'cancelled']);
-                $booking->update([
-                    'status' => 'payment_expired',
-                    'payout_status' => 'cancelled',
-                ]);
-            } else {
-                $groupService->settleAfterProfileDecision(
-                    $booking,
-                    'Peserta tidak menyelesaikan pembayaran kelas kelompok'
-                );
-            }
-
-            Notification::create([
-                'user_id' => $lockedOrder->user_id,
-                'title' => 'Batas pembayaran berakhir',
-                'message' => 'Tagihan dibatalkan karena bukti transfer tidak dikirim tepat waktu.',
-                'type' => 'warning',
-                'target_url' => '/student/history',
-            ]);
-        });
-    }
-
-    private function bookingAcceptsPayment(Booking $booking): bool
-    {
-        if (in_array($booking->status, [
-            'teacher_selected', 'awaiting_payment', 'payment_collecting', 'payment_submitted',
-        ], true)) {
-            return true;
-        }
-
-        return $booking->class_type === 'group'
-            && $booking->status === 'confirmed'
-            && $booking->payment_due_at?->isFuture();
     }
 
     private function payCheapClass(Request $request, Order $order, array $validated, CheapClassService $cheapClassService)
@@ -553,7 +353,7 @@ class OrderController extends Controller
                     );
                 }
                 if ($exception->getStatusCode() === 422 && in_array($message, [
-                    'Tagihan Kelas Murah tidak memiliki data peserta yang valid.',
+                    'Tagihan Kelas Kelompok tidak memiliki data peserta yang valid.',
                     'Tagihan ini sudah tidak dapat dibayar.',
                     'Kursi tidak lagi menerima pembayaran.',
                     'Kelas tidak lagi menerima pembayaran.',

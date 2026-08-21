@@ -24,13 +24,6 @@ class ProtectedFileController extends Controller
         return $this->respond($order->payment_proof);
     }
 
-    public function completionEvidence(Request $request, Booking $booking)
-    {
-        $this->authorizeBooking($request, $booking);
-
-        return $this->respond($booking->completion_evidence);
-    }
-
     public function classroomMessageAttachment(Request $request, ClassroomMessage $classroomMessage)
     {
         $this->authorizeBooking($request, $classroomMessage->booking);

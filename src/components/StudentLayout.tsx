@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import LogoutButton from "@/components/LogoutButton";
+import ProfileQuickMenu from "@/components/ProfileQuickMenu";
 import { scheduleNonCriticalTask } from "@/lib/schedule";
 import { usePersistentSidebarScroll } from "@/hooks/usePersistentSidebarScroll";
 import { announceNavigationAttentionChanged, attentionTargetLabel, hasSidebarAttention, NAVIGATION_ATTENTION_CHANGED_EVENT, unreadIdsForCurrentPage, type AttentionNotification } from "@/lib/navigationAttention";
@@ -13,6 +14,7 @@ import {
   Search,
   User,
   Users,
+  CreditCard,
   X,
 } from "lucide-react";
 
@@ -57,7 +59,8 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
     if (path === "/student/kelas-murah") return "cheap-classes";
     if (path === "/student/packages" || path.startsWith("/student/packages/") || path === "/student/my-classes" || path.startsWith("/student/my-classes/") || path === "/student/progress" || path.startsWith("/student/progress/")) return "classes";
     if (path === "/student/messages" || path.startsWith("/student/messages/")) return "messages";
-    if (["/student/account", "/student/profile", "/student/history", "/student/vouchers", "/student/offers", "/student/help", "/student/notifications"].some((route) => path === route || path.startsWith(`${route}/`))) return "account";
+    if (path === "/student/history" || path.startsWith("/student/history/")) return "payments";
+    if (["/student/account", "/student/profile", "/student/vouchers", "/student/offers", "/student/help", "/student/notifications"].some((route) => path === route || path.startsWith(`${route}/`))) return "account";
     return "";
   })();
 
@@ -257,9 +260,10 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
               <div className="space-y-1">
                   <NavItem to="/student/dashboard" icon={Home} label="Beranda" active={activeMenu === "home"} tour="student-home" attention={hasSidebarAttention("student", "/student/dashboard", attentionNotifications)} />
                   <NavItem to="/student/packages/new" icon={Search} label="Cari Les" active={activeMenu === "search"} tour="student-cari-les" attention={hasSidebarAttention("student", "/student/packages/new", attentionNotifications)} />
-                  <NavItem to="/student/kelas-murah" icon={Users} label="Kelas Murah" active={activeMenu === "cheap-classes"} attention={hasSidebarAttention("student", "/student/kelas-murah", attentionNotifications)} />
+                  <NavItem to="/student/kelas-murah" icon={Users} label="Kelas Kelompok" active={activeMenu === "cheap-classes"} attention={hasSidebarAttention("student", "/student/kelas-murah", attentionNotifications)} />
                   <NavItem to="/student/packages" icon={BookOpen} label="Kelas Saya" active={activeMenu === "classes"} tour="student-kelas" attention={hasSidebarAttention("student", "/student/packages", attentionNotifications)} />
                   <NavItem to="/student/messages" icon={MessageSquare} label="Pesan" active={activeMenu === "messages"} tour="student-pesan" attention={hasSidebarAttention("student", "/student/messages", attentionNotifications)} />
+                  <NavItem to="/student/history" icon={CreditCard} label="Riwayat Pembayaran" active={activeMenu === "payments"} attention={hasSidebarAttention("student", "/student/history", attentionNotifications)} />
                   <NavItem to="/student/account" icon={User} label="Saya" active={activeMenu === "account"} tour="student-saya" attention={hasSidebarAttention("student", "/student/account", attentionNotifications)} />
               </div>
           </div>
@@ -304,8 +308,8 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
 
                  {showNotifDropdown && (
                      <>
-                        <button type="button" aria-label="Tutup daftar notifikasi" className="fixed inset-0 z-[100]" onClick={() => setShowNotifDropdown(false)} />
-                        <div className="fixed inset-x-3 top-[4.5rem] z-[101] max-w-[calc(100vw-1.5rem)] origin-top-right overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white shadow-2xl ring-1 ring-slate-100 animate-in fade-in zoom-in-95 duration-200 sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-4 sm:w-[min(24rem,calc(100vw-2rem))] sm:rounded-[2rem]">
+                        <button type="button" aria-label="Tutup daftar notifikasi" className="fixed inset-0 z-[var(--layer-dropdown)]" onClick={() => setShowNotifDropdown(false)} />
+                        <div className="fixed inset-x-3 top-[4.5rem] z-[var(--layer-dropdown)] max-w-[calc(100vw-1.5rem)] origin-top-right overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white shadow-2xl ring-1 ring-slate-100 animate-in fade-in zoom-in-95 duration-200 sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-4 sm:w-[min(24rem,calc(100vw-2rem))] sm:rounded-[2rem]">
 
                             <div className="p-5 border-b border-slate-50 bg-white flex justify-between items-center sticky top-0 z-10">
                                 <h3 className="font-bold text-slate-800 text-lg">Notifikasi</h3>
@@ -341,28 +345,14 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
                  )}
              </div>
 
-             {/* Profile */}
-             <Link to="/student/account" className="group hidden h-8 items-center gap-2 border-l border-slate-200 pl-3 sm:flex sm:gap-4 sm:pl-6" aria-label="Buka halaman Saya">
-                <div className="text-right hidden sm:block">
-                    <p className="text-sm font-bold text-slate-800 leading-tight group-hover:text-blue-600 transition-colors">{userData ? userData.name : "Memuat..."}</p>
-                    <p className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full inline-block mt-1">Siswa Aktif</p>
-                </div>
-                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 p-[2px] shadow-lg shadow-blue-500/20 group-hover-scale-105 transition-transform duration-300">
-                    <div className="w-full h-full rounded-full bg-white flex items-center justify-center overflow-hidden">
-                       {userData?.avatar_url || userData?.avatar ? (
-                         <img
-                           src={userData.avatar_url || userData.avatar}
-                           alt={`Foto profil ${userData.name || "murid"}`}
-                           loading="lazy"
-                           decoding="async"
-                           className="w-full h-full object-cover"
-                         />
-                       ) : (
-                         <div className="w-full h-full bg-slate-100 flex items-center justify-center font-bold text-indigo-600 text-sm">{userData?.name?.charAt(0)}</div>
-                       )}
-                    </div>
-                </div>
-             </Link>
+             <ProfileQuickMenu
+               user={userData}
+               accent="student"
+               roleLabel="Murid"
+               profileTo="/student/profile"
+               accountTo="/student/account"
+               helpTo="/student/help"
+             />
           </div>
         </header>
 
@@ -385,7 +375,7 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
 
         {/* --- [FIXED] MODAL DETAIL NOTIFIKASI SISWA --- */}
         {selectedNotif && (
-            <div role="dialog" aria-modal="true" aria-label="Detail notifikasi" className="fixed inset-0 z-[200] flex items-end justify-center bg-slate-900/60 p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] backdrop-blur-sm animate-in fade-in duration-300 sm:items-center sm:p-4">
+            <div role="dialog" aria-modal="true" aria-label="Detail notifikasi" className="fixed inset-0 z-[var(--layer-modal)] flex items-end justify-center bg-slate-900/60 p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] backdrop-blur-sm animate-in fade-in duration-300 sm:items-center sm:p-4">
                 {/* [PERBAIKAN]
                     1. flex flex-col: Agar children (header, content, footer) tertata vertikal
                     2. max-h-[90dvh]: Batasi tinggi modal agar tidak melebihi layar

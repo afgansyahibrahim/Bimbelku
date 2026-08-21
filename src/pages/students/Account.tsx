@@ -10,7 +10,6 @@ import {
   CreditCard,
   FileText,
   GraduationCap,
-  History,
   LockKeyhole,
   MessageSquareText,
   RefreshCw,
@@ -147,14 +146,13 @@ export default function Account() {
           <Group title="Belajar dan paket" items={[
             { label: "Paket Saya", description: "Pantau pembayaran, pencarian tutor, dan paket aktif.", to: "/student/packages", icon: BookOpenCheck, attention: packageAttention > 0, attentionCount: packageAttention },
             { label: "Jadwal dan riwayat sesi", description: "Lihat sesi mendatang serta pembelajaran yang selesai.", to: "/student/my-classes", icon: CalendarDays, attention: classAttention > 0, attentionCount: classAttention },
-            { label: "Perkembangan Belajar", description: "Lihat progress per paket, lalu buka detail bab dan subbabnya.", to: "/student/progress", icon: GraduationCap, attention: progressAttention > 0, attentionCount: progressAttention },
+            { label: "Perkembangan Belajar", description: "Lihat progress per paket, lalu buka perkembangan setiap Bab.", to: "/student/progress", icon: GraduationCap, attention: progressAttention > 0, attentionCount: progressAttention },
             { label: "Tutor Saya", description: "Lihat tutor pada paket yang sudah aktif.", to: "/student/packages", icon: Star },
             { label: "Perpanjang Paket", description: "Paket selesai bisa langsung diperpanjang. Paket aktif tersedia menjelang masa berlaku berakhir.", to: "/student/packages", icon: RefreshCw },
           ]} />
           <Group title="Transaksi dan penawaran" items={[
             { label: "Voucher Saya", description: "Lihat voucher yang sudah diklaim dan masa berlakunya.", to: "/student/vouchers", icon: BadgePercent, attention: voucherAttention > 0, attentionCount: voucherAttention },
-            { label: "Pembayaran dan tagihan", description: "Periksa tagihan aktif dan riwayat transfer.", to: "/student/history", icon: CreditCard, attention: historyAttention > 0, attentionCount: historyAttention },
-            { label: "Riwayat transaksi", description: "Pantau status pembayaran, refund, dan bukti transfer.", to: "/student/history", icon: History },
+            { label: "Riwayat Pembayaran", description: "Periksa tagihan, transfer, refund, dan status pembayaran.", to: "/student/history", icon: CreditCard, attention: historyAttention > 0, attentionCount: historyAttention },
             { label: "Refund dan keberatan", description: "Lihat status pengembalian dana atau minta bantuan kasus.", to: "/student/help", icon: WalletCards, attention: helpAttention > 0, attentionCount: helpAttention },
           ]} />
           <Group title="Pengaturan akun" items={[

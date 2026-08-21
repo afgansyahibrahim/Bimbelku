@@ -26,7 +26,7 @@ const checks = [
   [http.includes('/admin\\/cheap-class-templates\\/\\d+\\/recurrence$'), 'frontend HTTP client supplies an idempotency key for ON/OFF'],
   [consoleRoutes.includes("Schedule::command('bookings:expire')") && command.includes('$cheapClassService->maintain()'), 'weekly engine is connected to the minute scheduler'],
   [managementUi.includes('Ulangi paket otomatis setiap minggu') && managementUi.includes('recurrence_enabled: false'), 'creation UI exposes the weekly option safely OFF by default'],
-  [managementUi.includes('Konfirmasi paket Kelas Murah') && managementUi.includes('reviewOpen') && managementUi.includes('Tinjau sebelum dibuat'), 'creation UI opens the review only after the form is valid'],
+  [managementUi.includes('Konfirmasi paket Kelas Kelompok') && managementUi.includes('reviewOpen') && managementUi.includes('Tinjau sebelum dibuat'), 'creation UI opens the review only after the form is valid'],
   [managementUi.includes('sessionSchedulePreview') && managementUi.includes('Tanggal ini mengikuti perhitungan yang dikirim ke backend'), 'review modal previews every scheduled session using the selected weekdays'],
   [managementUi.includes('onClick={onBack}') && managementUi.includes('onClick={onContinue}') && managementUi.includes('disabled={saving || !formReady}') && managementUi.includes('Kembali') && managementUi.includes('Lanjutkan'), 'review modal requires an explicit back or continue decision'],
   [scheduleUi.includes('Berulang ·') && scheduleUi.includes('Paket berikutnya dijadwalkan terbit'), 'schedule UI distinguishes recurring packages'],
@@ -45,4 +45,4 @@ for (const [ok, label] of checks) {
 }
 
 if (failed) process.exit(1);
-console.log('Pemeriksaan mesin Kelas Murah berulang Tahap 2 lulus.');
+console.log('Pemeriksaan mesin Kelas Kelompok berulang Tahap 2 lulus.');

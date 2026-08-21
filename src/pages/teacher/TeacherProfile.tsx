@@ -474,13 +474,26 @@ export default function TeacherProfile() {
               <Field label="Pengalaman"><Input value={profile.experience} onChange={(event) => setProfile((current) => ({ ...current, experience: event.target.value }))} className="h-12 rounded-xl" placeholder="Contoh: 4 tahun" /></Field>
               <div className="md:col-span-2"><Field label="Nomor WhatsApp/telepon"><Input required inputMode="tel" autoComplete="tel" maxLength={16} value={profile.whatsapp_number} onChange={(event) => setProfile((current) => ({ ...current, whatsapp_number: sanitizePhoneInput(event.target.value) }))} className="h-12 rounded-xl" placeholder="Contoh: 0812 3456 7890" /></Field></div>
               <div className="md:col-span-2"><Field label="Kota atau wilayah tinggal"><Input value={profile.location} onChange={(event) => setProfile((current) => ({ ...current, location: event.target.value }))} className="h-12 rounded-xl" placeholder="Contoh: Jakarta Selatan" /></Field></div>
-              <Field label="Latitude, opsional"><Input type="number" step="any" value={profile.latitude} onChange={(event) => setProfile((current) => ({ ...current, latitude: event.target.value }))} className="h-12 rounded-xl" placeholder="-6.200000" /></Field>
-              <Field label="Longitude, opsional"><Input type="number" step="any" value={profile.longitude} onChange={(event) => setProfile((current) => ({ ...current, longitude: event.target.value }))} className="h-12 rounded-xl" placeholder="106.816666" /></Field>
-              <div className="md:col-span-2">
-                <Button type="button" variant="outline" onClick={detectLocation} disabled={locating} className="h-11 w-full rounded-xl border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800">
-                  {locating ? <Loader2 size={17} className="mr-2 animate-spin" /> : <LocateFixed size={17} className="mr-2" />}
-                  Gunakan lokasi perangkat
-                </Button>
+              <div className="md:col-span-2 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 sm:p-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${profile.latitude && profile.longitude ? "bg-emerald-100 text-emerald-700" : "bg-white text-indigo-600"}`}>
+                      <MapPin size={19} />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="font-black text-slate-900">Lokasi untuk kelas offline</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        {profile.latitude && profile.longitude
+                          ? "Titik lokasi perangkat sudah tersimpan. Data teknis tidak perlu diisi manual."
+                          : "Atur lokasi dari perangkat agar sistem dapat menghitung jarak kelas offline."}
+                      </p>
+                    </div>
+                  </div>
+                  <Button type="button" variant="outline" onClick={detectLocation} disabled={locating} className="h-11 shrink-0 rounded-xl border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800">
+                    {locating ? <Loader2 size={17} className="mr-2 animate-spin" /> : <LocateFixed size={17} className="mr-2" />}
+                    {profile.latitude && profile.longitude ? "Atur ulang lokasi" : "Atur lokasi"}
+                  </Button>
+                </div>
               </div>
               <Field label="Batas perjalanan offline (maks. 12 km)"><Input type="number" min="1" max="12" value={profile.max_travel_km} onChange={(event) => setProfile((current) => ({ ...current, max_travel_km: event.target.value }))} className="h-12 rounded-xl" /></Field>
               <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 flex items-center justify-between gap-4"><div><p className="font-bold text-slate-800">Terima permintaan baru</p><p className="mt-1 text-xs text-slate-500">Matikan saat sedang tidak tersedia.</p></div><Switch checked={profile.is_accepting_requests} onCheckedChange={(checked) => setProfile((current) => ({ ...current, is_accepting_requests: checked }))} /></div>
@@ -518,7 +531,7 @@ export default function TeacherProfile() {
           </form>
 
           <section className="rounded-[2rem] border border-slate-100 bg-white p-6 md:p-8 shadow-sm animate-in fade-in slide-in-from-right-3 duration-500 xl:sticky xl:top-24">
-            <div className="flex items-start justify-between gap-4"><div><h2 className="text-2xl font-black text-slate-900">Kompetensi mengajar</h2><p className="mt-1 text-sm text-slate-500">Tutor dapat menyimpan 1–4 mata pelajaran. Kelas Murah multi-mapel hanya dipasangkan ke tutor yang menguasai seluruh mapel paket.</p></div><div className="h-11 w-11 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center"><BookOpen size={20} /></div></div>
+            <div className="flex items-start justify-between gap-4"><div><h2 className="text-2xl font-black text-slate-900">Kompetensi mengajar</h2><p className="mt-1 text-sm text-slate-500">Tutor dapat menyimpan 1–4 mata pelajaran. Kelas Kelompok multi-mapel hanya dipasangkan ke tutor yang menguasai seluruh mapel paket.</p></div><div className="h-11 w-11 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center"><BookOpen size={20} /></div></div>
 
             <div className="mt-6 space-y-5">
               {profile.teachingSubjects.map((subject, index) => (

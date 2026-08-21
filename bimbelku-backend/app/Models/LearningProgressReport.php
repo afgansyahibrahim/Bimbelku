@@ -16,9 +16,9 @@ class LearningProgressReport extends Model
         'published_at' => 'datetime',
     ];
 
-    public function topicLogs()
+    public function chapterLogs()
     {
-        return $this->hasMany(PackageSessionTopicLog::class);
+        return $this->hasMany(PackageSessionChapterLog::class);
     }
 
     public function booking()

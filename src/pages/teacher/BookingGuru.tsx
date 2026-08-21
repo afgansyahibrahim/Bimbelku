@@ -10,15 +10,12 @@ import {
   Loader2,
   MapPin,
   Monitor,
-  Paperclip,
   RefreshCw,
   TimerReset,
   UserRound,
-  Users,
   X,
 } from "lucide-react";
 import TeacherLayout from "@/components/TeacherLayout";
-import { openProtectedFile } from "@/components/ProtectedImage";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -39,19 +36,13 @@ interface Offer {
     education_level: string;
     grade?: string;
     chapter?: string;
-    subtopic?: string;
-    topic?: string;
     learning_goal?: string;
-    attachment_url?: string;
-    group_member_count?: number;
     learning_mode: "online" | "offline";
-    class_type: "private" | "group";
+    class_type: "private";
     scheduled_date: string;
     start_time: string;
     end_time: string;
     duration_hours: number;
-    source_label?: "Paket Belajar" | "Arsip sistem lama";
-    is_legacy?: boolean;
     address?: string;
     maps_link?: string;
     hourly_rate?: number;
@@ -177,14 +168,6 @@ export default function BookingGuru() {
     }
   };
 
-  const openAttachment = async (url: string) => {
-    try {
-      await openProtectedFile(url, "lampiran-murid");
-    } catch (error) {
-      notify.error(getApiError(error, "Lampiran gagal dibuka."));
-    }
-  };
-
   return (
     <TeacherLayout title="Permintaan Bimbel">
       <div className="max-w-7xl mx-auto space-y-7 pb-12">
@@ -244,7 +227,6 @@ export default function BookingGuru() {
                   setRejectingOffer(offer);
                   setReason(offer.booking_request.learning_mode === "offline" ? "too_far" : "schedule");
                 }}
-                onOpenAttachment={openAttachment}
               />
             ))}
           </div>
@@ -294,14 +276,12 @@ function OfferCard({
   processing,
   onAccept,
   onReject,
-  onOpenAttachment,
 }: {
   offer: Offer;
   now: number;
   processing: boolean;
   onAccept: () => void;
   onReject: () => void;
-  onOpenAttachment: (url: string) => void;
 }) {
   const request = offer.booking_request;
   const remaining = Math.max(0, new Date(offer.expires_at).getTime() - now);
@@ -315,51 +295,40 @@ function OfferCard({
   const isPending = offer.status === "pending" && remaining > 0;
 
   return (
-    <article data-tour="teacher-offer-card" className={`relative overflow-hidden rounded-[2rem] border bg-white p-6 shadow-sm transition duration-300 hover-rise hover-shadow-xl ${isPending ? "border-indigo-100" : "border-slate-100"}`}>
+    <article data-tour="teacher-offer-card" className={`relative min-w-0 max-w-full overflow-hidden rounded-[1.6rem] border bg-white p-4 shadow-sm transition duration-300 hover-rise hover-shadow-xl sm:rounded-[2rem] sm:p-6 ${isPending ? "border-indigo-100" : "border-slate-100"}`}>
       {isPending && <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-500 to-violet-500" />}
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="flex min-w-0 items-start justify-between gap-3 sm:gap-4">
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-xs font-bold uppercase tracking-widest text-indigo-500">Permintaan #{request.id}</p>
-            {request.source_label && (
-              <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${request.is_legacy ? "bg-amber-100 text-amber-800" : "bg-indigo-100 text-indigo-700"}`}>
-                {request.source_label}
-              </span>
-            )}
           </div>
-          <h2 className="mt-1 text-2xl font-black text-slate-900">{request.subject_name}</h2>
+          <h2 className="mt-1 min-w-0 break-words text-xl font-black leading-snug text-slate-900 sm:text-2xl">{request.subject_name}</h2>
           <p className="mt-1 text-sm text-slate-500">{request.education_level}{request.grade ? ` • ${request.grade}` : ""}</p>
         </div>
-        <div className={`rounded-full border px-3 py-1.5 text-[11px] font-bold ${statusClasses[offer.status] || statusClasses.expired}`}>
+        <div className={`max-w-[45%] shrink-0 break-words rounded-full border px-2.5 py-1.5 text-center text-[10px] font-bold leading-tight sm:max-w-none sm:px-3 sm:text-[11px] ${statusClasses[offer.status] || statusClasses.expired}`}>
           {statusLabels[offer.status] || offer.status}
         </div>
       </div>
 
-      <div className="mt-5 grid grid-cols-2 gap-3">
+      <div className="mt-5 grid grid-cols-1 gap-3 min-[360px]:grid-cols-2">
         <Info icon={UserRound} label="Murid" value={request.student.name} />
-        <Info icon={request.class_type === "private" ? UserRound : Users} label="Kelas" value={request.class_type === "private" ? "Privat" : `Kelompok · ${request.group_member_count || 1} murid`} />
+        <Info icon={UserRound} label="Kelas" value="Privat" />
         <Info icon={CalendarDays} label="Tanggal" value={new Intl.DateTimeFormat("id-ID", { dateStyle: "medium" }).format(new Date(`${request.scheduled_date.substring(0, 10)}T00:00:00`))} />
         <Info icon={Clock3} label="Waktu" value={`${request.start_time.slice(0, 5)}–${request.end_time.slice(0, 5)}`} />
         <Info icon={request.learning_mode === "online" ? Monitor : MapPin} label="Mode" value={request.learning_mode === "online" ? "Online" : "Offline"} />
         <Info icon={Clock3} label="Durasi" value={`${request.duration_hours} jam`} />
       </div>
 
-      {request.is_legacy && (
-        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
-          Permintaan ini berasal dari sistem lama dan tetap ditampilkan agar penawaran atau kelas yang sudah terbentuk dapat diselesaikan.
-        </div>
-      )}
-
       {request.package_subject && (
         <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+          <div className="flex min-w-0 flex-col gap-3 min-[360px]:flex-row min-[360px]:items-start min-[360px]:justify-between">
+            <div className="min-w-0">
               <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Penawaran paket</p>
               <p className="mt-1 text-sm font-black text-indigo-950">
                 {request.package_subject.package?.plan?.name || "Paket Belajar"} · {request.package_subject.allocated_sessions} sesi
               </p>
             </div>
-            <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-indigo-700">
+            <span className="max-w-full self-start break-all rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-indigo-700">
               {request.package_subject.package?.package_code}
             </span>
           </div>
@@ -377,13 +346,11 @@ function OfferCard({
         </div>
       )}
 
-      {(request.chapter || request.subtopic || request.topic || request.learning_goal || request.attachment_url) && (
+      {(request.chapter || request.learning_goal) && (
         <div className="mt-4 rounded-2xl bg-slate-50 p-4">
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Kebutuhan belajar</p>
-          {(request.chapter || request.subtopic) && <p className="mt-2 text-sm font-black text-slate-800">{[request.chapter, request.subtopic].filter(Boolean).join(" · ")}</p>}
-          {request.learning_goal && <p className="mt-2 text-sm leading-6 text-slate-700"><span className="font-bold">Tujuan:</span> {request.learning_goal}</p>}
-          {request.topic && <p className="mt-2 text-sm leading-6 text-slate-700"><span className="font-bold">Catatan:</span> {request.topic}</p>}
-          {request.attachment_url && <Button type="button" variant="outline" size="sm" className="mt-3 rounded-xl bg-white" onClick={() => onOpenAttachment(request.attachment_url!)}><Paperclip size={14} className="mr-2" />Buka lampiran murid</Button>}
+          {request.chapter && <p className="mt-2 text-sm font-black text-slate-800">{request.chapter}</p>}
+          {request.learning_goal && <p className="mt-2 text-sm leading-6 text-slate-700"><span className="font-bold">Catatan:</span> {request.learning_goal}</p>}
         </div>
       )}
 
@@ -401,8 +368,8 @@ function OfferCard({
         </div>
       )}
 
-      <div className="mt-5 flex items-center justify-between rounded-2xl border border-slate-100 bg-white px-4 py-3">
-        <div>
+      <div className="mt-5 flex min-w-0 flex-col gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
+        <div className="min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Estimasi pendapatan tutor</p>
           <p className="mt-1 text-lg font-black text-slate-900">{formatCurrency(request.estimated_net_amount)}</p>
           <p className="mt-1 text-[10px] font-medium text-slate-400">
@@ -410,7 +377,7 @@ function OfferCard({
           </p>
         </div>
         {isPending && (
-          <div className="text-right">
+          <div className="self-start text-left min-[360px]:self-auto min-[360px]:text-right">
             <p className="text-[10px] font-bold uppercase tracking-widest text-rose-500">Sisa waktu</p>
             <p className="mt-1 font-mono text-lg font-black text-rose-600">{countdown}</p>
           </div>
@@ -434,9 +401,9 @@ function OfferCard({
 
 function Info({ icon: Icon, label, value }: { icon: typeof Clock3; label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+    <div className="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-3">
       <div className="flex items-center gap-2 text-slate-400"><Icon size={14} /><span className="text-[10px] font-bold uppercase tracking-wider">{label}</span></div>
-      <p className="mt-1.5 truncate text-sm font-bold text-slate-800">{value}</p>
+      <p className="mt-1.5 break-words text-sm font-bold leading-5 text-slate-800">{value}</p>
     </div>
   );
 }

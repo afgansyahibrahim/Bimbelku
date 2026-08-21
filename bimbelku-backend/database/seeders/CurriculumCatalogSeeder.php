@@ -4,7 +4,6 @@ namespace Database\Seeders;
 
 use App\Models\CurriculumChapter;
 use App\Models\CurriculumSubject;
-use App\Models\LearningTopic;
 use App\Support\EducationCatalog;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
@@ -58,7 +57,6 @@ class CurriculumCatalogSeeder extends Seeder
                                 : 'Struktur materi awal Kurikulum Merdeka; admin dapat menyesuaikan judul menurut buku sekolah',
                         ]
                     );
-                    $this->seedSubtopics($subject->name, $level, "Kelas {$grade}", $chapter->title);
                 }
             }
         }
@@ -173,7 +171,6 @@ class CurriculumCatalogSeeder extends Seeder
                                 'source_reference' => 'Materi awal fleksibel; admin dapat menyesuaikan isi menurut kebutuhan murid.',
                             ]
                         );
-                        $this->seedSubtopics($subject->name, $level, $grade, $chapter->title);
                     }
                 }
             }
@@ -366,82 +363,6 @@ class CurriculumCatalogSeeder extends Seeder
         ];
     }
 
-
-    private function seedSubtopics(string $subject, string $level, string $grade, string $chapter): void
-    {
-        foreach ($this->subtopicsFor($subject, $chapter) as $index => $name) {
-            LearningTopic::updateOrCreate(
-                [
-                    'subject_name' => $subject,
-                    'education_level' => $level,
-                    'grade' => $grade,
-                    'chapter' => $chapter,
-                    'name' => $name,
-                ],
-                [
-                    'sort_order' => $index + 1,
-                    'is_active' => true,
-                ]
-            );
-        }
-    }
-
-    private function subtopicsFor(string $subject, string $chapter): array
-    {
-        $chapterLower = Str::lower($chapter);
-        $keywordSets = [
-            'pecahan' => ['Konsep dan representasi pecahan', 'Pecahan senilai dan perbandingan', 'Operasi pecahan', 'Soal cerita dan penerapan pecahan'],
-            'bilangan' => ['Membaca dan menulis bilangan', 'Nilai tempat dan perbandingan', 'Operasi dan strategi hitung', 'Pemecahan masalah bilangan'],
-            'aljabar' => ['Variabel, koefisien, dan konstanta', 'Operasi bentuk aljabar', 'Pemodelan aljabar', 'Latihan dan pemecahan masalah'],
-            'persamaan' => ['Membentuk persamaan', 'Menyelesaikan persamaan', 'Memeriksa solusi', 'Penerapan dalam masalah kontekstual'],
-            'fungsi' => ['Konsep relasi dan fungsi', 'Representasi tabel dan grafik', 'Menentukan nilai fungsi', 'Penerapan fungsi'],
-            'statistika' => ['Mengumpulkan dan menyajikan data', 'Ukuran pemusatan', 'Ukuran penyebaran', 'Interpretasi dan kesimpulan data'],
-            'peluang' => ['Ruang sampel', 'Peluang kejadian', 'Peluang majemuk', 'Eksperimen dan interpretasi peluang'],
-            'geometri' => ['Unsur dan sifat bentuk', 'Pengukuran dan perhitungan', 'Konstruksi atau representasi', 'Penerapan geometri'],
-            'bangun' => ['Unsur dan sifat bangun', 'Keliling, luas, atau volume', 'Jaring-jaring dan visualisasi', 'Soal kontekstual bangun'],
-            'trigonometri' => ['Perbandingan trigonometri', 'Sudut dan nilai istimewa', 'Identitas atau aturan trigonometri', 'Penerapan trigonometri'],
-            'limit' => ['Konsep pendekatan', 'Limit aljabar', 'Limit fungsi', 'Penerapan limit'],
-            'turunan' => ['Konsep laju perubahan', 'Aturan turunan', 'Grafik dan titik ekstrem', 'Aplikasi turunan'],
-            'integral' => ['Antiturunan', 'Integral tak tentu', 'Integral tentu', 'Luas dan aplikasi integral'],
-            'teks' => ['Mengenali tujuan dan struktur teks', 'Kosakata dan unsur kebahasaan', 'Menelaah isi dan informasi', 'Menyusun dan mempresentasikan teks'],
-            'cerita' => ['Tokoh, latar, dan alur', 'Konflik dan pesan', 'Kosakata dan gaya bahasa', 'Menceritakan atau menulis kembali'],
-            'puisi' => ['Unsur puisi', 'Makna dan suasana', 'Pembacaan ekspresif', 'Menulis dan menyunting puisi'],
-            'energi' => ['Bentuk dan sumber energi', 'Perubahan dan perpindahan energi', 'Percobaan atau pengamatan', 'Penerapan dan konservasi energi'],
-            'gerak' => ['Konsep gerak', 'Besaran dan hubungan gerak', 'Percobaan atau analisis data', 'Penerapan gerak'],
-            'zat' => ['Sifat dan klasifikasi zat', 'Perubahan zat', 'Percobaan dan pengamatan', 'Penerapan dalam kehidupan'],
-            'ekosistem' => ['Komponen ekosistem', 'Interaksi makhluk hidup', 'Aliran energi dan perubahan', 'Pelestarian lingkungan'],
-            'sejarah' => ['Latar dan kronologi', 'Tokoh dan peristiwa', 'Sebab serta dampak', 'Analisis sumber dan refleksi'],
-            'ekonomi' => ['Konsep dan pelaku ekonomi', 'Mekanisme kegiatan ekonomi', 'Analisis kasus', 'Penerapan dan pengambilan keputusan'],
-            'pemrograman' => ['Konsep dan logika dasar', 'Sintaks dan struktur program', 'Latihan pembuatan program', 'Debugging dan proyek'],
-            'excel' => ['Antarmuka dan pengelolaan data', 'Rumus dan fungsi', 'Tabel serta visualisasi', 'Latihan proyek'],
-            'word' => ['Antarmuka dan format dokumen', 'Paragraf dan tata letak', 'Tabel, gambar, dan referensi', 'Pembuatan dokumen akhir'],
-            'powerpoint' => ['Struktur presentasi', 'Desain slide', 'Media dan animasi', 'Presentasi dan evaluasi'],
-        ];
-        foreach ($keywordSets as $keyword => $topics) {
-            if (str_contains($chapterLower, $keyword)) return $topics;
-        }
-
-        if ($subject === 'Matematika' || str_contains($subject, 'Fisika') || str_contains($subject, 'Kimia')) {
-            return ["Konsep dasar {$chapter}", "Rumus dan prosedur {$chapter}", "Latihan bertahap {$chapter}", "Penerapan dan evaluasi {$chapter}"];
-        }
-        if (str_contains($subject, 'Bahasa')) {
-            return ["Kosakata {$chapter}", "Pemahaman isi {$chapter}", "Struktur dan unsur kebahasaan {$chapter}", "Produksi lisan atau tulisan {$chapter}"];
-        }
-        if (in_array($subject, ['Ilmu Pengetahuan Alam', 'Ilmu Pengetahuan Alam dan Sosial', 'Biologi'], true)) {
-            return ["Konsep utama {$chapter}", "Pengamatan dan klasifikasi {$chapter}", "Proses atau percobaan {$chapter}", "Penerapan dan refleksi {$chapter}"];
-        }
-        if (in_array($subject, ['Ilmu Pengetahuan Sosial', 'Ekonomi', 'Sosiologi', 'Geografi', 'Sejarah'], true)) {
-            return ["Konsep dan konteks {$chapter}", "Hubungan sebab-akibat {$chapter}", "Analisis data atau kasus {$chapter}", "Refleksi dan penerapan {$chapter}"];
-        }
-        if (str_contains($subject, 'Seni') || str_contains($subject, 'Prakarya') || in_array($subject, ['Gitar', 'Desain Grafis', 'Fotografi Dasar'], true)) {
-            return ["Pengenalan unsur {$chapter}", "Teknik dasar {$chapter}", "Praktik atau penciptaan {$chapter}", "Apresiasi dan evaluasi {$chapter}"];
-        }
-        if (str_contains($subject, 'Pendidikan Agama') || $subject === 'Pendidikan Pancasila') {
-            return ["Pemahaman nilai {$chapter}", "Contoh dalam kehidupan {$chapter}", "Praktik dan pembiasaan {$chapter}", "Refleksi dan evaluasi {$chapter}"];
-        }
-
-        return ["Pengenalan {$chapter}", "Konsep dan keterampilan inti {$chapter}", "Latihan terarah {$chapter}", "Penerapan dan evaluasi {$chapter}"];
-    }
 
     private function hasExactBookChapters(string $subject, int $grade): bool
     {

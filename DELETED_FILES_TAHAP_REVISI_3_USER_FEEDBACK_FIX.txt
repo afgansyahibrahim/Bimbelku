@@ -1,0 +1,5 @@
+File dihapus setelah user-feedback + zero-reference audit:
+src/components/TrustStrip.tsx
+
+Alasan:
+Empat trust point horizontal ditolak pada user testing karena membuat landing berlapis dan redundan. Trust point konkret tetap tersedia pada section Features/Kenapa BimbelKu, sehingga capability informasi tidak hilang.

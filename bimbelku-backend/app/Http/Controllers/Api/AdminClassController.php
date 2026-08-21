@@ -1,11 +1,14 @@
 <?php
-
+ 
 namespace App\Http\Controllers\Api;
-
+ 
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
+use Carbon\Carbon;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\Request;
-
+use Illuminate\Support\Facades\DB;
+ 
 class AdminClassController extends Controller
 {
     private const MONITORED_STATUSES = [
@@ -21,12 +24,105 @@ class AdminClassController extends Controller
         'partially_refunded',
         'refunded',
     ];
-
+ 
+    private const ATTENTION_STATUSES = [
+        'disputed',
+        'absence_review',
+        'admin_review_required',
+        'emergency_refund_pending',
+        'refund_pending',
+    ];
+ 
+    private const HISTORY_STATUSES = [
+        'completed',
+        'partially_refunded',
+        'refunded',
+    ];
+ 
+    private const ACTIVE_STATUSES = [
+        'in_progress',
+        'awaiting_student_approval',
+        'disputed',
+        'absence_review',
+        'admin_review_required',
+        'emergency_refund_pending',
+        'refund_pending',
+    ];
+ 
     public function index(Request $request)
     {
         $search = trim((string) $request->query('search', ''));
-        $bookings = Booking::query()
+        $scope = (string) $request->query('scope', 'attention');
+        $status = trim((string) $request->query('status', ''));
+        $dateFrom = trim((string) $request->query('date_from', ''));
+        $dateTo = trim((string) $request->query('date_to', ''));
+        $perPage = max(10, min(50, (int) $request->query('per_page', 20)));
+        $request->validate([
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to' => ['nullable', 'date_format:Y-m-d'],
+        ]);
+ 
+        abort_unless(in_array($scope, ['attention', 'active', 'upcoming', 'history'], true), 422, 'Scope monitoring tidak valid.');
+        abort_if($status !== '' && !in_array($status, self::MONITORED_STATUSES, true), 422, 'Status kelas tidak valid.');
+ 
+        $timezone = config('app.timezone', 'Asia/Jakarta');
+        $now = now();
+        $fromBoundary = $dateFrom !== '' ? Carbon::createFromFormat('Y-m-d', $dateFrom, $timezone)->startOfDay() : null;
+        $toBoundary = $dateTo !== '' ? Carbon::createFromFormat('Y-m-d', $dateTo, $timezone)->addDay()->startOfDay() : null;
+        abort_if($fromBoundary && $toBoundary && $toBoundary->lte($fromBoundary), 422, 'Rentang tanggal monitoring tidak valid.');
+ 
+        $base = Booking::query()->where('class_type', 'private')->whereIn('status', self::MONITORED_STATUSES);
+        $attentionScope = fn ($query) => $query->where(function ($attention) use ($now) {
+            $attention
+                ->whereIn('status', self::ATTENTION_STATUSES)
+                ->orWhere(fn ($unfinished) => $unfinished
+                    ->whereIn('status', ['confirmed', 'in_progress'])
+                    ->where('end_at', '<=', $now))
+                ->orWhere(fn ($studentDecision) => $studentDecision
+                    ->where('status', 'awaiting_student_approval')
+                    ->whereNotNull('objection_deadline')
+                    ->where('objection_deadline', '<=', $now->copy()->addHours(6)))
+                ->orWhereExists(function (QueryBuilder $sub) {
+                    // Dibuat memakai whereExists + subquery MAX(published_at) secara eksplisit,
+                    // bukan orWhereHas() pada relasi hasOne(...)->latestOfMany(). Kombinasi
+                    // whereHas + ofMany + whereRaw sebelumnya belum pernah diuji jalan nyata di
+                    // MySQL (lihat catatan checkpoint 19 Agustus 2026) dan berisiko menghasilkan
+                    // query yang gagal atau salah menafsirkan "laporan terbaru" pada database
+                    // sungguhan. Bentuk di bawah ini eksplisit dan mudah diverifikasi manual.
+                    $sub->selectRaw('1')
+                        ->from('learning_progress_reports as lpr')
+                        ->whereColumn('lpr.booking_id', 'bookings.id')
+                        ->whereColumn('lpr.actual_duration_minutes', '<', DB::raw('bookings.duration_hours * 36'))
+                        ->where('lpr.published_at', '=', function (QueryBuilder $max) {
+                            $max->selectRaw('MAX(lpr2.published_at)')
+                                ->from('learning_progress_reports as lpr2')
+                                ->whereColumn('lpr2.booking_id', 'lpr.booking_id');
+                        });
+                });
+        });
+        $activeScope = fn ($query) => $query->where(function ($active) use ($now) {
+            $active->whereIn('status', self::ACTIVE_STATUSES)
+                ->orWhere(fn ($confirmed) => $confirmed->where('status', 'confirmed')->where('start_at', '<=', $now));
+        });
+ 
+        $summary = [
+            'attention' => (clone $base)->where($attentionScope)->count(),
+            'active' => (clone $base)->where($activeScope)->count(),
+            'upcoming' => (clone $base)->where('status', 'confirmed')->where('start_at', '>', $now)->count(),
+            'history' => (clone $base)->whereIn('status', self::HISTORY_STATUSES)->count(),
+        ];
+ 
+        $query = Booking::query()
+            ->where('class_type', 'private')
             ->whereIn('status', self::MONITORED_STATUSES)
+            ->when($scope === 'attention', $attentionScope)
+            ->when($scope === 'active', $activeScope)
+            ->when($scope === 'upcoming', fn ($q) => $q->where('status', 'confirmed')->where('start_at', '>', $now))
+            ->when($scope === 'history', fn ($q) => $q->whereIn('status', self::HISTORY_STATUSES))
+            ->when($status !== '', fn ($q) => $q->where('status', $status))
+            // Range comparisons keep the existing start_at indexes usable; avoid DATE(start_at).
+            ->when($fromBoundary, fn ($q) => $q->where('start_at', '>=', $fromBoundary))
+            ->when($toBoundary, fn ($q) => $q->where('start_at', '<', $toBoundary))
             ->when($search !== '', function ($query) use ($search) {
                 $query->where(function ($searchQuery) use ($search) {
                     $searchQuery
@@ -34,46 +130,80 @@ class AdminClassController extends Controller
                         ->orWhereHas('bookingRequest', function ($bookingRequest) use ($search) {
                             $bookingRequest
                                 ->where('subject_name', 'like', "%{$search}%")
-                                ->orWhere('chapter', 'like', "%{$search}%")
-                                ->orWhere('subtopic', 'like', "%{$search}%");
+                                ->orWhere('chapter', 'like', "%{$search}%");
                         });
                 });
             })
+            ->select([
+                'id', 'booking_request_id', 'teacher_id', 'class_type', 'learning_mode',
+                'status', 'start_at', 'end_at', 'duration_hours', 'objection_deadline',
+            ])
             ->with([
                 'teacher:id,name',
-                'bookingRequest:id,subject_name,chapter,subtopic',
-                'participants:id,booking_id,status',
+                'bookingRequest:id,subject_name,chapter',
+                'latestLearningProgressReport:id,booking_id,actual_duration_minutes',
             ])
-            ->latest('start_at')
-            ->limit(300)
-            ->get();
-
-        return response()->json($bookings->map(function (Booking $booking) {
+            ->withCount([
+                'participants as student_count' => fn ($participants) => $participants
+                    ->whereNotIn('status', ['cancelled', 'teacher_rejected', 'payment_expired']),
+            ]);
+ 
+        if ($scope === 'upcoming') {
+            $query->orderBy('start_at');
+        } else {
+            $query->orderByDesc('start_at');
+        }
+ 
+        $bookings = $query->paginate($perPage)->withQueryString();
+        $bookings->getCollection()->transform(function (Booking $booking) use ($now) {
             $request = $booking->bookingRequest;
-            $participantCount = $booking->participants
-                ->whereNotIn('status', ['cancelled', 'teacher_rejected', 'payment_expired'])
-                ->count();
-            $isCompleted = $booking->status === 'completed';
-
+            $isCompleted = in_array($booking->status, self::HISTORY_STATUSES, true);
+            $attentionReason = match (true) {
+                in_array($booking->status, self::ATTENTION_STATUSES, true) => 'Status sesi memerlukan keputusan admin.',
+                in_array($booking->status, ['confirmed', 'in_progress'], true) && $booking->end_at?->lte($now) => 'Sesi melewati waktu selesai dan belum ditutup.',
+                $booking->status === 'awaiting_student_approval' && $booking->objection_deadline?->lte($now->copy()->addHours(6)) => 'Keputusan murid mendekati atau melewati tenggat.',
+                $booking->latestLearningProgressReport
+                    && $booking->latestLearningProgressReport->actual_duration_minutes < ((int) $booking->duration_hours * 36) => 'Durasi aktual jauh di bawah jadwal.',
+                default => null,
+            };
+ 
             return [
                 'id' => $booking->id,
                 'title' => $this->classTitle($booking),
                 'subject' => $request?->subject_name ?? 'Bimbingan',
-                'type' => $booking->class_type === 'group' ? 'Kelompok' : 'Privat',
+                'chapter' => $request?->chapter,
+                'type' => 'Privat',
+                'class_type' => 'private',
                 'method' => $booking->learning_mode,
                 'status' => $booking->status,
                 'status_label' => $this->statusLabel($booking->status),
-                'teacher_name' => $booking->teacher?->name ?? 'Tutor tidak ditemukan',
-                'student_count' => $participantCount,
+                'teacher_name' => $booking->teacher?->name ?? 'Tutor belum terhubung',
+                'student_count' => (int) $booking->student_count,
                 'total_sessions' => 1,
                 'completed_sessions' => $isCompleted ? 1 : 0,
                 'progress' => $this->progress($booking->status),
+                'needs_admin_attention' => $attentionReason !== null,
+                'attention_reason' => $attentionReason,
                 'start_at' => $booking->start_at,
                 'end_at' => $booking->end_at,
             ];
-        })->values());
+        });
+ 
+        return response()->json([
+            'data' => $bookings->items(),
+            'meta' => [
+                'current_page' => $bookings->currentPage(),
+                'last_page' => $bookings->lastPage(),
+                'per_page' => $bookings->perPage(),
+                'total' => $bookings->total(),
+                'from' => $bookings->firstItem(),
+                'to' => $bookings->lastItem(),
+                'scope' => $scope,
+            ],
+            'summary' => $summary,
+        ]);
     }
-
+ 
     public function show(int $id)
     {
         $booking = Booking::query()
@@ -87,21 +217,20 @@ class AdminClassController extends Controller
                 'disputes' => fn ($query) => $query->latest(),
             ])
             ->findOrFail($id);
-
+ 
         $request = $booking->bookingRequest;
         $profile = $booking->teacher?->teacherProfile;
         $participants = $booking->participants
             ->whereNotIn('status', ['cancelled', 'teacher_rejected', 'payment_expired'])
             ->values();
-
+ 
         return response()->json([
             'info' => [
                 'id' => $booking->id,
                 'title' => $this->classTitle($booking),
                 'subject' => $request?->subject_name ?? 'Bimbingan',
                 'chapter' => $request?->chapter,
-                'subtopic' => $request?->subtopic,
-                'type' => $booking->class_type === 'group' ? 'Kelompok' : 'Privat',
+                'type' => 'Privat',
                 'method' => $booking->learning_mode,
                 'status' => $booking->status,
                 'status_label' => $this->statusLabel($booking->status),
@@ -119,7 +248,6 @@ class AdminClassController extends Controller
                     : null,
                 'start_at' => $booking->start_at,
                 'end_at' => $booking->end_at,
-                'completion_evidence_url' => $booking->completion_evidence_url,
                 'completion_notes' => $booking->completion_notes,
             ],
             'teacher' => [
@@ -144,24 +272,24 @@ class AdminClassController extends Controller
             })->values(),
             'sessions' => [[
                 'id' => $booking->id,
-                'title' => $request?->chapter ?: $request?->subtopic ?: 'Sesi bimbingan',
+                'title' => $request?->chapter ?: 'Sesi bimbingan',
                 'date' => $booking->start_at?->translatedFormat('l, d F Y H:i').' WIB',
                 'is_completed' => $booking->status === 'completed',
-                'material' => $request?->subtopic ?: $request?->topic ?: 'Materi belum dirinci',
+                'material' => $request?->chapter ?: 'Materi belum dirinci',
             ]],
             'latest_report' => $booking->reports->first(),
             'latest_dispute' => $booking->disputes->first(),
         ]);
     }
-
+ 
     private function classTitle(Booking $booking): string
     {
         $request = $booking->bookingRequest;
-        $detail = $request?->chapter ?: $request?->subtopic;
-
+        $detail = $request?->chapter;
+ 
         return trim(($request?->subject_name ?? 'Bimbingan').($detail ? " · {$detail}" : ''));
     }
-
+ 
     private function progress(string $status): int
     {
         return match ($status) {
@@ -172,7 +300,7 @@ class AdminClassController extends Controller
             default => 0,
         };
     }
-
+ 
     private function statusLabel(string $status): string
     {
         return match ($status) {
@@ -191,3 +319,4 @@ class AdminClassController extends Controller
         };
     }
 }
+ 

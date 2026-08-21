@@ -165,7 +165,7 @@ export default function PendingPaymentPopup() {
         setOrder(null);
         setShowConfirmCancel(false);
         sessionStorage.removeItem("bimbelku_payment_order");
-        notify.success(isCheapClassOrder ? "Keikutsertaan Kelas Murah berhasil dibatalkan." : "Pesanan berhasil dibatalkan.");
+        notify.success(isCheapClassOrder ? "Keikutsertaan Kelas Kelompok berhasil dibatalkan." : "Pesanan berhasil dibatalkan.");
         
         // Jika sedang di halaman payment, tendang ke luar
         if (location.pathname === '/payment') {
@@ -193,18 +193,18 @@ export default function PendingPaymentPopup() {
   return (
     <>
       {/* === WIDGET STICKY (POJOK KANAN BAWAH) === */}
-      <div className="fixed bottom-4 left-4 right-4 z-[60] animate-in slide-in-from-bottom-5 fade-in duration-500 sm:bottom-6 sm:left-auto sm:right-6 sm:w-[340px]">
-        <div className="group relative w-full overflow-hidden rounded-[2rem] border border-slate-100 bg-white p-5 shadow-[0_20px_50px_rgba(0,0,0,0.1)] transition-all hover-scale-102">
+      <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] left-3 right-3 z-[60] max-h-[calc(100dvh-5.75rem-env(safe-area-inset-bottom))] min-w-0 overflow-y-auto overscroll-contain animate-in slide-in-from-bottom-5 fade-in duration-500 sm:left-auto sm:right-4 sm:w-[min(340px,calc(100vw-2rem))] xl:bottom-6 xl:right-6 xl:max-h-[calc(100dvh-3rem)]">
+        <div className="group relative min-w-0 w-full overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-[0_20px_50px_rgba(0,0,0,0.1)] transition-all hover-scale-102 sm:rounded-[2rem] sm:p-5">
           
           {/* Progress Bar Sisa Waktu */}
           <div className="absolute top-0 left-0 h-1.5 bg-indigo-600 transition-all duration-1000" 
                style={{ width: `${Math.min(100, (timeLeft / paymentWindowSeconds) * 100)}%` }} 
           />
 
-          <div className="flex justify-between items-start mb-4">
-             <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1.5 rounded-full text-indigo-600 font-black text-xs">
+          <div className="mb-4 flex min-w-0 items-start justify-between gap-3">
+             <div className="flex min-w-0 items-center gap-2 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-black text-indigo-600">
                 <Clock size={14} className="animate-spin-slow" />
-                <span className="font-mono tracking-tighter">{formatTime(timeLeft)}</span>
+                <span className="min-w-0 font-mono tracking-tighter">{formatTime(timeLeft)}</span>
              </div>
              <button aria-label="Tutup pengingat tagihan" onClick={() => setIsVisible(false)} className="p-1.5 hover:bg-slate-50 rounded-full text-slate-300 hover:text-slate-500 transition">
                 <X size={18} />
@@ -216,31 +216,31 @@ export default function PendingPaymentPopup() {
                 <Sparkles size={14} className="text-orange-400 fill-orange-400"/>
                 <span className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Tagihan Menunggu</span>
              </div>
-             <h4 className="font-black text-slate-900 line-clamp-1 text-lg leading-tight">{order.subject}</h4>
-             <p className="text-xs text-slate-500 font-medium">Bersama <span className="text-indigo-600 font-bold">{order.tutor_name}</span></p>
+             <h4 className="line-clamp-2 break-words text-lg font-black leading-tight text-slate-900">{order.subject}</h4>
+             <p className="break-words text-xs font-medium text-slate-500">Bersama <span className="font-bold text-indigo-600">{order.tutor_name}</span></p>
              {order.duration_hours && (
                <p className="text-xs font-bold text-slate-500">
                  {order.duration_hours} jam/pertemuan{order.total_learning_hours ? ` · ${order.total_learning_hours} jam belajar` : ""}
                </p>
              )}
-             <div className="flex items-end justify-between mt-3">
-                 <p className="text-xl font-black text-slate-900 tracking-tighter">
+             <div className="mt-3 flex min-w-0 flex-col items-start gap-1 min-[360px]:flex-row min-[360px]:items-end min-[360px]:justify-between min-[360px]:gap-3">
+                 <p className="max-w-full break-words text-xl font-black tracking-tighter text-slate-900">
                     Rp {new Intl.NumberFormat('id-ID').format(order.amount)}
                  </p>
-                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{order.type}</span>
+                 <span className="max-w-full break-words text-[9px] font-bold uppercase tracking-tighter text-slate-400 min-[360px]:text-right">{order.type}</span>
              </div>
           </div>
 
-          <div className="flex gap-2 sm:gap-3">
+          <div className="flex min-w-0 flex-col gap-2 min-[340px]:flex-row sm:gap-3">
              {(!isCheapClassOrder || order.can_cancel) && <button 
                onClick={() => setShowConfirmCancel(true)} 
-               className="min-h-11 flex-1 rounded-xl border border-slate-100 px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500 transition-all hover:border-rose-100 hover:bg-rose-50 hover:text-rose-500 sm:px-4 sm:tracking-widest"
+               className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-100 px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500 transition-all hover:border-rose-100 hover:bg-rose-50 hover:text-rose-500 sm:px-4 sm:tracking-widest"
              >
                Batal
              </button>}
              <button 
                onClick={handlePayNow} 
-               className="flex min-h-11 flex-[2] items-center justify-center gap-1 rounded-xl bg-slate-900 px-3 py-3 text-[10px] font-black uppercase tracking-wider text-white shadow-lg shadow-slate-200 transition-all hover:bg-indigo-600 hover:shadow-indigo-200 sm:gap-2 sm:px-4 sm:tracking-widest"
+               className="flex min-h-11 min-w-0 flex-[2] items-center justify-center gap-1 rounded-xl bg-slate-900 px-3 py-3 text-[10px] font-black uppercase tracking-wider text-white shadow-lg shadow-slate-200 transition-all hover:bg-indigo-600 hover:shadow-indigo-200 sm:gap-2 sm:px-4 sm:tracking-widest"
              >
                Bayar Sekarang <ChevronRight size={14}/>
              </button>
@@ -250,8 +250,8 @@ export default function PendingPaymentPopup() {
 
       {/* === MODAL KONFIRMASI PEMBATALAN === */}
       {showConfirmCancel && (
-        <div role="dialog" aria-modal="true" aria-labelledby="cancel-order-title" className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-           <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-white rounded-[2rem] w-full max-w-sm p-5 sm:rounded-[2.5rem] sm:p-8 shadow-2xl animate-in zoom-in-95 duration-300">
+        <div role="dialog" aria-modal="true" aria-labelledby="cancel-order-title" className="fixed inset-0 z-[var(--layer-modal)] flex items-end justify-center bg-slate-900/45 p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] animate-in fade-in duration-300 sm:items-center sm:p-4">
+           <div className="max-h-[calc(100dvh-1.5rem)] min-w-0 w-full max-w-sm overflow-x-hidden overflow-y-auto rounded-[1.75rem] bg-white p-5 shadow-2xl animate-in slide-in-from-bottom-4 duration-300 sm:max-h-[calc(100dvh-2rem)] sm:rounded-[2.5rem] sm:p-8 sm:zoom-in-95">
               <div className="text-center">
                  <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-6 text-rose-500">
                     <AlertTriangle size={40} />

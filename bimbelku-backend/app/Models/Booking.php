@@ -6,19 +6,17 @@ use Illuminate\Database\Eloquent\Model;
 
 class Booking extends Model
 {
-    protected $hidden = ['completion_evidence', 'session_pin_hash'];
-    protected $appends = ['completion_evidence_url'];
-
     protected $fillable = [
         'booking_request_id', 'student_id', 'teacher_id', 'order_id', 'start_at', 'end_at',
         'duration_hours', 'learning_mode', 'class_type', 'hourly_rate', 'total_amount', 'status',
+        'session_flow_version', 'tutor_ready_at', 'student_confirmed_at', 'session_focus_note',
+        'tutor_ready_latitude', 'tutor_ready_longitude', 'tutor_ready_accuracy_meters', 'tutor_ready_ip_hash',
         'payment_due_at', 'address', 'maps_link',
-        'group_pool_id', 'commission_percent', 'gross_amount', 'teacher_net_amount',
-        'completion_evidence', 'meeting_link', 'completion_notes', 'completion_submitted_at',
+        'commission_percent', 'gross_amount', 'teacher_net_amount',
+        'meeting_link', 'completion_notes', 'completion_submitted_at',
         'objection_deadline', 'student_approved_at', 'admin_review_required_at',
-        'completed_at', 'payout_status', 'session_pin_hash', 'session_pin_expires_at',
-        'session_started_at', 'session_ended_at', 'completion_capture_source',
-        'completion_captured_at', 'payout_request_id',
+        'completed_at', 'payout_status',
+        'session_started_at', 'session_ended_at', 'payout_request_id',
     ];
 
     protected $casts = [
@@ -36,10 +34,13 @@ class Booking extends Model
         'student_approved_at' => 'datetime',
         'admin_review_required_at' => 'datetime',
         'completed_at' => 'datetime',
-        'session_pin_expires_at' => 'datetime',
         'session_started_at' => 'datetime',
+        'tutor_ready_at' => 'datetime',
+        'student_confirmed_at' => 'datetime',
+        'tutor_ready_latitude' => 'float',
+        'tutor_ready_longitude' => 'float',
+        'tutor_ready_accuracy_meters' => 'integer',
         'session_ended_at' => 'datetime',
-        'completion_captured_at' => 'datetime',
     ];
 
     public function bookingRequest()
@@ -72,11 +73,6 @@ class Booking extends Model
         return $this->hasMany(BookingParticipant::class);
     }
 
-    public function groupPool()
-    {
-        return $this->belongsTo(GroupPool::class);
-    }
-
     public function reports()
     {
         return $this->hasMany(SessionReport::class);
@@ -100,11 +96,6 @@ class Booking extends Model
     public function latestClassroomMessage()
     {
         return $this->hasOne(ClassroomMessage::class)->latestOfMany();
-    }
-
-    public function learningPlan()
-    {
-        return $this->hasOne(LearningPlan::class);
     }
 
     public function learningProgressReports()
@@ -142,8 +133,4 @@ class Booking extends Model
         return $this->belongsTo(TeacherPayoutRequest::class, 'payout_request_id');
     }
 
-    public function getCompletionEvidenceUrlAttribute(): ?string
-    {
-        return $this->completion_evidence ? "bookings/{$this->id}/completion-evidence" : null;
-    }
 }

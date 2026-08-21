@@ -1,102 +1,68 @@
 import { notify } from "@/lib/notify";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   BarChart3,
   CalendarClock,
   CheckCircle2,
   ClipboardCheck,
-  KeyRound,
   Loader2,
-  LogIn,
-  LogOut,
   MessageCircle,
   RefreshCw,
   Send,
-  Target,
   UserCheck,
-  Users,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import http, { getApiError } from "@/lib/http";
-import { dateInputValue } from "@/lib/date";
 
-type HubTab = "session" | "chat" | "plan" | "progress";
+export type LearningSessionHubTab = "session" | "chat" | "progress";
 
-interface HubMessage {
+type HubMessage = {
   id: number;
   body: string;
   sender_name: string;
   sender_role: "student" | "teacher" | "system";
   message_type?: "user" | "system";
-  metadata?: { title?: string; action_label?: string; action_url?: string; [key: string]: unknown };
   is_mine: boolean;
   created_at: string;
-}
+};
 
-interface LearningPlan {
-  id: number;
-  initial_assessment: string;
-  strengths?: string;
-  challenges?: string;
-  learning_target: string;
-  success_indicator: string;
-  baseline_score?: number;
-  target_score?: number;
-  progress_percent: number;
-  status: string;
-  student_acknowledged_at?: string;
-}
-
-interface ProgressReport {
+type ProgressReport = {
   id: number;
   no_material_change?: boolean;
   no_change_reason?: string | null;
-  student_id?: number;
   student_name?: string;
   session_number: number;
   material_covered: string;
   mastered_skills: string;
-  difficulties?: string;
+  difficulties?: string | null;
   next_exercise: string;
-  attendance: string;
   actual_duration_minutes: number;
   progress_percent: number;
-  notes?: string;
   published_at: string;
-  topics?: Array<{
-    topic_id: number;
-    chapter?: string | null;
-    title?: string | null;
-    activity_type: "taught" | "continued" | "reviewed";
+  chapters?: Array<{
+    chapter: string;
+    activity_type: "taught" | "continued" | "reviewed" | "mixed";
     status_before: string;
-    status_after: "in_progress" | "completed";
+    status_after: string;
     needs_review: boolean;
     notes?: string | null;
   }>;
-}
+};
 
-interface Attendance {
+type Attendance = {
   id: number;
   check_in_at: string;
-  check_out_at?: string;
-  pin_verified_at: string;
-}
+  check_out_at?: string | null;
+};
 
-interface ParticipantItem {
-  participant_id: number;
-  student_id: number;
-  name: string;
-  attendance?: { status: string; notes?: string; marked_at?: string } | null;
-}
-
-interface ScheduleChange {
+type ScheduleChange = {
   id: number;
   requester_name: string;
   requester_role: string;
@@ -111,29 +77,28 @@ interface ScheduleChange {
   expires_at?: string | null;
   my_decision?: string | null;
   can_respond: boolean;
-  responses: Array<{ user_name: string; role: string; decision: string; responded_at?: string | null }>;
-}
+};
 
-interface LearningTopicItem {
-  id: number;
-  chapter?: string;
-  title: string;
+type LearningChapterItem = {
+  chapter: string;
+  curriculum_chapter_id?: number | null;
   status: "not_started" | "in_progress" | "completed" | "review_needed";
   needs_review?: boolean;
   session_status?: "in_progress" | "completed" | null;
-  session_activity?: "taught" | "continued" | "reviewed" | null;
+  session_activity?: "taught" | "continued" | "reviewed" | "mixed" | null;
   session_needs_review?: boolean | null;
-}
+  session_notes?: string | null;
+};
 
-interface ScheduleOption {
+type ScheduleOption = {
   start_at: string;
   end_at: string;
   label: string;
   scope: "single" | "future";
   affected_count: number;
-}
+};
 
-type TopicUpdateState = {
+type ChapterUpdateState = {
   selected: boolean;
   activity_type: "taught" | "continued" | "reviewed";
   status_after: "in_progress" | "completed";
@@ -141,7 +106,7 @@ type TopicUpdateState = {
   notes: string;
 };
 
-interface HubData {
+type HubData = {
   role: "student" | "teacher" | "admin";
   booking: {
     id: number;
@@ -149,51 +114,47 @@ interface HubData {
     education_level?: string;
     grade?: string;
     chapter?: string;
-    topic?: string;
     requested_goal?: string;
     teacher_name: string;
     student_name: string;
     learning_mode: "online" | "offline";
-    class_type: "private" | "group";
+    class_type: "private";
     status: string;
     start_at: string;
     end_at: string;
-    session_started_at?: string;
-    session_ended_at?: string;
-    session_pin_expires_at?: string | null;
+    session_started_at?: string | null;
+    session_ended_at?: string | null;
+    tutor_ready_at?: string | null;
+    student_confirmed_at?: string | null;
+    session_focus_note?: string | null;
   };
   messages: HubMessage[];
-  learning_plan?: LearningPlan;
   progress_reports: ProgressReport[];
-  attendance?: Attendance;
-  participants: ParticipantItem[];
+  attendance?: Attendance | null;
   schedule_changes: ScheduleChange[];
-  learning_topics: LearningTopicItem[];
+  learning_chapters: LearningChapterItem[];
   material_progress_percent: number;
   permissions: {
     can_chat: boolean;
-    can_generate_pin: boolean;
-    can_check_in: boolean;
+    can_mark_ready: boolean;
+    can_confirm_presence: boolean;
     can_check_out: boolean;
-    can_manage_plan: boolean;
-    can_acknowledge_plan: boolean;
     can_report_progress: boolean;
-    can_mark_attendance: boolean;
     can_request_schedule_change: boolean;
     can_request_future_schedule: boolean;
   };
-}
+};
 
-interface LearningSessionHubProps {
+type Props = {
   bookingId: number | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  initialTab?: HubTab;
+  initialTab?: LearningSessionHubTab;
   backLabel?: string;
   onBack?: () => void;
-}
+};
 
-const dateTime = (value?: string) => value
+const dateTime = (value?: string | null) => value
   ? new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
   : "-";
 
@@ -206,45 +167,25 @@ const noChangeReasonLabel = (value?: string | null) => ({
   other: "Lainnya",
 }[value || ""] || "Tidak ada perubahan materi");
 
-const emptyPlan = {
-  initial_assessment: "",
-  strengths: "",
-  challenges: "",
-  learning_target: "",
-  success_indicator: "",
-  baseline_score: "",
-  target_score: "",
-};
-
-export default function LearningSessionHub({ bookingId, open, onOpenChange, initialTab = "session", backLabel, onBack }: LearningSessionHubProps) {
-  const confirm = useConfirmDialog();
+export default function LearningSessionHub({ bookingId, open, onOpenChange, initialTab = "session", backLabel, onBack }: Props) {
   const [hub, setHub] = useState<HubData | null>(null);
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [tab, setTab] = useState<HubTab>(initialTab);
+  const [tab, setTab] = useState<LearningSessionHubTab>(initialTab);
   const [message, setMessage] = useState("");
-  const [sessionPin, setSessionPin] = useState("");
-  const [pinExpiresAt, setPinExpiresAt] = useState("");
-  const [teacherPin, setTeacherPin] = useState("");
-  const [participantAttendance, setParticipantAttendance] = useState<Record<number, { status: string; notes: string }>>({});
-  const [proposedStartAt, setProposedStartAt] = useState("");
+  const [focusNote, setFocusNote] = useState("");
+  const [chapterUpdates, setChapterUpdates] = useState<Record<string, ChapterUpdateState>>({});
   const [scheduleScope, setScheduleScope] = useState<"single" | "future">("single");
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleOptions, setScheduleOptions] = useState<ScheduleOption[]>([]);
+  const [proposedStartAt, setProposedStartAt] = useState("");
   const [loadingScheduleOptions, setLoadingScheduleOptions] = useState(false);
   const [scheduleReason, setScheduleReason] = useState("");
   const [scheduleResponseNotes, setScheduleResponseNotes] = useState<Record<number, string>>({});
-  const [planForm, setPlanForm] = useState(emptyPlan);
-  const [topicUpdates, setTopicUpdates] = useState<Record<number, TopicUpdateState>>({});
   const [reportForm, setReportForm] = useState({
-    material_covered: "",
     mastered_skills: "",
-    difficulties: "",
     next_exercise: "",
-    attendance: "present",
     progress_percent: "0",
-    notes: "",
-    student_id: "",
     no_material_change: false,
     no_change_reason: "",
   });
@@ -255,43 +196,24 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
     try {
       const response = await http.get<HubData>(`/bookings/${bookingId}/learning-session`);
       setHub(response.data);
-
-      // Background polling only refreshes server state. It must never overwrite a tutor's
-      // in-progress attendance/target/progress draft while they are typing or choosing subbab.
       if (!quiet) {
-        setParticipantAttendance(Object.fromEntries((response.data.participants || []).map((item) => [item.participant_id, {
-          status: item.attendance?.status || "present",
-          notes: item.attendance?.notes || "",
-        }])));
-        const loadedTopicUpdates: Record<number, TopicUpdateState> = {};
-        for (const topic of response.data.learning_topics || []) {
-          loadedTopicUpdates[topic.id] = {
-            selected: Boolean(topic.session_status),
-            activity_type: topic.session_activity || (topic.status === "not_started" ? "taught" : "continued"),
-            status_after: topic.session_status || (topic.status === "completed" ? "completed" : "in_progress"),
-            needs_review: Boolean(topic.session_needs_review ?? topic.needs_review),
-            notes: "",
+        setFocusNote(response.data.booking.session_focus_note || "");
+        const loaded: Record<string, ChapterUpdateState> = {};
+        for (const chapter of response.data.learning_chapters || []) {
+          loaded[chapter.chapter] = {
+            selected: Boolean(chapter.session_status),
+            activity_type: chapter.session_activity === "mixed"
+              ? "continued"
+              : (chapter.session_activity || (chapter.status === "not_started" ? "taught" : "continued")),
+            status_after: chapter.session_status || (chapter.status === "completed" ? "completed" : "in_progress"),
+            needs_review: Boolean(chapter.session_needs_review ?? chapter.needs_review),
+            notes: chapter.session_notes || "",
           };
         }
-        setTopicUpdates(loadedTopicUpdates);
+        setChapterUpdates(loaded);
+        setReportForm((current) => ({ ...current, progress_percent: String(response.data.material_progress_percent || 0) }));
         setScheduleOptions([]);
         setProposedStartAt("");
-        const plan = response.data.learning_plan;
-        if (plan) {
-          setPlanForm({
-            initial_assessment: plan.initial_assessment || "",
-            strengths: plan.strengths || "",
-            challenges: plan.challenges || "",
-            learning_target: plan.learning_target || "",
-            success_indicator: plan.success_indicator || "",
-            baseline_score: plan.baseline_score === null || plan.baseline_score === undefined ? "" : String(plan.baseline_score),
-            target_score: plan.target_score === null || plan.target_score === undefined ? "" : String(plan.target_score),
-          });
-          setReportForm((current) => ({
-            ...current,
-            progress_percent: String(response.data.learning_topics?.length ? response.data.material_progress_percent : (plan.progress_percent || 0)),
-          }));
-        }
       }
     } catch (error) {
       if (!quiet) notify.error(getApiError(error, "Ruang belajar gagal dimuat."));
@@ -303,73 +225,18 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
   useEffect(() => {
     if (!open || !bookingId) return;
     setTab(initialTab);
-    setSessionPin("");
-    setPinExpiresAt("");
-    setTeacherPin("");
     void load();
     const timer = window.setInterval(() => void load(true), 15000);
     return () => window.clearInterval(timer);
   }, [open, bookingId, initialTab, load]);
 
-  const sendMessage = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!bookingId || !message.trim()) return;
-    setProcessing(true);
-    try {
-      const response = await http.post(`/bookings/${bookingId}/messages`, { body: message.trim() });
-      notify.success(response.data.message);
-      setMessage("");
-      await load(true);
-    } catch (error) {
-      notify.error(getApiError(error));
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const generatePin = async (replace = false) => {
-    if (!bookingId) return;
-    if (replace) {
-      const accepted = await confirm({
-        title: "Buat PIN baru?",
-        description: "PIN sebelumnya akan langsung tidak berlaku. Buat ulang hanya kalau PIN lama lupa atau belum diberikan kepada tutor.",
-        confirmText: "Ya, buat PIN baru",
-        tone: "warning",
-      });
-      if (!accepted) return;
-    }
-    setProcessing(true);
-    try {
-      const response = await http.post(`/student/bookings/${bookingId}/session-pin`, { replace });
-      setSessionPin(response.data.pin);
-      setPinExpiresAt(response.data.expires_at);
-      notify.success(response.data.message);
-      await load(true);
-    } catch (error) {
-      notify.error(getApiError(error));
-    } finally {
-      setProcessing(false);
-    }
-  };
-
   const getLocation = () => new Promise<GeolocationPosition>((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error("Perangkat tidak mendukung lokasi."));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 0,
-    });
+    if (!navigator.geolocation) return reject(new Error("Perangkat tidak mendukung lokasi."));
+    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   });
 
-  const checkIn = async () => {
+  const markReady = async () => {
     if (!bookingId || !hub) return;
-    if (!/^\d{6}$/.test(teacherPin)) {
-      notify.error("PIN harus berisi enam angka.");
-      return;
-    }
     setProcessing(true);
     try {
       let locationPayload = {};
@@ -381,23 +248,26 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
           accuracy_meters: Math.round(position.coords.accuracy),
         };
       }
-      const response = await http.post(`/teacher/bookings/${bookingId}/check-in`, {
-        pin: teacherPin,
-        ...locationPayload,
-      });
+      const response = await http.post(`/teacher/bookings/${bookingId}/ready`, { focus_note: focusNote.trim() || null, ...locationPayload });
       notify.success(response.data.message);
-      setTeacherPin("");
       await load();
     } catch (error) {
-      const isLocationError = typeof error === "object"
-        && error !== null
-        && "code" in error
-        && "message" in error
-        && !("response" in error);
-      const message = isLocationError
-        ? "Lokasi harus diizinkan untuk check-in offline."
-        : getApiError(error);
-      notify.error(message);
+      const locationError = typeof error === "object" && error !== null && "code" in error && !((error as { response?: unknown }).response);
+      notify.error(locationError ? "Izinkan lokasi perangkat untuk sesi offline." : getApiError(error));
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const confirmPresence = async () => {
+    if (!bookingId) return;
+    setProcessing(true);
+    try {
+      const response = await http.post(`/student/bookings/${bookingId}/presence-confirm`);
+      notify.success(response.data.message);
+      await load();
+    } catch (error) {
+      notify.error(getApiError(error));
     } finally {
       setProcessing(false);
     }
@@ -407,8 +277,8 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
     if (!bookingId) return;
     setProcessing(true);
     try {
-      await http.post(`/teacher/bookings/${bookingId}/check-out`);
-      notify.success("Sesi sudah diakhiri. Sekarang isi hasil belajar pada tab Hasil belajar.");
+      const response = await http.post(`/teacher/bookings/${bookingId}/check-out`);
+      notify.success(response.data.message || "Sesi diakhiri. Isi hasil belajar singkat untuk murid.");
       await load();
       setTab("progress");
     } catch (error) {
@@ -418,25 +288,16 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
     }
   };
 
-  const saveParticipantAttendance = async () => {
-    if (!bookingId || !hub) return;
-    const attendances = hub.participants.map((item) => ({
-      participant_id: item.participant_id,
-      status: participantAttendance[item.participant_id]?.status || "present",
-      notes: participantAttendance[item.participant_id]?.notes?.trim() || null,
-    }));
-    if (!attendances.length) return;
-    const shouldGuideToLearningPlan = hub.booking.class_type === "private" && !hub.learning_plan;
+  const sendMessage = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!bookingId || !message.trim()) return;
     setProcessing(true);
     try {
-      const response = await http.put(`/teacher/bookings/${bookingId}/participant-attendance`, { attendances });
-      notify.success(shouldGuideToLearningPlan
-        ? "Kehadiran murid tersimpan. Selanjutnya tentukan tujuan belajar pada tab Tujuan belajar."
-        : response.data.message);
-      await load();
-      if (shouldGuideToLearningPlan) setTab("plan");
+      await http.post(`/bookings/${bookingId}/messages`, { body: message.trim() });
+      setMessage("");
+      await load(true);
     } catch (error) {
-      notify.error(getApiError(error, "Kehadiran murid gagal disimpan."));
+      notify.error(getApiError(error));
     } finally {
       setProcessing(false);
     }
@@ -462,11 +323,7 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
 
   const requestScheduleChange = async (event: FormEvent) => {
     event.preventDefault();
-    if (!bookingId) return;
-    if (!proposedStartAt) {
-      notify.error("Pilih salah satu slot tutor yang tersedia.");
-      return;
-    }
+    if (!bookingId || !proposedStartAt) return notify.error("Pilih salah satu slot tutor yang tersedia.");
     setProcessing(true);
     try {
       const response = await http.post(`/bookings/${bookingId}/schedule-changes`, {
@@ -504,72 +361,37 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
     }
   };
 
-  const savePlan = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!bookingId) return;
-    setProcessing(true);
-    try {
-      const response = await http.put(`/teacher/bookings/${bookingId}/learning-plan`, {
-        ...planForm,
-        baseline_score: planForm.baseline_score === "" ? null : Number(planForm.baseline_score),
-        target_score: planForm.target_score === "" ? null : Number(planForm.target_score),
-      });
-      notify.success(response.data.message);
-      await load();
-    } catch (error) {
-      notify.error(getApiError(error));
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const acknowledgePlan = async () => {
-    if (!bookingId) return;
-    setProcessing(true);
-    try {
-      const response = await http.post(`/student/bookings/${bookingId}/learning-plan/acknowledge`);
-      notify.success(response.data.message);
-      await load();
-    } catch (error) {
-      notify.error(getApiError(error));
-    } finally {
-      setProcessing(false);
-    }
-  };
-
   const saveProgress = async (event: FormEvent) => {
     event.preventDefault();
-    if (!bookingId) return;
+    if (!bookingId || !hub) return;
+    const selectedChapters = Object.entries(chapterUpdates)
+      .filter(([, value]) => value.selected)
+      .map(([chapter, value]) => ({
+        chapter,
+        activity_type: value.activity_type,
+        status_after: value.status_after,
+        needs_review: value.needs_review,
+        notes: value.notes.trim() || null,
+      }));
+    const automaticMaterial = selectedChapters.map((item) => item.chapter).join(", ")
+      || hub.booking.chapter
+      || hub.booking.session_focus_note
+      || hub.booking.subject;
     setProcessing(true);
     try {
-      const selectedTopics = Object.entries(topicUpdates)
-        .filter(([, value]) => value.selected)
-        .map(([topicId, value]) => ({
-          topic_id: Number(topicId),
-          activity_type: value.activity_type,
-          status_after: value.status_after,
-          needs_review: value.needs_review,
-          notes: value.notes.trim() || null,
-        }));
       const response = await http.post(`/teacher/bookings/${bookingId}/progress-reports`, {
-        ...reportForm,
-        student_id: reportForm.student_id ? Number(reportForm.student_id) : null,
-        progress_percent: hub?.learning_topics.length ? undefined : Number(reportForm.progress_percent),
-        topic_updates: selectedTopics,
+        material_covered: `Pembahasan ${automaticMaterial}`,
+        mastered_skills: reportForm.mastered_skills.trim(),
+        difficulties: null,
+        next_exercise: reportForm.next_exercise.trim() || "Lanjutkan latihan sesuai progres Bab pada sesi berikutnya.",
+        notes: reportForm.mastered_skills.trim(),
+        progress_percent: hub.learning_chapters.length ? undefined : Number(reportForm.progress_percent),
+        no_material_change: reportForm.no_material_change,
+        no_change_reason: reportForm.no_material_change ? reportForm.no_change_reason : null,
+        chapter_updates: reportForm.no_material_change ? [] : selectedChapters,
       });
       notify.success(response.data.message);
-      setReportForm((current) => ({
-        ...current,
-        material_covered: "",
-        mastered_skills: "",
-        difficulties: "",
-        next_exercise: "",
-        notes: "",
-        student_id: hub?.booking.class_type === "group" ? "" : current.student_id,
-        no_material_change: false,
-        no_change_reason: "",
-      }));
-      setTopicUpdates((current) => Object.fromEntries(Object.entries(current).map(([id, value]) => [id, { ...value, selected: false, notes: "" }])));
+      setReportForm((current) => ({ ...current, mastered_skills: "", next_exercise: "", no_material_change: false, no_change_reason: "" }));
       await load();
     } catch (error) {
       notify.error(getApiError(error));
@@ -578,339 +400,156 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
     }
   };
 
-  const attendanceComplete = Boolean(hub?.participants.length)
-    && hub!.participants.every((participant) => Boolean(participant.attendance?.marked_at));
-  const needsLearningPlanGuidance = Boolean(
-    hub
-    && hub.role === "teacher"
-    && hub.booking.class_type === "private"
-    && hub.attendance
-    && !hub.attendance.check_out_at
-    && attendanceComplete
-    && !hub.learning_plan
-  );
+  const waitingForStudent = Boolean(hub?.booking.tutor_ready_at && !hub?.booking.student_confirmed_at);
+  const sessionLive = Boolean(hub?.booking.student_confirmed_at && hub?.attendance && !hub.attendance.check_out_at);
+  const reportSaved = Boolean(hub?.progress_reports.length);
+  const statusLabel = useMemo(() => {
+    if (!hub) return "";
+    if (hub.booking.status === "awaiting_student_approval") return "Menunggu konfirmasi murid";
+    if (reportSaved) return "Hasil belajar tersimpan";
+    if (sessionLive) return "Sesi sedang berjalan";
+    if (waitingForStudent) return "Menunggu murid";
+    return "Siap dijadwalkan";
+  }, [hub, reportSaved, sessionLive, waitingForStudent]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[94dvh] overflow-y-auto rounded-[2rem] sm:max-w-4xl">
-        {backLabel && onBack && (
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={onBack}
-            className="w-fit -ml-3 rounded-xl text-slate-600 hover:bg-slate-50 hover:text-indigo-700"
-          >
-            <ArrowLeft size={16} className="mr-2" />{backLabel}
-          </Button>
-        )}
+      <DialogContent layer="detail" hideCloseButton className="max-h-[calc(100dvh-0.5rem)] w-[calc(100vw-0.5rem)] max-w-5xl overflow-x-hidden overflow-y-auto rounded-[1.35rem] p-3 sm:max-h-[92dvh] sm:w-[calc(100vw-2rem)] sm:rounded-[2rem] sm:p-6">
         <DialogHeader>
-          <DialogTitle className="text-2xl">Ruang belajar {hub?.booking.subject || ""}</DialogTitle>
-          <DialogDescription>
-            Chat, PIN, kehadiran, tujuan belajar, dan laporan perkembangan tersimpan pada sesi.
-          </DialogDescription>
+          <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-start gap-2">
+            <Button type="button" variant="ghost" size="icon" className="h-10 w-10 rounded-xl" onClick={onBack ?? (() => onOpenChange(false))} aria-label={backLabel || "Kembali"}><ArrowLeft size={18} /></Button>
+            <div className="min-w-0 pt-1">
+              <DialogTitle className="px-0">Ruang Belajar</DialogTitle>
+              <DialogDescription className="mt-1 text-center">Mulai sesi dengan konfirmasi hadir satu tap. Administrasi detail disimpan otomatis di belakang layar.</DialogDescription>
+            </div>
+            <Button type="button" variant="ghost" size="icon" className="h-10 w-10 rounded-xl" onClick={() => onOpenChange(false)} aria-label="Tutup Ruang Belajar"><X size={18} /></Button>
+          </div>
         </DialogHeader>
 
         {loading || !hub ? (
-          <div className="grid min-h-72 place-items-center"><Loader2 className="h-9 w-9 animate-spin text-indigo-600" /></div>
+          <div className="grid min-h-72 place-items-center"><Loader2 className="animate-spin text-indigo-600" /></div>
         ) : (
-          <>
-            <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-2 sm:grid-cols-4">
+          <div className="space-y-5">
+            <section className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-950 to-indigo-950 p-5 text-white">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[.18em] text-indigo-200">{hub.booking.subject}</p>
+                  <h3 className="mt-2 text-xl font-black">{hub.booking.chapter || "Sesi belajar"}</h3>
+                  <p className="mt-2 text-sm text-indigo-100/80">{dateTime(hub.booking.start_at)} · {hub.booking.learning_mode === "online" ? "Online" : "Offline"}</p>
+                </div>
+                <span className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-black">{statusLabel}</span>
+              </div>
+              {hub.booking.session_focus_note && <p className="mt-4 rounded-xl bg-white/10 px-4 py-3 text-sm"><b>Fokus:</b> {hub.booking.session_focus_note}</p>}
+            </section>
+
+            <div className="grid min-w-0 grid-cols-3 gap-1.5 rounded-2xl bg-slate-100 p-1.5 sm:gap-2 sm:p-2">
               <TabButton active={tab === "session"} onClick={() => setTab("session")} icon={ClipboardCheck} label="Sesi" />
               <TabButton active={tab === "chat"} onClick={() => setTab("chat")} icon={MessageCircle} label="Chat" />
-              <TabButton active={tab === "plan"} onClick={() => setTab("plan")} icon={Target} label="Tujuan belajar" attention={needsLearningPlanGuidance} />
-              <TabButton active={tab === "progress"} onClick={() => setTab("progress")} icon={BarChart3} label="Hasil belajar" attention={hub.role === "teacher" && Boolean(hub.attendance?.check_out_at) && hub.permissions.can_report_progress && hub.progress_reports.length === 0} />
+              <TabButton active={tab === "progress"} onClick={() => setTab("progress")} icon={BarChart3} label="Hasil" attention={hub.role === "teacher" && hub.permissions.can_report_progress} />
             </div>
 
             {tab === "session" && (
               <div className="space-y-4">
-                <div className="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm sm:grid-cols-2">
-                  <Info label="Jadwal" value={`${dateTime(hub.booking.start_at)}–${new Date(hub.booking.end_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`} />
-                  <Info label="Mode" value={hub.booking.learning_mode === "online" ? "Online" : "Offline dengan verifikasi lokasi"} />
-                  <Info label="Tutor" value={hub.booking.teacher_name} />
-                  <Info label="Murid" value={hub.booking.student_name} />
-                </div>
+                {hub.role === "teacher" && hub.permissions.can_mark_ready && (
+                  <section className="rounded-2xl border border-indigo-200 bg-indigo-50 p-5">
+                    <div className="flex items-center gap-2 font-black text-indigo-950"><UserCheck size={19} />Siap mengajar?</div>
+                    <p className="mt-2 text-sm leading-6 text-indigo-800">Tekan sekali saat kamu sudah siap. Murid akan mendapat tombol konfirmasi kehadiran.</p>
+                    <Label className="mt-4 block text-xs font-black uppercase tracking-wider text-indigo-900">Fokus hari ini <span className="font-semibold normal-case tracking-normal text-indigo-600">(opsional)</span></Label>
+                    <Input value={focusNote} onChange={(event) => setFocusNote(event.target.value)} maxLength={500} placeholder={hub.booking.chapter ? `Contoh: latihan ${hub.booking.chapter}` : "Contoh: latihan soal dan penguatan konsep"} className="mt-2 h-11 rounded-xl bg-white" />
+                    <Button type="button" onClick={() => void markReady()} disabled={processing} className="mt-4 w-full rounded-xl bg-indigo-600">Saya Siap Mengajar</Button>
+                  </section>
+                )}
 
-                {hub.role === "student" && hub.permissions.can_generate_pin && (
-                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
-                    <p className="font-black text-indigo-950">Tutor sudah hadir?</p>
-                    <p className="mt-1 text-sm leading-6 text-indigo-700">Buat PIN hanya setelah tutor benar-benar hadir dan siap mengajar. Sebutkan PIN langsung kepada tutor, jangan kirim lewat chat.</p>
-                    {sessionPin ? (
-                      <div className="mt-4 space-y-3">
-                        <div className="rounded-2xl bg-white p-5 text-center">
-                          <p className="text-xs font-black uppercase tracking-wider text-slate-400">PIN untuk tutor</p>
-                          <p className="mt-2 font-mono text-4xl font-black tracking-[.28em] text-indigo-700">{sessionPin}</p>
-                          <p className="mt-2 text-xs text-slate-500">Berlaku sampai {dateTime(pinExpiresAt)}</p>
-                        </div>
-                        <Button type="button" variant="outline" onClick={() => void generatePin(true)} disabled={processing} className="w-full rounded-xl border-amber-200 bg-white text-amber-700">Buat PIN baru jika PIN ini lupa</Button>
+                {hub.role === "student" && hub.permissions.can_confirm_presence && (
+                  <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-center">
+                    <CheckCircle2 className="mx-auto text-emerald-600" size={32} />
+                    <h4 className="mt-3 text-lg font-black text-emerald-950">{hub.booking.teacher_name} sudah siap</h4>
+                    <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-emerald-800">Kalau kamu sudah bersama tutor atau siap di kelas online, cukup konfirmasi sekali.</p>
+                    <Button type="button" onClick={() => void confirmPresence()} disabled={processing} className="mt-4 w-full rounded-xl bg-emerald-600 hover:bg-emerald-700">Saya Sudah Hadir</Button>
+                  </section>
+                )}
+
+                {waitingForStudent && hub.role === "teacher" && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800"><b>Menunggu murid.</b> Tidak perlu kode atau form tambahan. Sesi akan aktif setelah murid menekan “Saya Sudah Hadir”.</div>
+                )}
+
+                {hub.booking.student_confirmed_at && (
+                  <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                    <div className="flex items-center gap-2 font-black text-emerald-950"><CheckCircle2 size={19} />Kehadiran sudah terkonfirmasi</div>
+                    <p className="mt-2 text-sm leading-6 text-emerald-800">Sesi resmi dimulai {dateTime(hub.booking.session_started_at || hub.booking.student_confirmed_at)}. Selama belajar, BimbelKu tidak meminta langkah administrasi tambahan.</p>
+                    {hub.role === "teacher" && hub.permissions.can_check_out && <Button type="button" variant="outline" onClick={() => void checkOut()} disabled={processing} className="mt-4 w-full rounded-xl border-emerald-300 bg-white text-emerald-800">Akhiri Sesi</Button>}
+                  </section>
+                )}
+
+                {hub.booking.status === "awaiting_student_approval" && (
+                  <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm leading-6 text-indigo-800"><b>Hasil belajar sudah tersimpan.</b> Murid akan melihat pilihan “Sesi Sesuai” atau “Ada masalah” dari halaman Kelas Saya.</div>
+                )}
+
+                {hub.permissions.can_request_schedule_change && (
+                  <section className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="flex items-center gap-2 font-black text-slate-900"><CalendarClock size={18} />Ubah jadwal</div>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">Hanya slot tutor yang benar-benar tersedia yang akan ditampilkan.</p>
+                    <form onSubmit={requestScheduleChange} className="mt-4 space-y-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div><Label>Cakupan</Label><Select value={scheduleScope} onValueChange={(value) => { setScheduleScope(value as "single" | "future"); setScheduleOptions([]); setProposedStartAt(""); }}><SelectTrigger className="mt-2 h-11 rounded-xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="single">Sesi ini</SelectItem>{hub.permissions.can_request_future_schedule && <SelectItem value="future">Sesi ini + sesi berikutnya</SelectItem>}</SelectContent></Select></div>
+                        <div><Label>Tanggal pilihan</Label><Input type="date" value={scheduleDate} onChange={(event) => { setScheduleDate(event.target.value); setScheduleOptions([]); setProposedStartAt(""); }} className="mt-2 h-11 rounded-xl" /></div>
                       </div>
-                    ) : hub.booking.session_pin_expires_at ? (
-                      <div className="mt-4 rounded-2xl border border-amber-200 bg-white p-4">
-                        <p className="text-sm font-black text-amber-800">PIN sebelumnya masih aktif.</p>
-                        <p className="mt-1 text-xs leading-5 text-slate-600">Demi keamanan, angka PIN tidak ditampilkan ulang setelah halaman ditutup. Kalau PIN lama lupa, buat PIN baru dan PIN lama otomatis tidak berlaku.</p>
-                        <p className="mt-2 text-xs font-bold text-amber-700">Aktif sampai {dateTime(hub.booking.session_pin_expires_at)}</p>
-                        <Button type="button" onClick={() => void generatePin(true)} disabled={processing} className="mt-3 rounded-xl bg-amber-500 text-slate-950 hover:bg-amber-600"><KeyRound size={16} className="mr-2" />Buat PIN baru</Button>
-                      </div>
-                    ) : (
-                      <Button onClick={() => void generatePin(false)} disabled={processing} className="mt-4 rounded-xl bg-indigo-600">
-                        <KeyRound size={16} className="mr-2" />Buat PIN untuk tutor
-                      </Button>
-                    )}
-                  </div>
+                      <Button type="button" variant="outline" onClick={() => void loadScheduleOptions()} disabled={loadingScheduleOptions} className="w-full rounded-xl">{loadingScheduleOptions ? <Loader2 size={16} className="mr-2 animate-spin" /> : <CalendarClock size={16} className="mr-2" />}Lihat slot tersedia</Button>
+                      {scheduleOptions.length > 0 && <div className="grid gap-2 sm:grid-cols-2">{scheduleOptions.map((option) => <label key={option.start_at} className={`cursor-pointer rounded-xl border p-3 text-sm ${proposedStartAt === option.start_at ? "border-indigo-500 bg-indigo-50" : "border-slate-200 bg-white"}`}><input type="radio" name="schedule-option" className="mr-2" checked={proposedStartAt === option.start_at} onChange={() => setProposedStartAt(option.start_at)} />{option.label}</label>)}</div>}
+                      <Textarea required minLength={5} maxLength={1000} value={scheduleReason} onChange={(event) => setScheduleReason(event.target.value)} placeholder="Alasan perubahan jadwal" className="min-h-20 rounded-xl" />
+                      <Button disabled={processing || !proposedStartAt || scheduleReason.trim().length < 5} className="w-full rounded-xl bg-indigo-600">Ajukan perubahan</Button>
+                    </form>
+                  </section>
                 )}
 
-                {hub.role === "teacher" && hub.permissions.can_check_in && (
-                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
-                    <p className="font-black text-indigo-950">Konfirmasi kehadiranmu</p>
-                    <p className="mt-1 text-sm leading-6 text-indigo-700">Setelah kamu benar-benar hadir, minta PIN 6 digit kepada murid lalu masukkan di sini.</p>
-                    <Label className="mt-4 block text-xs font-black uppercase tracking-wider text-indigo-900">PIN dari murid</Label>
-                    <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                      <Input
-                        inputMode="numeric"
-                        maxLength={6}
-                        value={teacherPin}
-                        onChange={(event) => setTeacherPin(event.target.value.replace(/\D/g, ""))}
-                        className="h-12 rounded-xl bg-white font-mono text-xl tracking-[.2em]"
-                        placeholder="000000"
-                      />
-                      <Button onClick={checkIn} disabled={processing} className="h-12 rounded-xl bg-indigo-600">
-                        <LogIn size={16} className="mr-2" />Mulai sesi
-                      </Button>
-                    </div>
-                    {hub.booking.learning_mode === "offline" && <p className="mt-2 text-xs text-indigo-700">Untuk sesi offline, izin lokasi perangkat diperlukan sebagai verifikasi tambahan.</p>}
-                  </div>
-                )}
-
-                {hub.attendance && (
-                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5 text-sm text-emerald-900">
-                    <div className="flex items-center gap-2 font-black"><CheckCircle2 size={18} />Kehadiran tutor sudah terverifikasi</div>
-                    <p className="mt-2">Check-in: {dateTime(hub.attendance.check_in_at)}</p>
-                    <p>Check-out: {dateTime(hub.attendance.check_out_at)}</p>
-                    {hub.role === "teacher" && hub.participants.length > 0 && (
-                      <div className="mt-4 space-y-3 rounded-2xl bg-white/75 p-3">
-                        <p className="flex items-center gap-2 font-black text-slate-900"><Users size={17} />Catat kehadiran murid</p>
-                        {hub.participants.map((participant) => {
-                          const value = participantAttendance[participant.participant_id] || { status: "present", notes: "" };
-                          return <div key={participant.participant_id} className="rounded-xl border border-emerald-100 bg-white p-3"><div className="flex min-w-0 items-center justify-between gap-2"><span className="min-w-0 truncate font-bold text-slate-800">{participant.name}</span>{participant.attendance?.marked_at && <span className="shrink-0 text-[10px] text-emerald-700">Tersimpan</span>}</div><div className="mt-2 grid gap-2 sm:grid-cols-[11rem_1fr]"><Select disabled={!hub.permissions.can_mark_attendance} value={value.status} onValueChange={(status) => setParticipantAttendance((current) => ({ ...current, [participant.participant_id]: { ...value, status } }))}><SelectTrigger className="h-10 rounded-xl bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="present">Hadir</SelectItem><SelectItem value="late">Terlambat</SelectItem><SelectItem value="partial">Hadir sebagian</SelectItem><SelectItem value="absent">Tidak hadir</SelectItem><SelectItem value="excused">Izin</SelectItem></SelectContent></Select><Input disabled={!hub.permissions.can_mark_attendance} value={value.notes} onChange={(event) => setParticipantAttendance((current) => ({ ...current, [participant.participant_id]: { ...value, notes: event.target.value } }))} maxLength={1000} className="h-10 rounded-xl bg-white" placeholder="Catatan kehadiran (opsional)" /></div></div>;
-                        })}
-                        {hub.permissions.can_mark_attendance && <Button type="button" onClick={() => void saveParticipantAttendance()} disabled={processing} className="w-full rounded-xl bg-indigo-600"><UserCheck size={16} className="mr-2" />Simpan kehadiran murid</Button>}
-                        {!hub.permissions.can_mark_attendance && hub.progress_reports.length > 0 && <p className="rounded-xl bg-slate-50 p-3 text-xs font-semibold leading-5 text-slate-500">Kehadiran sudah dikunci karena hasil belajar sesi telah disimpan. Jika ada kesalahan serius, gunakan proses koreksi/admin agar riwayat tidak berubah diam-diam.</p>}
-                      </div>
-                    )}
-                    {hub.permissions.can_check_out && (
-                      <Button onClick={checkOut} disabled={processing} className="mt-4 rounded-xl bg-emerald-700 hover:bg-emerald-800">
-                        <LogOut size={16} className="mr-2" />Akhiri sesi
-                      </Button>
-                    )}
-                  </div>
-                )}
-
-                {needsLearningPlanGuidance && (
-                  <div className="rounded-2xl border-2 border-violet-200 bg-violet-50 p-5 shadow-sm">
-                    <div className="flex items-start gap-3">
-                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-violet-600 text-white"><Target size={19} /></div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[11px] font-black uppercase tracking-[.14em] text-violet-500">Langkah berikutnya</p>
-                        <p className="mt-1 font-black text-violet-950">Tentukan tujuan belajar setelah absen</p>
-                        <p className="mt-1 text-xs leading-5 text-violet-700">Kehadiran murid sudah tersimpan. Sekarang isi hasil asesmen awal, tujuan belajar, dan indikator keberhasilan agar murid tahu arah sesi hari ini.</p>
-                        <Button type="button" onClick={() => setTab("plan")} className="mt-3 w-full rounded-xl bg-violet-600 hover:bg-violet-700 sm:w-auto">
-                          <Target size={16} className="mr-2" />Lanjut isi tujuan belajar
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {hub.role === "teacher" && hub.attendance?.check_out_at && hub.permissions.can_report_progress && hub.progress_reports.length === 0 && (
-                  <div className="rounded-2xl border-2 border-indigo-200 bg-indigo-50 p-5 shadow-sm">
-                    <div className="flex items-start gap-3">
-                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-indigo-600 text-white"><BarChart3 size={19} /></div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-black uppercase tracking-[.14em] text-indigo-600">Langkah berikutnya</p>
-                        <p className="mt-1 text-base font-black text-indigo-950">Isi hasil belajar sebelum menyelesaikan sesi</p>
-                        <p className="mt-1 text-xs leading-5 text-indigo-700">Sesi sudah diakhiri. Buka tab <b>Hasil belajar</b>, pilih Bab/Subbab yang dibahas, lalu simpan progress pertemuan.</p>
-                      </div>
-                    </div>
-                    <Button type="button" onClick={() => setTab("progress")} className="mt-4 min-h-11 w-full rounded-xl bg-indigo-600 font-black hover:bg-indigo-700"><BarChart3 size={16} className="mr-2" />Lanjut isi hasil belajar</Button>
-                  </div>
-                )}
-
-                {(hub.permissions.can_request_schedule_change || hub.schedule_changes.length > 0) && (
-                  <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4 sm:p-5">
-                    <p className="flex items-center gap-2 font-black text-violet-950"><CalendarClock size={18} />Perubahan jadwal</p>
-                    <p className="mt-1 text-xs leading-5 text-violet-700">Jadwal lama tetap berlaku sampai seluruh pihak yang terdampak menyetujui usulan.</p>
-                    {hub.permissions.can_request_schedule_change && (
-                      <form onSubmit={requestScheduleChange} className="mt-4 space-y-3 rounded-2xl bg-white p-4">
-                        <div><Label>Cakupan perubahan</Label><div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={() => { setScheduleScope("single"); setScheduleOptions([]); setProposedStartAt(""); }} className={`min-h-11 rounded-xl border px-3 text-xs font-black ${scheduleScope === "single" ? "border-violet-600 bg-violet-600 text-white" : "border-slate-200 bg-slate-50 text-slate-700"}`}>Sesi ini saja</button>{hub.permissions.can_request_future_schedule ? <button type="button" onClick={() => { setScheduleScope("future"); setScheduleOptions([]); setProposedStartAt(""); }} className={`min-h-11 rounded-xl border px-3 text-xs font-black ${scheduleScope === "future" ? "border-violet-600 bg-violet-600 text-white" : "border-slate-200 bg-slate-50 text-slate-700"}`}>Sesi ini dan berikutnya</button> : <div className="flex min-h-11 items-center justify-center rounded-xl border border-slate-100 bg-slate-50 px-3 text-center text-[10px] font-bold text-slate-400">Tidak ada sesi berikutnya</div>}</div></div>
-                        <div className="grid gap-3 sm:grid-cols-[1fr_auto]"><div><Label>Tanggal yang diinginkan (opsional)</Label><Input type="date" min={dateInputValue()} value={scheduleDate} onChange={(event) => { setScheduleDate(event.target.value); setScheduleOptions([]); setProposedStartAt(""); }} className="mt-2 h-11 rounded-xl" /></div><Button type="button" onClick={() => void loadScheduleOptions()} disabled={loadingScheduleOptions} className="h-11 self-end rounded-xl bg-slate-900">{loadingScheduleOptions ? <Loader2 className="mr-2 animate-spin" size={16} /> : <CalendarClock className="mr-2" size={16} />}Cari slot tutor</Button></div>
-                        {scheduleOptions.length > 0 && <div><Label>Pilih slot yang sudah diperiksa</Label><div className="mt-2 grid max-h-52 gap-2 overflow-y-auto sm:grid-cols-2">{scheduleOptions.map((option) => <button key={option.start_at} type="button" onClick={() => setProposedStartAt(option.start_at)} className={`min-h-12 rounded-xl border p-3 text-left text-xs font-black ${proposedStartAt === option.start_at ? "border-violet-600 bg-violet-50 text-violet-800" : "border-slate-200 bg-white text-slate-700"}`}><span className="block">{option.label}</span>{option.affected_count > 1 && <span className="mt-1 block text-[10px] font-semibold text-slate-500">Menggeser {option.affected_count} sesi dengan pola yang sama</span>}</button>)}</div></div>}
-                        <div><Label>Alasan perubahan</Label><Textarea required minLength={20} maxLength={1500} value={scheduleReason} onChange={(event) => setScheduleReason(event.target.value)} className="mt-2 min-h-24 rounded-xl" placeholder="Jelaskan alasan perubahan jadwal" /></div>
-                        <p className="text-[11px] font-medium leading-5 text-violet-700">Jadwal lama tetap aktif sampai seluruh pihak menyetujui. Slot diperiksa kembali saat disetujui.</p>
-                        <Button disabled={processing || !proposedStartAt} className="h-11 w-full rounded-xl bg-violet-600 hover:bg-violet-700">Ajukan perubahan</Button>
-                      </form>
-                    )}
-                    <div className="mt-3 space-y-3">{hub.schedule_changes.map((change) => <article key={change.id} className="rounded-2xl border border-violet-100 bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-black text-slate-900">Usulan {change.requester_name}</p><p className="mt-1 text-xs text-slate-500">{change.scope === "future" ? `${change.affected_count} sesi mulai sesi ini` : "Sesi ini saja"} · Dari {dateTime(change.original_start_at)} menjadi {dateTime(change.proposed_start_at)}</p></div><span className={`rounded-full px-3 py-1 text-[10px] font-black ${change.status === "approved" ? "bg-emerald-50 text-emerald-700" : change.status === "rejected" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700"}`}>{change.status === "pending" ? "Menunggu persetujuan" : change.status === "approved" ? "Disetujui" : "Ditolak"}</span></div><p className="mt-3 break-words text-xs leading-5 text-slate-600">{change.reason}</p>{change.responses.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{change.responses.map((response, index) => <span key={`${response.user_name}-${index}`} className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">{response.user_name}: {response.decision === "pending" ? "menunggu" : response.decision === "approved" ? "setuju" : "menolak"}</span>)}</div>}{change.can_respond && <div className="mt-4"><Input value={scheduleResponseNotes[change.id] || ""} onChange={(event) => setScheduleResponseNotes((current) => ({ ...current, [change.id]: event.target.value }))} maxLength={1000} className="h-10 rounded-xl" placeholder="Alasan bila menolak (minimal 10 karakter)" /><div className="mt-2 grid grid-cols-2 gap-2"><Button type="button" variant="outline" disabled={processing || (scheduleResponseNotes[change.id] || "").trim().length < 10} onClick={() => void respondScheduleChange(change.id, "rejected")} className="rounded-xl border-rose-200 text-rose-700">Tolak</Button><Button type="button" disabled={processing} onClick={() => void respondScheduleChange(change.id, "approved")} className="rounded-xl bg-emerald-600 hover:bg-emerald-700">Setujui</Button></div></div>}</article>)}</div>
-                  </div>
-                )}
+                {hub.schedule_changes.length > 0 && <section className="space-y-3"><p className="text-xs font-black uppercase tracking-wider text-slate-400">Perubahan jadwal</p>{hub.schedule_changes.map((change) => <article key={change.id} className="rounded-2xl border border-slate-200 bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-black text-slate-900">{change.requester_name} · {change.scope === "future" ? `${change.affected_count} sesi` : "1 sesi"}</p><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{change.status}</span></div><p className="mt-2 text-sm text-slate-600">{dateTime(change.proposed_start_at)} · {change.reason}</p>{change.can_respond && <div className="mt-3 space-y-2"><Input value={scheduleResponseNotes[change.id] || ""} onChange={(event) => setScheduleResponseNotes((current) => ({ ...current, [change.id]: event.target.value }))} placeholder="Catatan jika menolak (opsional)" className="h-10 rounded-xl" /><div className="grid grid-cols-2 gap-2"><Button type="button" onClick={() => void respondScheduleChange(change.id, "approved")} disabled={processing} className="rounded-xl bg-emerald-600">Setujui</Button><Button type="button" variant="outline" onClick={() => void respondScheduleChange(change.id, "rejected")} disabled={processing} className="rounded-xl border-rose-200 text-rose-700">Tolak</Button></div></div>}</article>)}</section>}
               </div>
             )}
 
             {tab === "chat" && (
               <div className="space-y-4">
-                <div className="max-h-80 space-y-3 overflow-y-auto rounded-2xl bg-slate-50 p-4">
-                  {hub.messages.length === 0 ? (
-                    <p className="py-12 text-center text-sm text-slate-500">Belum ada pesan pada sesi ini.</p>
-                  ) : hub.messages.map((item) => item.message_type === "system" ? (
-                    <div key={item.id} className="flex justify-center">
-                      <div className="w-full max-w-xl rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-center">
-                        <p className="text-[10px] font-black uppercase tracking-[.15em] text-indigo-500">{item.metadata?.title || "Informasi BimbelKu"}</p>
-                        <p className="mt-1 text-xs leading-5 text-indigo-950">{item.body}</p>
-                        {item.metadata?.action_url && <a href={String(item.metadata.action_url)} className="mt-2 inline-flex text-xs font-black text-indigo-700 underline underline-offset-4">{item.metadata.action_label || "Lihat detail"}</a>}
-                      </div>
-                    </div>
-                  ) : (
-                    <div key={item.id} className={`flex ${item.is_mine ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${item.is_mine ? "bg-indigo-600 text-white" : "border border-slate-200 bg-white text-slate-800"}`}>
-                        <p className={`mb-1 text-[11px] font-black ${item.is_mine ? "text-indigo-100" : "text-slate-400"}`}>{item.sender_name}</p>
-                        <p className="whitespace-pre-wrap break-words leading-6">{item.body}</p>
-                        <p className={`mt-1 text-[10px] ${item.is_mine ? "text-indigo-200" : "text-slate-400"}`}>{dateTime(item.created_at)}</p>
-                      </div>
-                    </div>
-                  ))}
+                <div className="max-h-[48dvh] space-y-3 overflow-y-auto rounded-2xl bg-slate-50 p-3 sm:p-4">
+                  {hub.messages.length === 0 ? <p className="py-12 text-center text-sm text-slate-500">Belum ada pesan.</p> : hub.messages.map((item) => <div key={item.id} className={`flex ${item.message_type === "system" ? "justify-center" : item.is_mine ? "justify-end" : "justify-start"}`}>{item.message_type === "system" ? <div className="max-w-[90%] rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-center text-xs leading-5 text-indigo-800">{item.body}</div> : <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${item.is_mine ? "bg-indigo-600 text-white" : "bg-white text-slate-800 shadow-sm"}`}><p className={`mb-1 text-[10px] font-black ${item.is_mine ? "text-indigo-100" : "text-slate-400"}`}>{item.sender_name}</p><p className="whitespace-pre-wrap leading-6">{item.body}</p><p className={`mt-1 text-[10px] ${item.is_mine ? "text-indigo-200" : "text-slate-400"}`}>{dateTime(item.created_at)}</p></div>}</div>)}
                 </div>
-                <form onSubmit={sendMessage} className="space-y-2">
-                  <Textarea
-                    required
-                    maxLength={1000}
-                    value={message}
-                    onChange={(event) => setMessage(event.target.value)}
-                    className="min-h-24 rounded-xl"
-                    placeholder="Tulis pesan tentang sesi belajar"
-                  />
-                  <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-                    <p className="text-xs text-slate-500">Kontak pribadi, media sosial, dan tautan luar akan ditolak.</p>
-                    <Button disabled={processing || !hub.permissions.can_chat} className="rounded-xl bg-indigo-600">
-                      <Send size={16} className="mr-2" />Kirim
-                    </Button>
-                  </div>
-                </form>
-              </div>
-            )}
-
-            {tab === "plan" && (
-              <div className="space-y-4">
-                {hub.role === "teacher" && hub.permissions.can_manage_plan ? (
-                  <form onSubmit={savePlan} className="grid gap-4 sm:grid-cols-2">
-                    {!hub.learning_plan && (
-                      <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4 sm:col-span-2">
-                        <p className="text-[11px] font-black uppercase tracking-[.14em] text-violet-500">Setelah kehadiran · sebelum hasil belajar</p>
-                        <p className="mt-1 text-sm font-black text-violet-950">Tentukan tujuan belajar untuk sesi ini</p>
-                        <p className="mt-1 text-xs leading-5 text-violet-700">Isi arah belajar dengan bahasa yang sederhana dan terukur. Setelah disimpan, murid akan diminta menyetujuinya sebelum progress pertemuan dapat diterbitkan.</p>
-                      </div>
-                    )}
-                    <FieldArea label="Hasil asesmen awal" value={planForm.initial_assessment} onChange={(value) => setPlanForm({ ...planForm, initial_assessment: value })} required className="sm:col-span-2" />
-                    <FieldArea label="Kemampuan yang sudah dikuasai" value={planForm.strengths} onChange={(value) => setPlanForm({ ...planForm, strengths: value })} />
-                    <FieldArea label="Kesulitan utama" value={planForm.challenges} onChange={(value) => setPlanForm({ ...planForm, challenges: value })} />
-                    <FieldArea label="Tujuan belajar" value={planForm.learning_target} onChange={(value) => setPlanForm({ ...planForm, learning_target: value })} required />
-                    <FieldArea label="Indikator keberhasilan" value={planForm.success_indicator} onChange={(value) => setPlanForm({ ...planForm, success_indicator: value })} required />
-                    <div><Label>Nilai awal (opsional)</Label><Input type="number" min={0} max={100} value={planForm.baseline_score} onChange={(event) => setPlanForm({ ...planForm, baseline_score: event.target.value })} className="mt-2 rounded-xl" /></div>
-                    <div><Label>Target nilai (opsional)</Label><Input type="number" min={0} max={100} value={planForm.target_score} onChange={(event) => setPlanForm({ ...planForm, target_score: event.target.value })} className="mt-2 rounded-xl" /></div>
-                    <Button disabled={processing} className="rounded-xl bg-indigo-600 sm:col-span-2">Simpan dan minta persetujuan murid</Button>
-                  </form>
-                ) : hub.learning_plan ? (
-                  <PlanSummary plan={hub.learning_plan} />
-                ) : (
-                  <p className="rounded-2xl bg-slate-50 py-16 text-center text-sm text-slate-500">Tutor belum menerbitkan asesmen awal dan tujuan belajar.</p>
-                )}
-                {hub.role === "student" && hub.permissions.can_acknowledge_plan && (
-                  <Button onClick={acknowledgePlan} disabled={processing} className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-700">
-                    <CheckCircle2 size={16} className="mr-2" />Setujui tujuan belajar
-                  </Button>
-                )}
+                <form onSubmit={sendMessage} className="flex gap-2"><Input value={message} onChange={(event) => setMessage(event.target.value)} maxLength={3000} disabled={!hub.permissions.can_chat} placeholder="Tulis pesan..." className="h-11 rounded-xl" /><Button disabled={processing || !message.trim() || !hub.permissions.can_chat} className="h-11 rounded-xl bg-indigo-600"><Send size={16} /></Button></form>
               </div>
             )}
 
             {tab === "progress" && (
               <div className="space-y-5">
-                {(hub.learning_plan || hub.learning_topics.length > 0) && (() => {
-                  const progress = hub.learning_topics.length ? hub.material_progress_percent : (hub.learning_plan?.progress_percent || 0);
-                  return <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
-                    <div className="flex items-center justify-between gap-3 text-sm font-black text-indigo-950"><span>Progres materi</span><span>{progress}%</span></div>
-                    <div className="mt-3 h-3 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-indigo-600" style={{ width: `${progress}%` }} /></div>
-                    {hub.learning_topics.length > 0 && <p className="mt-2 text-xs font-semibold text-indigo-700">{hub.learning_topics.filter((topic) => topic.status === "completed").length} dari {hub.learning_topics.length} subbab selesai.</p>}
-                  </div>;
-                })()}
-                {hub.role === "teacher" && !hub.permissions.can_report_progress && hub.attendance?.check_out_at && hub.progress_reports.length > 0 && (
-                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm leading-6 text-emerald-800">
-                    <p className="font-black">Progress sesi sudah tersimpan</p>
-                    <p className="mt-1 text-xs">Jika seluruh murid hadir sudah memiliki laporan, kembali ke Kelas Saya lalu lanjutkan <b>Konfirmasi Sesi</b>. Laporan yang sudah disimpan dikunci untuk menjaga jejak akademik.</p>
-                  </div>
-                )}
                 {hub.role === "teacher" && hub.permissions.can_report_progress && (
-                  <form onSubmit={saveProgress} className="grid gap-4 rounded-2xl border border-slate-200 p-5 sm:grid-cols-2">
-                    {hub.booking.class_type === "group" && <div className="sm:col-span-2"><Label>Murid yang dilaporkan</Label><Select value={reportForm.student_id} onValueChange={(student_id) => setReportForm({ ...reportForm, student_id })}><SelectTrigger className="mt-2 h-11 rounded-xl"><SelectValue placeholder="Pilih satu murid" /></SelectTrigger><SelectContent>{hub.participants.filter((item) => item.attendance?.status !== "absent").map((item) => <SelectItem key={item.student_id} value={String(item.student_id)}>{item.name} · {item.attendance?.status || "kehadiran belum dicatat"}</SelectItem>)}</SelectContent></Select></div>}
-                    {hub.learning_topics.length > 0 && <div className="sm:col-span-2 space-y-3"><div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4"><p className="text-xs font-black uppercase tracking-wider text-indigo-500">Langkah 4 dari 5</p><p className="mt-1 text-sm font-black text-indigo-950">Catat progress sebelum Konfirmasi Sesi</p><p className="mt-1 text-xs leading-5 text-indigo-700">Progress harus menggambarkan hasil belajar yang benar. Jika sesi hanya review, latihan, evaluasi, remedial, atau tidak mengubah posisi materi, gunakan pilihan tanpa perubahan.</p><p className="mt-2 text-[11px] font-semibold leading-5 text-indigo-600">Periksa pilihan sebelum menyimpan. Laporan yang sudah disimpan dikunci agar riwayat akademik tidak berubah diam-diam.</p></div><label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${reportForm.no_material_change ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}><input type="checkbox" checked={reportForm.no_material_change} onChange={(event) => { const checked = event.target.checked; setReportForm((current) => ({ ...current, no_material_change: checked, no_change_reason: checked ? current.no_change_reason : "" })); if (checked) setTopicUpdates((current) => Object.fromEntries(Object.entries(current).map(([id, value]) => [id, { ...value, selected: false }]))); }} className="mt-1 h-4 w-4" /><span><span className="block text-sm font-black text-slate-900">Tidak ada perubahan progress materi pada sesi ini</span><span className="mt-1 block text-xs leading-5 text-slate-500">Pilih ini bila sesi tetap valid tetapi tidak mengubah status subbab.</span></span></label>{reportForm.no_material_change && <div><Label>Alasan tidak ada perubahan</Label><Select value={reportForm.no_change_reason} onValueChange={(no_change_reason) => setReportForm((current) => ({ ...current, no_change_reason }))}><SelectTrigger className="mt-2 h-11 rounded-xl"><SelectValue placeholder="Pilih alasan" /></SelectTrigger><SelectContent><SelectItem value="review">Review materi</SelectItem><SelectItem value="practice">Latihan soal</SelectItem><SelectItem value="evaluation">Evaluasi / ujian</SelectItem><SelectItem value="remedial">Remedial</SelectItem><SelectItem value="session_disrupted">Sesi tidak berjalan penuh</SelectItem><SelectItem value="other">Lainnya</SelectItem></SelectContent></Select></div>}<div className={reportForm.no_material_change ? "pointer-events-none opacity-50" : ""}><div className="flex flex-wrap items-center justify-between gap-2"><div><Label>Subbab yang dibahas</Label><p className="mt-1 text-xs text-slate-500">Pilih subbab, lalu tetapkan hasil sesi. Subbab selesai hanya dihitung sekali.</p></div><span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">{hub.material_progress_percent}% tuntas</span></div><div className="mt-3 space-y-2">{hub.learning_topics.map((topic) => { const value = topicUpdates[topic.id] || { selected: false, activity_type: topic.status === "not_started" ? "taught" : "continued", status_after: topic.status === "completed" ? "completed" : "in_progress", needs_review: Boolean(topic.needs_review), notes: "" }; return <div key={topic.id} className={`rounded-xl border p-3 ${value.selected ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-white"}`}><label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={value.selected} onChange={(event) => setTopicUpdates((current) => ({ ...current, [topic.id]: { ...value, selected: event.target.checked } }))} className="mt-1 h-4 w-4" /><span className="min-w-0 flex-1"><span className="block text-xs font-black text-slate-900">{topic.title}</span><span className="mt-0.5 block text-[10px] text-slate-500">{topic.chapter || "Materi"} · Status saat ini: {topic.status === "completed" ? (topic.needs_review ? "selesai, perlu diulang" : "selesai") : topic.status === "in_progress" ? "sedang dipelajari" : topic.status === "review_needed" ? "perlu diulang" : "belum dipelajari"}</span></span></label>{value.selected && <div className="mt-3 grid gap-2 sm:grid-cols-2"><Select value={value.activity_type} onValueChange={(nextValue) => { const activity_type = nextValue as TopicUpdateState["activity_type"]; setTopicUpdates((current) => ({ ...current, [topic.id]: { ...value, activity_type } })); }}><SelectTrigger className="h-10 rounded-xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="taught">Materi baru</SelectItem><SelectItem value="continued">Melanjutkan</SelectItem><SelectItem value="reviewed">Mengulang</SelectItem></SelectContent></Select><Select value={value.status_after} onValueChange={(nextValue) => { const status_after = nextValue as TopicUpdateState["status_after"]; setTopicUpdates((current) => ({ ...current, [topic.id]: { ...value, status_after, needs_review: status_after === "completed" ? value.needs_review : false } })); }}><SelectTrigger className="h-10 rounded-xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="in_progress">Belum selesai</SelectItem><SelectItem value="completed">Selesai</SelectItem></SelectContent></Select>{value.status_after === "completed" && <label className="flex min-h-10 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-bold text-amber-800 sm:col-span-2"><input type="checkbox" checked={value.needs_review} onChange={(event) => setTopicUpdates((current) => ({ ...current, [topic.id]: { ...value, needs_review: event.target.checked } }))} />Perlu diulang pada sesi berikutnya, tetapi tetap dihitung selesai</label>}<Input value={value.notes} onChange={(event) => setTopicUpdates((current) => ({ ...current, [topic.id]: { ...value, notes: event.target.value } }))} className="h-10 rounded-xl sm:col-span-2" placeholder="Catatan subbab (opsional)" /></div>}</div>; })}</div></div></div>}
-                    <FieldArea label="Materi yang dipelajari" value={reportForm.material_covered} onChange={(value) => setReportForm({ ...reportForm, material_covered: value })} required />
-                    <FieldArea label="Kemampuan yang dikuasai" value={reportForm.mastered_skills} onChange={(value) => setReportForm({ ...reportForm, mastered_skills: value })} required />
-                    <FieldArea label="Kesulitan murid" value={reportForm.difficulties} onChange={(value) => setReportForm({ ...reportForm, difficulties: value })} />
-                    <FieldArea label="Latihan berikutnya" value={reportForm.next_exercise} onChange={(value) => setReportForm({ ...reportForm, next_exercise: value })} required />
-                    <div className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600"><b>Kehadiran tidak diisi ulang.</b><br />Status diambil dari catatan kehadiran pada tab Sesi.</div>
-                    {hub.learning_topics.length === 0 ? <div><Label>Progres target (%)</Label><Input required type="number" min={0} max={100} value={reportForm.progress_percent} onChange={(event) => setReportForm({ ...reportForm, progress_percent: event.target.value })} className="mt-2 rounded-xl" /></div> : <div className="rounded-xl bg-emerald-50 p-3 text-xs leading-5 text-emerald-800"><b>Progres dihitung otomatis.</b><br />Persentase berasal dari jumlah subbab unik yang berstatus selesai.</div>}
-                    <FieldArea label="Catatan tambahan" value={reportForm.notes} onChange={(value) => setReportForm({ ...reportForm, notes: value })} className="sm:col-span-2" />
-                    <Button disabled={processing || (hub.learning_topics.length > 0 && reportForm.no_material_change && !reportForm.no_change_reason)} className="rounded-xl bg-indigo-600 sm:col-span-2">Simpan Progress Sesi</Button>
+                  <form onSubmit={saveProgress} className="grid gap-4 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 sm:grid-cols-2 sm:p-5">
+                    <div className="sm:col-span-2"><p className="font-black text-indigo-950">Hasil belajar sesi</p><p className="mt-1 text-xs leading-5 text-indigo-700">Cukup catat Bab yang dibahas dan ringkasan hasilnya. Progress baru resmi setelah murid menyatakan sesi sesuai.</p></div>
+                    {hub.learning_chapters.length > 0 && <div className="space-y-3 sm:col-span-2"><div className="flex items-center justify-between"><Label>Progress Bab</Label><span className="text-xs font-black text-indigo-700">{hub.material_progress_percent}% sebelum sesi</span></div>{hub.learning_chapters.map((chapter) => { const value = chapterUpdates[chapter.chapter] || { selected: false, activity_type: "taught" as const, status_after: "in_progress" as const, needs_review: false, notes: "" }; return <div key={chapter.chapter} className={`rounded-xl border p-3 ${value.selected ? "border-indigo-300 bg-white" : "border-slate-200 bg-white/70"}`}><label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={value.selected} disabled={reportForm.no_material_change} onChange={(event) => setChapterUpdates((current) => ({ ...current, [chapter.chapter]: { ...value, selected: event.target.checked } }))} className="mt-1" /><span className="min-w-0"><span className="block font-black text-slate-900">{chapter.chapter}</span><span className="text-xs text-slate-500">Status: {chapter.status === "completed" ? "Selesai" : chapter.status === "in_progress" ? "Sedang dipelajari" : "Belum dimulai"}</span></span></label>{value.selected && !reportForm.no_material_change && <div className="mt-3 grid gap-2 sm:grid-cols-2"><Select value={value.activity_type} onValueChange={(next) => setChapterUpdates((current) => ({ ...current, [chapter.chapter]: { ...value, activity_type: next as ChapterUpdateState["activity_type"] } }))}><SelectTrigger className="h-10 rounded-xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="taught">Materi baru</SelectItem><SelectItem value="continued">Melanjutkan</SelectItem><SelectItem value="reviewed">Mengulang</SelectItem></SelectContent></Select><Select value={value.status_after} onValueChange={(next) => setChapterUpdates((current) => ({ ...current, [chapter.chapter]: { ...value, status_after: next as ChapterUpdateState["status_after"], needs_review: next === "completed" ? value.needs_review : false } }))}><SelectTrigger className="h-10 rounded-xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="in_progress">Masih dipelajari</SelectItem><SelectItem value="completed">Selesai</SelectItem></SelectContent></Select>{value.status_after === "completed" && <label className="flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 sm:col-span-2"><input type="checkbox" checked={value.needs_review} onChange={(event) => setChapterUpdates((current) => ({ ...current, [chapter.chapter]: { ...value, needs_review: event.target.checked } }))} />Perlu penguatan lagi</label>}<Input value={value.notes} onChange={(event) => setChapterUpdates((current) => ({ ...current, [chapter.chapter]: { ...value, notes: event.target.value } }))} placeholder="Catatan Bab (opsional)" className="h-10 rounded-xl sm:col-span-2" /></div>}</div>; })}</div>}
+                    <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 text-xs font-bold text-slate-700 sm:col-span-2"><input type="checkbox" checked={reportForm.no_material_change} onChange={(event) => setReportForm((current) => ({ ...current, no_material_change: event.target.checked, no_change_reason: event.target.checked ? current.no_change_reason : "" }))} />Sesi ini hanya review/latihan, tidak mengubah status Bab</label>
+                    {reportForm.no_material_change && <div className="sm:col-span-2"><Label>Alasan</Label><Select value={reportForm.no_change_reason} onValueChange={(value) => setReportForm((current) => ({ ...current, no_change_reason: value }))}><SelectTrigger className="mt-2 h-11 rounded-xl bg-white"><SelectValue placeholder="Pilih alasan" /></SelectTrigger><SelectContent><SelectItem value="review">Review materi</SelectItem><SelectItem value="practice">Latihan soal</SelectItem><SelectItem value="evaluation">Evaluasi / ujian</SelectItem><SelectItem value="remedial">Remedial</SelectItem><SelectItem value="session_disrupted">Sesi tidak berjalan penuh</SelectItem><SelectItem value="other">Lainnya</SelectItem></SelectContent></Select></div>}
+                    <FieldArea label="Ringkasan hasil belajar" value={reportForm.mastered_skills} onChange={(value) => setReportForm((current) => ({ ...current, mastered_skills: value }))} required className="sm:col-span-2" />
+                    <FieldArea label="Catatan untuk sesi berikutnya (opsional)" value={reportForm.next_exercise} onChange={(value) => setReportForm((current) => ({ ...current, next_exercise: value }))} className="sm:col-span-2" />
+                    {hub.learning_chapters.length === 0 && <div className="sm:col-span-2"><Label>Progress (%)</Label><Input type="number" min={0} max={100} value={reportForm.progress_percent} onChange={(event) => setReportForm((current) => ({ ...current, progress_percent: event.target.value }))} className="mt-2 h-11 rounded-xl bg-white" /></div>}
+                    <Button disabled={processing || reportForm.mastered_skills.trim().length < 3 || (!reportForm.no_material_change && hub.learning_chapters.length > 0 && !Object.values(chapterUpdates).some((value) => value.selected)) || (reportForm.no_material_change && !reportForm.no_change_reason)} className="rounded-xl bg-indigo-600 sm:col-span-2">Simpan Hasil Belajar</Button>
                   </form>
                 )}
-                <div className="space-y-3">
-                  {hub.progress_reports.length === 0 ? (
-                    <p className="rounded-2xl bg-slate-50 py-14 text-center text-sm text-slate-500">Laporan perkembangan belum tersedia.</p>
-                  ) : hub.progress_reports.map((report) => (
-                    <article key={report.id} className="rounded-2xl border border-slate-200 p-5">
-                      <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-black text-slate-900">Laporan sesi {report.session_number}{report.student_name ? ` · ${report.student_name}` : ""}</p><span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">{report.progress_percent}%</span></div>
-                      <p className="mt-1 text-xs text-slate-400">{dateTime(report.published_at)} · {report.actual_duration_minutes} menit</p>
-                      {report.no_material_change && <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs font-bold leading-5 text-amber-800">Tidak ada perubahan status materi · {noChangeReasonLabel(report.no_change_reason)}</div>}
-                      <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-                        <Info label="Materi" value={report.material_covered} />
-                        <Info label="Dikuasai" value={report.mastered_skills} />
-                        <Info label="Kesulitan" value={report.difficulties || "-"} />
-                        <Info label="Latihan berikutnya" value={report.next_exercise} />
-                      </div>
-                      {report.topics?.length ? <div className="mt-4 rounded-xl bg-slate-50 p-3"><p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Subbab sesi ini</p><div className="mt-2 flex flex-wrap gap-2">{report.topics.map((topic) => <span key={topic.topic_id} className={`rounded-full px-3 py-1 text-xs font-bold ${topic.status_after === "completed" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{topic.title || "Subbab"} · {topic.status_after === "completed" ? (topic.needs_review ? "selesai, perlu diulang" : "selesai") : "belum selesai"}</span>)}</div></div> : null}
-                    </article>
-                  ))}
-                </div>
+
+                {hub.progress_reports.length === 0 ? <p className="rounded-2xl bg-slate-50 py-14 text-center text-sm text-slate-500">Hasil belajar belum tersedia.</p> : hub.progress_reports.map((report) => <article key={report.id} className="rounded-2xl border border-slate-200 p-5"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-black text-slate-900">Sesi {report.session_number}{report.student_name ? ` · ${report.student_name}` : ""}</p><span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">{report.progress_percent}%</span></div><p className="mt-1 text-xs text-slate-400">{dateTime(report.published_at)} · {report.actual_duration_minutes} menit</p>{report.no_material_change && <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs font-bold text-amber-800">Tidak ada perubahan status Bab · {noChangeReasonLabel(report.no_change_reason)}</div>}<div className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><Info label="Materi" value={report.material_covered} /><Info label="Hasil" value={report.mastered_skills} /><Info label="Kesulitan" value={report.difficulties || "-"} /><Info label="Berikutnya" value={report.next_exercise} /></div>{report.chapters?.length ? <div className="mt-4 flex flex-wrap gap-2">{report.chapters.map((chapter) => <span key={chapter.chapter} className={`rounded-full px-3 py-1 text-xs font-bold ${chapter.status_after === "completed" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{chapter.chapter} · {chapter.status_after === "completed" ? "selesai" : "dipelajari"}</span>)}</div> : null}</article>)}
               </div>
             )}
 
-            <Button type="button" variant="outline" onClick={() => void load()} className="w-full rounded-xl">
-              <RefreshCw size={16} className="mr-2" />Muat ulang ruang belajar
-            </Button>
-          </>
+            <Button type="button" variant="outline" onClick={() => void load()} className="w-full rounded-xl"><RefreshCw size={16} className="mr-2" />Muat ulang</Button>
+          </div>
         )}
       </DialogContent>
     </Dialog>
   );
 }
 
-function TabButton({ active, onClick, icon: Icon, label, attention = false }: { active: boolean; onClick: () => void; icon: typeof Target; label: string; attention?: boolean }) {
-  return <button type="button" onClick={onClick} className={`relative flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-black transition ${active ? "bg-white text-indigo-700 shadow-sm" : attention ? "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200" : "text-slate-500 hover:text-slate-800"}`}><Icon size={16} />{label}{attention && !active && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-amber-500" aria-label="Perlu diisi" />}</button>;
+function TabButton({ active, onClick, icon: Icon, label, attention = false }: { active: boolean; onClick: () => void; icon: typeof ClipboardCheck; label: string; attention?: boolean }) {
+  return <button type="button" onClick={onClick} aria-label={attention && !active ? `${label}, perlu diisi` : label} className={`relative flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-xl px-1.5 text-[11px] font-black leading-tight transition min-[360px]:gap-2 min-[360px]:px-2 min-[360px]:text-xs sm:text-sm ${active ? "bg-white text-indigo-700 shadow-sm" : attention ? "bg-indigo-50 text-indigo-700" : "text-slate-500 hover:text-slate-800"}`}><Icon size={16} />{label}{attention && !active && <span aria-hidden="true" className="absolute right-2 top-2 h-2 w-2 rounded-full bg-amber-500" />}</button>;
 }
 
 function Info({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-xl bg-white/80 p-3"><p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 whitespace-pre-wrap leading-6 text-slate-800">{value}</p></div>;
+  return <div className="rounded-xl bg-slate-50 p-3"><p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 whitespace-pre-wrap leading-6 text-slate-800">{value}</p></div>;
 }
 
 function FieldArea({ label, value, onChange, required, className = "" }: { label: string; value: string; onChange: (value: string) => void; required?: boolean; className?: string }) {
-  return <div className={className}><Label>{label}</Label><Textarea required={required} minLength={required ? 10 : undefined} maxLength={3000} value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 min-h-28 rounded-xl" /></div>;
-}
-
-function PlanSummary({ plan }: { plan: LearningPlan }) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <Info label="Hasil asesmen awal" value={plan.initial_assessment} />
-      <Info label="Kemampuan awal" value={plan.strengths || "-"} />
-      <Info label="Kesulitan" value={plan.challenges || "-"} />
-      <Info label="Tujuan belajar" value={plan.learning_target} />
-      <Info label="Indikator berhasil" value={plan.success_indicator} />
-      <Info label="Status persetujuan" value={plan.student_acknowledged_at ? `Disetujui ${dateTime(plan.student_acknowledged_at)}` : "Menunggu persetujuan murid"} />
-    </div>
-  );
+  return <div className={className}><Label>{label}</Label><Textarea required={required} minLength={required ? 3 : undefined} maxLength={3000} value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 min-h-24 rounded-xl bg-white" /></div>;
 }

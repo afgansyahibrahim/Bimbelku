@@ -20,7 +20,7 @@ const checks = [
   [expireSeats.indexOf('$locked = CheapClassEnrollment::query()') < expireSeats.indexOf('$order = Order::query()'), 'seat expiry locks enrollment before order'],
   [expireSeats.includes("!in_array($order->status, ['pending', 'rejected'], true)"), 'seat expiry does not overwrite submitted or paid finance records'],
   [finalize.includes('Tutor tidak tersedia sampai pendaftaran berakhir.') && finalize.indexOf('teacherCanTeach') < finalize.indexOf("$submitted ="), 'missing tutor cancels the package before submitted proof can stall lifecycle'],
-  [service.includes("'cancel_after_verification' => true") && service.includes('Pembayaran Kelas Murah belum selesai diverifikasi sebelum sesi pertama dimulai'), 'late verification goes directly to refund and package cancellation'],
+  [service.includes("'cancel_after_verification' => true") && service.includes('Pembayaran Kelas Kelompok belum selesai diverifikasi sebelum sesi pertama dimulai'), 'late verification goes directly to refund and package cancellation'],
   [test.includes('test_exact_seat_deadline_rejects_payment_and_expires_the_invoice'), 'feature test covers the exact payment boundary'],
   [test.includes('test_missing_teacher_at_deadline_cancels_package_but_keeps_submitted_proof_for_review'), 'feature test covers missing tutor with pending proof'],
   [test.includes('test_payment_verified_after_first_session_never_confirms_the_package_and_refunds_once'), 'feature test covers late verification and one refund'],
@@ -33,4 +33,4 @@ for (const [ok, label] of checks) {
 }
 
 if (failed) process.exit(1);
-console.log('Pemeriksaan pembayaran dan lifecycle Kelas Murah Tahap 5 lulus.');
+console.log('Pemeriksaan pembayaran dan lifecycle Kelas Kelompok Tahap 5 lulus.');

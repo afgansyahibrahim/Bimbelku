@@ -72,7 +72,10 @@
     "check:cheap-class-session-verification": "node scripts/check-stage5-7-cheap-class-session-verification.mjs",
     "check:demo-cheap-class": "node scripts/check-demo-cheap-class.mjs",
     "check:cheap-class-popup": "node scripts/check-stage5-7-2-cheap-class-popup.mjs",
-    "check:package-renewal": "node scripts/check-package-renewal-flow.mjs"
+    "check:package-renewal": "node scripts/check-package-renewal-flow.mjs",
+    "check:user-testing-stage1": "node scripts/check-user-testing-stage1-mobile.mjs",
+    "check:user-testing-stage2": "node scripts/check-stage2-bab-monitoring-scalability.mjs",
+    "check:user-testing-stage3": "node scripts/check-stage3-visual-finalization.mjs"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.14",

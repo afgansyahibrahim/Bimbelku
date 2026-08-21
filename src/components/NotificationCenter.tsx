@@ -159,7 +159,7 @@ export default function NotificationCenter({ role = "teacher" }: NotificationCen
       </div>
 
       {selected && (
-        <div role="dialog" aria-modal="true" aria-label="Detail notifikasi" className="fixed inset-0 z-[500] flex items-end justify-center bg-slate-950/60 p-3 backdrop-blur-sm sm:items-center sm:p-4">
+        <div role="dialog" aria-modal="true" aria-label="Detail notifikasi" className="fixed inset-0 z-[var(--layer-modal)] flex items-end justify-center bg-slate-950/60 p-3 backdrop-blur-sm sm:items-center sm:p-4">
           <button type="button" aria-label="Tutup detail notifikasi" className="absolute inset-0" onClick={() => setSelected(null)} />
           <div className="relative z-10 w-full max-w-lg overflow-hidden rounded-[2rem] bg-white shadow-2xl sm:rounded-[2.25rem]">
             <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-5 sm:p-6">

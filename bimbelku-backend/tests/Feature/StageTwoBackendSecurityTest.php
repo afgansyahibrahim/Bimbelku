@@ -93,7 +93,6 @@ class StageTwoBackendSecurityTest extends TestCase
             'is_online' => true,
             'is_offline' => false,
             'is_private_active' => true,
-            'is_group_active' => true,
         ]);
         Sanctum::actingAs($admin);
 

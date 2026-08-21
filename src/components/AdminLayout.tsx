@@ -29,6 +29,7 @@ import {
   X,
 } from "lucide-react";
 import LogoutButton from "@/components/LogoutButton";
+import ProfileQuickMenu from "@/components/ProfileQuickMenu";
 import RoleQuickGuide from "@/components/RoleQuickGuide";
 import { ADMIN_PERMISSIONS, canAdmin } from "@/lib/adminPermissions";
 import { scheduleNonCriticalTask } from "@/lib/schedule";
@@ -58,6 +59,40 @@ type NavigationSection = {
   label: string;
   items: NavigationItem[];
 };
+
+type OperationalAttentionCounts = {
+  teachers: number;
+  orders: number;
+  matching_attention: number;
+  cases: number;
+  monitoring_attention: number;
+  refunds: number;
+  payouts: number;
+};
+
+const emptyOperationalCounts: OperationalAttentionCounts = {
+  teachers: 0,
+  orders: 0,
+  matching_attention: 0,
+  cases: 0,
+  monitoring_attention: 0,
+  refunds: 0,
+  payouts: 0,
+};
+
+const operationalCountForPath = (path: string, counts: OperationalAttentionCounts): number => ({
+  "/admin/tutor-searches": counts.matching_attention,
+  "/admin/classes": counts.monitoring_attention,
+  "/admin/cases": counts.cases,
+  "/admin/pembayaran": counts.orders,
+  "/admin/finance": counts.payouts,
+  "/admin/refunds": counts.refunds,
+  "/admin/guru": counts.teachers,
+}[path] ?? 0);
+
+const operationalToneForPath = (path: string): "urgent" | "warning" => (
+  ["/admin/refunds", "/admin/finance", "/admin/guru"].includes(path) ? "warning" : "urgent"
+);
 
 const navigation: NavigationSection[] = [
   {
@@ -91,9 +126,9 @@ const navigation: NavigationSection[] = [
     label: "Katalog dan konten",
     items: [
       { to: "/admin/subjects", label: "Mata pelajaran", icon: LibraryBig, permission: ADMIN_PERMISSIONS.CONTENT_MANAGE },
-      { to: "/admin/learning-topics", label: "Materi kurikulum", icon: Layers3, permission: ADMIN_PERMISSIONS.CONTENT_MANAGE },
+      { to: "/admin/chapters", label: "Materi kurikulum", icon: Layers3, permission: ADMIN_PERMISSIONS.CONTENT_MANAGE },
       { to: "/admin/hourly-rates", label: "Harga per sesi", icon: Coins, permission: ADMIN_PERMISSIONS.CONTENT_MANAGE },
-      { to: "/admin/kelas-murah", label: "Kelas Murah", icon: Users, permission: ADMIN_PERMISSIONS.CONTENT_MANAGE },
+      { to: "/admin/kelas-murah", label: "Kelas Kelompok", icon: Users, permission: ADMIN_PERMISSIONS.CONTENT_MANAGE },
       { to: "/admin/stage-five", label: "Paket, promo, dan konten", icon: Tags, permission: ADMIN_PERMISSIONS.CONTENT_MANAGE },
     ],
   },
@@ -132,6 +167,7 @@ const readAdmin = () => {
 export default function AdminLayout({ children, title, subtitle = "Pusat operasional BimbelKu" }: AdminLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [attentionNotifications, setAttentionNotifications] = useState<AttentionNotification[]>([]);
+  const [operationalCounts, setOperationalCounts] = useState<OperationalAttentionCounts>(emptyOperationalCounts);
   const location = useLocation();
   const { sidebarScrollRef, handleSidebarScroll } = usePersistentSidebarScroll("admin", location.pathname);
   const admin = useMemo(readAdmin, []);
@@ -164,18 +200,37 @@ export default function AdminLayout({ children, title, subtitle = "Pusat operasi
     return location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
   };
 
-  const fetchAttentionNotifications = useCallback(async (force = false) => {
+  const fetchAttentionData = useCallback(async (force = false) => {
     if (!localStorage.getItem("token")) return;
     try {
       const { getCached } = await import("@/lib/http");
-      const response = await getCached<{ attention_notifications?: AttentionNotification[] }>("/notifications", {
-        params: { per_page: 1 },
-        maxAgeMs: force ? 5_000 : 15_000,
-        force,
-      });
-      setAttentionNotifications(
-        Array.isArray(response.data.attention_notifications) ? response.data.attention_notifications : [],
-      );
+      const [notificationsResult, statsResult] = await Promise.allSettled([
+        getCached<{ attention_notifications?: AttentionNotification[] }>("/notifications", {
+          params: { per_page: 1 },
+          maxAgeMs: force ? 5_000 : 15_000,
+          force,
+        }),
+        getCached<{ counts?: Partial<OperationalAttentionCounts> }>("/admin/dashboard-stats", {
+          maxAgeMs: force ? 5_000 : 15_000,
+          force,
+        }),
+      ]);
+      if (notificationsResult.status === "fulfilled") {
+        const notifications = notificationsResult.value.data.attention_notifications;
+        setAttentionNotifications(Array.isArray(notifications) ? notifications : []);
+      }
+      if (statsResult.status === "fulfilled") {
+        const next = statsResult.value.data.counts || {};
+        setOperationalCounts({
+          teachers: Number(next.teachers || 0),
+          orders: Number(next.orders || 0),
+          matching_attention: Number(next.matching_attention || 0),
+          cases: Number(next.cases || 0),
+          monitoring_attention: Number(next.monitoring_attention || 0),
+          refunds: Number(next.refunds || 0),
+          payouts: Number(next.payouts || 0),
+        });
+      }
     } catch {
       // Badge navigasi bersifat pendukung dan tidak boleh mengganggu halaman admin.
     }
@@ -187,17 +242,22 @@ export default function AdminLayout({ children, title, subtitle = "Pusat operasi
 
   useEffect(() => {
     let disposed = false;
-    const start = () => { if (!disposed) void fetchAttentionNotifications(false); };
+    const start = () => { if (!disposed) void fetchAttentionData(false); };
     const cancelScheduledStart = scheduleNonCriticalTask(start);
+    const refreshAttention = () => { if (!disposed) void fetchAttentionData(true); };
+    window.addEventListener("bimbelku:data-changed", refreshAttention);
+    window.addEventListener("bimbelku:navigation-attention-changed", refreshAttention);
     const interval = window.setInterval(() => {
-      if (document.visibilityState === "visible") void fetchAttentionNotifications(true);
+      if (document.visibilityState === "visible") void fetchAttentionData(true);
     }, 60_000);
     return () => {
       disposed = true;
       cancelScheduledStart();
+      window.removeEventListener("bimbelku:data-changed", refreshAttention);
+      window.removeEventListener("bimbelku:navigation-attention-changed", refreshAttention);
       window.clearInterval(interval);
     };
-  }, [fetchAttentionNotifications]);
+  }, [fetchAttentionData]);
 
   useEffect(() => {
     const ids = unreadIdsForCurrentPage("admin", location.pathname, attentionNotifications);
@@ -210,11 +270,11 @@ export default function AdminLayout({ children, title, subtitle = "Pusat operasi
     void import("@/lib/http")
       .then(({ default: http }) => http.post("/notifications/read-batch", { ids }))
       .catch(() => {
-        if (!cancelled) void fetchAttentionNotifications(true);
+        if (!cancelled) void fetchAttentionData(true);
       });
 
     return () => { cancelled = true; };
-  }, [attentionNotifications, fetchAttentionNotifications, location.pathname]);
+  }, [attentionNotifications, fetchAttentionData, location.pathname]);
 
   return (
     <div className="flex h-dvh w-full max-w-full overflow-hidden bg-slate-50 font-sans text-slate-800">
@@ -263,7 +323,14 @@ export default function AdminLayout({ children, title, subtitle = "Pusat operasi
               </p>
               <div className="space-y-1">
                 {section.items.map((item) => (
-                  <NavItem key={item.to} item={item} active={isActive(item)} attention={hasSidebarAttention("admin", item.to, attentionNotifications)} />
+                  <NavItem
+                    key={item.to}
+                    item={item}
+                    active={isActive(item)}
+                    attention={hasSidebarAttention("admin", item.to, attentionNotifications)}
+                    attentionCount={operationalCountForPath(item.to, operationalCounts)}
+                    attentionTone={operationalToneForPath(item.to)}
+                  />
                 ))}
               </div>
             </div>
@@ -303,11 +370,18 @@ export default function AdminLayout({ children, title, subtitle = "Pusat operasi
           </div>
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <RoleQuickGuide role="admin" />
-            <div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-[11px] font-black text-emerald-700 sm:px-4">
+            <div className="hidden items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-[11px] font-black text-emerald-700 md:flex sm:px-4">
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              <span className="hidden sm:inline">Sistem aktif</span>
-              <span className="sm:hidden">Aktif</span>
+              <span>Sistem aktif</span>
             </div>
+            <ProfileQuickMenu
+              user={admin}
+              accent="admin"
+              roleLabel="Admin"
+              profileTo="/admin/profile"
+              accountTo="/admin/settings-display"
+              helpTo="/admin/pesan"
+            />
           </div>
         </header>
 
@@ -319,6 +393,7 @@ export default function AdminLayout({ children, title, subtitle = "Pusat operasi
           isActive={isActive}
           menuActive={!mobileNavigation.some((item) => isActive(item))}
           attentionNotifications={attentionNotifications}
+          operationalCounts={operationalCounts}
           onOpenMenu={() => setSidebarOpen(true)}
         />
       </main>
@@ -326,7 +401,19 @@ export default function AdminLayout({ children, title, subtitle = "Pusat operasi
   );
 }
 
-function NavItem({ item, active, attention = false }: { item: NavigationItem; active: boolean; attention?: boolean }) {
+function NavItem({
+  item,
+  active,
+  attention = false,
+  attentionCount = 0,
+  attentionTone = "urgent",
+}: {
+  item: NavigationItem;
+  active: boolean;
+  attention?: boolean;
+  attentionCount?: number;
+  attentionTone?: "urgent" | "warning";
+}) {
   const Icon = item.icon;
 
   return (
@@ -348,7 +435,18 @@ function NavItem({ item, active, attention = false }: { item: NavigationItem; ac
         {attention && <span aria-label="Ada pembaruan yang belum dilihat" className="absolute -right-1.5 -top-1.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />}
       </span>
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
-      {active && <span className="h-1.5 w-1.5 rounded-full bg-orange-400" />}
+      {attentionCount > 0 ? (
+        <span
+          aria-label={`${attentionCount} item perlu tindakan`}
+          className={`inline-flex min-w-6 shrink-0 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+            attentionTone === "warning"
+              ? "bg-amber-100 text-amber-800"
+              : "bg-rose-100 text-rose-700"
+          } ${active ? "ring-1 ring-white/50" : ""}`}
+        >
+          {attentionCount > 99 ? "99+" : attentionCount}
+        </span>
+      ) : active ? <span className="h-1.5 w-1.5 rounded-full bg-orange-400" /> : null}
     </Link>
   );
 }
@@ -358,16 +456,25 @@ function AdminMobileBottomNav({
   isActive,
   menuActive,
   attentionNotifications,
+  operationalCounts,
   onOpenMenu,
 }: {
   items: NavigationItem[];
   isActive: (item: NavigationItem) => boolean;
   menuActive: boolean;
   attentionNotifications: AttentionNotification[];
+  operationalCounts: OperationalAttentionCounts;
   onOpenMenu: () => void;
 }) {
   const mobileRoutes = items.map((item) => item.to);
-  const menuAttention = hasAdminMobileMenuAttention(mobileRoutes, attentionNotifications);
+  const menuOperationalCount = [
+    "/admin/tutor-searches",
+    "/admin/classes",
+    "/admin/cases",
+    "/admin/finance",
+    "/admin/refunds",
+  ].reduce((total, path) => total + operationalCountForPath(path, operationalCounts), 0);
+  const menuAttention = menuOperationalCount > 0 || hasAdminMobileMenuAttention(mobileRoutes, attentionNotifications);
   return (
     <nav
       aria-label="Navigasi utama admin"
@@ -377,7 +484,8 @@ function AdminMobileBottomNav({
         {items.map((item) => {
           const active = isActive(item);
           const Icon = item.icon;
-          const attention = hasSidebarAttention("admin", item.to, attentionNotifications);
+          const operationalCount = operationalCountForPath(item.to, operationalCounts);
+          const attention = operationalCount > 0 || hasSidebarAttention("admin", item.to, attentionNotifications);
           const shortLabel = item.to === "/admin"
             ? "Beranda"
             : item.to === "/admin/guru"
@@ -402,7 +510,7 @@ function AdminMobileBottomNav({
             >
               <span className="relative">
                 <Icon size={19} strokeWidth={active ? 2.7 : 2} />
-                {attention && <span aria-label="Ada pembaruan yang belum dilihat" className="absolute -right-1.5 -top-1.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />}
+                {attention && <MobileAttentionBadge count={operationalCount} label="item perlu tindakan" />}
               </span>
               <span className="max-w-full truncate">{shortLabel}</span>
             </Link>
@@ -421,11 +529,24 @@ function AdminMobileBottomNav({
         >
           <span className="relative">
             <MoreHorizontal size={19} strokeWidth={menuActive ? 2.7 : 2} />
-            {menuAttention && <span aria-label="Ada pembaruan di menu lain" className="absolute -right-1.5 -top-1.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />}
+            {menuAttention && <MobileAttentionBadge count={menuOperationalCount} label="item perlu tindakan di menu lain" />}
           </span>
           <span className="max-w-full truncate">Menu</span>
         </button>
       </div>
     </nav>
+  );
+}
+
+function MobileAttentionBadge({ count, label }: { count: number; label: string }) {
+  return count > 0 ? (
+    <span
+      aria-label={`${count} ${label}`}
+      className="absolute -right-3 -top-2 inline-flex min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[8px] font-black leading-4 text-white ring-2 ring-white"
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  ) : (
+    <span aria-label="Ada pembaruan yang belum dilihat" className="absolute -right-1.5 -top-1.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />
   );
 }

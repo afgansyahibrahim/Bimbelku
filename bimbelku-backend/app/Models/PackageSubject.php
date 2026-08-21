@@ -13,7 +13,6 @@ class PackageSubject extends Model
         'unit_price' => 'decimal:2',
         'subtotal_amount' => 'decimal:2',
         'curriculum_chapter_ids' => 'array',
-        'learning_topic_ids' => 'array',
     ];
 
     public function package()
@@ -26,9 +25,9 @@ class PackageSubject extends Model
         return $this->belongsTo(CurriculumChapter::class);
     }
 
-    public function learningTopics()
+    public function chapters()
     {
-        return $this->hasMany(PackageLearningTopic::class);
+        return $this->hasMany(PackageChapter::class)->orderBy('sort_order')->orderBy('id');
     }
 
     public function curriculumSubject()

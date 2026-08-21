@@ -51,7 +51,7 @@ const checks = [
     file: "bimbelku-backend/routes/api.php",
     patterns: [
       /student\/tutor-availability/,
-      /throttle:20,1/,
+      /throttle:student-tutor-availability/,
       /role:student/,
     ],
   },

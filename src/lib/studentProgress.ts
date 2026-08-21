@@ -1,21 +1,17 @@
-export type TopicProgressStatus = "not_started" | "in_progress" | "completed" | "review_needed" | string;
+export type MaterialProgressStatus = "not_started" | "in_progress" | "completed" | "review_needed" | string;
 
-export type PackageLearningTopicProgress = {
-  id: number;
-  catalog_topic_id?: number | null;
-  chapter?: string | null;
-  title: string;
-  status: TopicProgressStatus;
+export type PackageLearningChapterProgress = {
+  chapter: string;
+  curriculum_chapter_id?: number | null;
+  status: MaterialProgressStatus;
   needs_review?: boolean;
   started_at?: string | null;
   completed_at?: string | null;
 };
-
 export type PackageSubjectProgress = {
   id: number;
   name: string;
   chapter?: string | null;
-  subtopic?: string | null;
   learning_goal?: string | null;
   allocated_sessions: number;
   status: string;
@@ -28,7 +24,7 @@ export type PackageSubjectProgress = {
     status?: string;
     booking_id?: number | null;
   }>;
-  learning_topics?: PackageLearningTopicProgress[];
+  learning_chapters?: PackageLearningChapterProgress[];
 };
 
 export type StudentPackageProgress = {
@@ -113,11 +109,11 @@ export const readPackageRows = (payload: PackageListResponse): StudentPackagePro
   return Array.isArray(payload?.data) ? payload.data : [];
 };
 
-export const packageTopicStats = (item: StudentPackageProgress) => {
-  const topics = (item.subjects || []).flatMap((subject) => subject.learning_topics || []);
-  const total = topics.length;
-  const completed = topics.filter((topic) => topic.status === "completed").length;
-  const inProgress = topics.filter((topic) => topic.status === "in_progress" || topic.status === "review_needed").length;
+export const packageChapterStats = (item: StudentPackageProgress) => {
+  const chapters = (item.subjects || []).flatMap((subject) => subject.learning_chapters || []);
+  const total = chapters.length;
+  const completed = chapters.filter((chapter) => chapter.status === "completed").length;
+  const inProgress = chapters.filter((chapter) => chapter.status === "in_progress" || chapter.status === "review_needed").length;
   return {
     total,
     completed,

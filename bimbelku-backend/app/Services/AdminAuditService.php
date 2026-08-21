@@ -11,7 +11,6 @@ use App\Models\CurriculumChapter;
 use App\Models\CurriculumSubject;
 use App\Models\DynamicBanner;
 use App\Models\HourlyRate;
-use App\Models\LearningTopic;
 use App\Models\LearningTimeSlot;
 use App\Models\Note;
 use App\Models\Order;
@@ -293,7 +292,6 @@ class AdminAuditService
             'curriculumSubject' => CurriculumSubject::class,
             'curriculumChapter' => CurriculumChapter::class,
             'hourlyRate' => HourlyRate::class,
-            'learningTopic' => LearningTopic::class,
             'packagePlan' => PackagePlan::class,
             'learningTimeSlot' => LearningTimeSlot::class,
             'promotion' => Promotion::class,

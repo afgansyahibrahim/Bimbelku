@@ -26,4 +26,4 @@ for (const [ok, label] of checks) {
 }
 
 if (failed) process.exit(1);
-console.log('Pemeriksaan tutor random dan isolasi paket Kelas Murah Tahap 4 lulus.');
+console.log('Pemeriksaan tutor random dan isolasi paket Kelas Kelompok Tahap 4 lulus.');

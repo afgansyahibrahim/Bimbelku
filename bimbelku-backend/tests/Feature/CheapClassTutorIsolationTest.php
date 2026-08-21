@@ -178,7 +178,6 @@ class CheapClassTutorIsolationTest extends TestCase
             'education_level' => 'SD',
             'grade' => 'Kelas 6',
             'chapter' => $chapter->title,
-            'subtopic' => null,
             'topic' => null,
             'first_session_date' => '2026-08-17',
             'registration_opens_at' => '2026-08-16 09:00:00',

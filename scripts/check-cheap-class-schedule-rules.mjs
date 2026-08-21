@@ -26,4 +26,4 @@ for (const [ok, label] of checks) {
 }
 
 if (failed) process.exit(1);
-console.log('Pemeriksaan aturan tanggal dan hari Kelas Murah Tahap 3 lulus.');
+console.log('Pemeriksaan aturan tanggal dan hari Kelas Kelompok Tahap 3 lulus.');

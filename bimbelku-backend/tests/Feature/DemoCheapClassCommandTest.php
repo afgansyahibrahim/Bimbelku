@@ -7,6 +7,7 @@ use App\Models\CheapClassSession;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -161,4 +162,68 @@ class DemoCheapClassCommandTest extends TestCase
             ->assertJsonPath('status', 'completed')
             ->assertJsonPath('subjects.0.progress_status', 'completed');
     }
+    public function test_pre_payment_demo_can_start_before_payment_without_waiting_for_admin_opening_hour(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-19 14:42:00', 'Asia/Jakarta'));
+        Storage::fake('local');
+
+        $this->artisan('demo:cheap-class', ['stage' => 'pre-payment'])
+            ->assertSuccessful();
+
+        $student = User::query()->where('email', 'demo.student@bimbelku.local')->firstOrFail();
+        $class = CheapClass::query()->where('package_code', 'like', 'DEMO-KM-PREPAY-%')->firstOrFail();
+        $session = CheapClassSession::query()->where('cheap_class_id', $class->id)->firstOrFail();
+
+        $this->assertSame('open', $class->status);
+        $this->assertTrue($class->registration_opens_at->lte(now()));
+        $this->assertTrue($class->registration_deadline->isFuture());
+        $this->assertTrue($session->starts_at->isFuture());
+        $this->assertSame(1, $class->enrollments()->where('status', 'confirmed')->count());
+        $this->assertFalse($class->enrollments()->where('student_id', $student->id)->exists());
+
+        Sanctum::actingAs($student);
+        $this->getJson('/api/student/cheap-classes')
+            ->assertOk()
+            ->assertJsonPath('0.id', $class->id)
+            ->assertJsonPath('0.status', 'open')
+            ->assertJsonPath('0.can_join', true)
+            ->assertJsonPath('0.enrollment', null);
+
+        $this->postJson(
+            "/api/student/cheap-classes/{$class->id}/join",
+            [],
+            ['Idempotency-Key' => 'demo-cheap-class-prepay-join-0001']
+        )
+            ->assertCreated()
+            ->assertJsonPath('enrollment_status', 'seat_held')
+            ->assertJsonPath('order_kind', 'cheap_class');
+
+        $this->assertSame('registration_closed', $class->fresh()->status);
+
+        $this->artisan('demo:cheap-class', ['stage' => 'payment-submitted'])
+            ->assertSuccessful();
+        $enrollment = $class->enrollments()->where('student_id', $student->id)->with('order')->firstOrFail();
+        $this->assertSame('payment_submitted', $enrollment->fresh()->status);
+        $this->assertSame('submitted', $enrollment->order->fresh()->status);
+        $this->assertNotNull($enrollment->order->fresh()->payment_proof);
+        Storage::disk('local')->assertExists($enrollment->order->fresh()->payment_proof);
+
+        $this->artisan('demo:cheap-class', ['stage' => 'payment-paid'])
+            ->assertSuccessful();
+        $this->assertSame('confirmed', $class->fresh()->status);
+        $this->assertSame('confirmed', $enrollment->fresh()->status);
+        $this->assertSame('paid', $enrollment->order->fresh()->status);
+
+        $this->artisan('demo:cheap-class', ['stage' => 'session-live'])
+            ->assertSuccessful();
+        $session->refresh();
+        $this->assertSame('scheduled', $session->status);
+        $this->assertTrue($session->starts_at->lte(now()));
+        $this->assertTrue($session->ends_at->gt(now()));
+
+        $this->artisan('demo:cheap-class', ['stage' => 'session-ended'])
+            ->assertSuccessful();
+        $this->assertSame('report_required', $session->fresh()->status);
+    }
+
 }

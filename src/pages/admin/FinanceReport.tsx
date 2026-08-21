@@ -26,6 +26,14 @@ const getWeeklyLabel = () => {
   return `${start.getDate()} ${start.toLocaleString('default', { month: 'short' })} - ${end.getDate()} ${end.toLocaleString('default', { month: 'short' })}`;
 };
 
+const payoutWaitingLabel = (value?: string | null) => {
+  if (!value) return null;
+  const hours = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 3_600_000));
+  if (hours < 1) return "Baru diajukan";
+  if (hours < 24) return `Menunggu ${hours} jam`;
+  return `Pending lama · ${Math.floor(hours / 24)} hari`;
+};
+
 export default function FinanceReport() {
   const confirm = useConfirmDialog();
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
@@ -191,10 +199,11 @@ export default function FinanceReport() {
       
       {/* MODAL EDIT FEE */}
       {isFeeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-           <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl space-y-4">
-              <div className="flex justify-between items-center pb-2 border-b">
-                 <h3 className="font-bold text-lg">Atur Persentase Keuntungan</h3>
+        <div className="fixed inset-0 z-[var(--layer-modal)] flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm animate-in fade-in sm:p-4">
+           <div className="max-h-[calc(100dvh-1.5rem)] w-full max-w-sm space-y-4 overflow-y-auto rounded-2xl bg-white p-4 shadow-xl sm:p-6">
+              <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center border-b pb-2">
+                 <span aria-hidden="true" className="h-10 w-10" />
+                 <h3 className="text-center text-lg font-bold">Atur Persentase Keuntungan</h3>
                  <button onClick={() => setIsFeeModalOpen(false)}><X size={20}/></button>
               </div>
               <div className="space-y-4">
@@ -230,10 +239,11 @@ export default function FinanceReport() {
 
       {/* MODAL TRANSFER */}
       {isModalOpen && selectedPayout && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-           <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl space-y-4">
-              <div className="flex justify-between items-center pb-2 border-b">
-                 <h3 className="font-bold text-lg">Konfirmasi Transfer</h3>
+        <div className="fixed inset-0 z-[var(--layer-modal)] flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm animate-in fade-in sm:p-4">
+           <div className="max-h-[calc(100dvh-1.5rem)] w-full max-w-md space-y-4 overflow-y-auto rounded-2xl bg-white p-4 shadow-xl sm:p-6">
+              <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center border-b pb-2">
+                 <span aria-hidden="true" className="h-10 w-10" />
+                 <h3 className="text-center text-lg font-bold">Konfirmasi Transfer</h3>
                  <button type="button" aria-label="Tutup konfirmasi transfer" onClick={handleCloseTransfer}><X size={20}/></button>
               </div>
               <div className="bg-emerald-50 p-4 rounded-xl text-center border border-emerald-100">
@@ -283,19 +293,32 @@ export default function FinanceReport() {
 
         {/* --- TABEL DATA --- */}
         <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden min-h-[500px]">
-           <div className="p-6 border-b border-slate-100 flex justify-between items-center gap-4 bg-slate-50/30">
-              <div className="flex p-1.5 bg-slate-100 rounded-2xl">
-                 <button onClick={() => setActiveTab("pending")} className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === "pending" ? "bg-white text-slate-900 shadow-sm" : "text-slate-400"}`}>
+           <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/30 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+              <div className="grid w-full min-w-0 grid-cols-2 rounded-2xl bg-slate-100 p-1.5 sm:w-auto">
+                 <button onClick={() => setActiveTab("pending")} className={`min-w-0 rounded-xl px-2 py-2.5 text-xs font-bold transition-all sm:px-6 sm:text-sm ${activeTab === "pending" ? "bg-white text-slate-900 shadow-sm" : "text-slate-400"}`}>
                    Siap Dicairkan {payouts.length > 0 && <span className="ml-2 bg-orange-500 text-white px-1.5 rounded-full text-[10px]">{payouts.length}</span>}
                  </button>
-                 <button onClick={() => setActiveTab("history")} className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === "history" ? "bg-white text-slate-900 shadow-sm" : "text-slate-400"}`}>
+                 <button onClick={() => setActiveTab("history")} className={`min-w-0 rounded-xl px-2 py-2.5 text-xs font-bold transition-all sm:px-6 sm:text-sm ${activeTab === "history" ? "bg-white text-slate-900 shadow-sm" : "text-slate-400"}`}>
                    Riwayat
                  </button>
               </div>
-              <Button aria-label="Muat ulang data pencairan" variant="outline" onClick={fetchFinanceData}><RefreshCw size={16}/></Button>
+              <Button aria-label="Muat ulang data pencairan" variant="outline" onClick={fetchFinanceData} className="w-full sm:w-11"><RefreshCw size={16}/><span className="ml-2 sm:sr-only">Muat ulang</span></Button>
            </div>
 
-           <div className="overflow-x-auto">
+           <div className="divide-y divide-slate-100 md:hidden">
+             {activeTab === "pending" ? payouts.map((p) => (
+               <article key={p.queueKey || `${p.teacherId}-${p.bookingIds.join("-")}`} className="p-4">
+                 <div className="flex min-w-0 items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-black text-slate-900">{p.name}</p><p className="mt-1 text-xs font-semibold text-slate-500">{p.period}</p></div>{p.request?.requestedAt && <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${payoutWaitingLabel(p.request.requestedAt)?.startsWith("Pending lama") ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-800"}`}>{payoutWaitingLabel(p.request.requestedAt)}</span>}</div>
+                 <p className="mt-4 text-xs font-black uppercase tracking-wider text-slate-400">Gaji bersih</p><p className="mt-1 break-words text-xl font-black text-emerald-700">{formatRupiah(p.netAmount)}</p>
+                 {p.payoutBlocked ? <div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs font-bold text-amber-800">Pencairan ditahan setelah rekening berubah hingga {p.payoutHoldUntil ? new Date(p.payoutHoldUntil).toLocaleString("id-ID") : "batas keamanan berakhir"}.</div> : <Button onClick={() => handleOpenTransfer(p)} className="mt-4 h-11 w-full rounded-xl bg-slate-900 text-white hover:bg-orange-600">Transfer <ArrowUpRight size={16} className="ml-2" /></Button>}
+               </article>
+             )) : history.map((h, idx) => (
+               <article key={h.id || idx} className="p-4"><div className="flex min-w-0 items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-black text-slate-900">{h.name}</p><p className="mt-1 text-xs text-slate-500">{h.period}</p></div><CheckCircle2 className="shrink-0 text-emerald-500" size={20} /></div><p className="mt-4 text-xl font-black text-slate-900">{formatRupiah(h.netAmount)}</p><p className="mt-1 text-xs text-slate-500">{h.transferDate}</p>{h.proof_url && <Button variant="outline" onClick={() => void openProtectedFile(h.proof_url, `bukti-pencairan-${h.id || idx}`).catch(() => notify.error("Bukti pencairan tidak dapat dibuka."))} className="mt-4 h-11 w-full rounded-xl"><FileText size={15} className="mr-2" />Lihat bukti</Button>}</article>
+             ))}
+             {(activeTab === "pending" ? payouts : history).length === 0 && <div className="p-10 text-center text-sm font-semibold text-slate-500">Tidak ada data pada tampilan ini.</div>}
+           </div>
+
+           <div className="hidden overflow-x-auto md:block">
              <table className="w-full text-left min-w-[900px]">
                 <thead className="bg-slate-50/80 text-xs uppercase text-slate-400 font-bold tracking-wider">
                   <tr>
@@ -314,6 +337,7 @@ export default function FinanceReport() {
                                 <span className="inline-flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-lg text-xs font-medium text-slate-600">
                                     <Calendar size={12}/> {p.period}
                                 </span>
+                                {p.request?.requestedAt && <p className={`mt-2 text-[11px] font-black ${payoutWaitingLabel(p.request.requestedAt)?.startsWith("Pending lama") ? "text-rose-600" : "text-amber-700"}`}>{payoutWaitingLabel(p.request.requestedAt)}</p>}
                             </td>
                             <td className="px-6 py-5 text-right font-black text-emerald-600 text-lg">{formatRupiah(p.netAmount)}</td>
                             <td className="px-8 py-5 text-right">

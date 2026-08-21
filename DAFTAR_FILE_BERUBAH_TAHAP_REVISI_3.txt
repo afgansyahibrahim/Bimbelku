@@ -1,0 +1,25 @@
+TAHAP REVISI 3 — VISUAL POLISH + FINALIZATION
+
+FILE DIUBAH
+package.json
+src/pages/Index.tsx
+src/pages/WhyUs.tsx
+src/pages/teacher/TeacherProfile.tsx
+src/components/Navbar.tsx
+src/components/HeroSection.tsx
+src/components/SubjectsSection.tsx
+src/components/HowItWorksSection.tsx
+src/components/FeaturesSection.tsx
+src/components/CTASection.tsx
+src/components/TrustStrip.tsx
+src/components/RoleQuickGuide.tsx
+
+FILE BARU
+scripts/check-stage3-visual-finalization.mjs
+CHECKPOINT_TAHAP_REVISI_3_VISUAL_POLISH_FINALIZATION_20260819.md
+TUTORIAL_UJI_TAHAP_REVISI_3_FINAL_20260819.md
+DAFTAR_FILE_BERUBAH_TAHAP_REVISI_3.txt
+DELETED_FILES_TAHAP_REVISI_3.txt
+
+FILE DIHAPUS
+public/bimbel_cerdas.png

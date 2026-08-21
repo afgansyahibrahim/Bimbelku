@@ -66,8 +66,8 @@ add("admin can request revision without finalizing the session",
   && adminController.includes("Laporan sesi perlu diperbaiki"));
 add("verified session notifies tutor and students, including final-package wording",
   adminController.includes("cheap-class-session-verified")
-  && adminController.includes("Progress Kelas Murah diperbarui")
-  && adminController.includes("Kelas Murah selesai"));
+  && adminController.includes("Progress Kelas Kelompok diperbarui")
+  && adminController.includes("Kelas Kelompok selesai"));
 add("tutor UI explicitly guides report-required and revision states",
   teacherUi.includes("Langkah setelah mengajar")
   && teacherUi.includes("Isi & Kirim Laporan")

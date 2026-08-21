@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\CurriculumChapter;
 use App\Models\CurriculumSubject;
-use App\Models\LearningTopic;
 use App\Models\LearningPackage;
 use App\Models\PackagePlan;
 use App\Models\Promotion;
@@ -322,14 +321,6 @@ class StageFivePackageExperienceTest extends TestCase
             ->where('grade', 'Kelas 7')
             ->where('is_active', true)
             ->firstOrFail();
-        $topic = LearningTopic::query()
-            ->where('subject_name', $subject->name)
-            ->where('education_level', 'SMP')
-            ->where('grade', 'Kelas 7')
-            ->where('chapter', $chapter->title)
-            ->where('is_active', true)
-            ->firstOrFail();
-
         $this->postJson('/api/student/packages', [
             'package_plan_id' => $plan->id,
             'education_level' => 'SMP',
@@ -339,7 +330,6 @@ class StageFivePackageExperienceTest extends TestCase
             'subjects' => [[
                 'curriculum_subject_id' => $subject->id,
                 'curriculum_chapter_ids' => [$chapter->id],
-                'learning_topic_ids' => [$topic->id],
                 'learning_goal' => 'Menguatkan aljabar dasar.',
                 'weekdays' => [1],
                 'schedules' => [
@@ -363,6 +353,11 @@ class StageFivePackageExperienceTest extends TestCase
             'duration_hours' => 2,
             'start_time' => '15:00:00',
             'end_time' => '17:00:00',
+        ]);
+        $this->assertDatabaseHas('package_chapters', [
+            'curriculum_chapter_id' => $chapter->id,
+            'title' => $chapter->title,
+            'status' => 'not_started',
         ]);
     }
 }

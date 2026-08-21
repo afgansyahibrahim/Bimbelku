@@ -1,0 +1,49 @@
+BimbelKu — Session Flow V2
+Tanggal: 20 Agustus 2026
+Baseline: FULL Tahap Revisi 3 Final Polish REV2
+
+FILE BERUBAH: 24
+bimbelku-backend/app/Console/Commands/DemoPackageRenewal.php
+bimbelku-backend/app/Console/Commands/DemoSessionReminder.php
+bimbelku-backend/app/Http/Controllers/Api/ClassroomController.php
+bimbelku-backend/app/Http/Controllers/Api/LearningSessionController.php
+bimbelku-backend/app/Http/Controllers/Api/SessionWorkflowController.php
+bimbelku-backend/app/Http/Controllers/Api/StudentController.php
+bimbelku-backend/app/Models/Booking.php
+bimbelku-backend/app/Services/PackageCheckoutService.php
+bimbelku-backend/app/Services/TeacherAssignmentService.php
+bimbelku-backend/routes/api.php
+bimbelku-backend/tests/Feature/DemoCheapClassCommandTest.php
+bimbelku-backend/tests/Feature/DemoPackageRenewalCommandTest.php
+scripts/check-package-renewal-flow.mjs
+scripts/check-stage2-bab-monitoring-scalability.mjs
+scripts/check-stage5-5-3-session-workflow-final.mjs
+scripts/check-stage5-6-2-session-target-guidance.mjs
+scripts/check-stage5-session-progress-guidance.mjs
+src/components/LearningSessionHub.tsx
+src/components/RoleQuickGuide.tsx
+src/components/SessionActionReminder.tsx
+src/pages/admin/CaseCenter.tsx
+src/pages/rules/TermsConditions.tsx
+src/pages/students/MyClasses.tsx
+src/pages/teacher/ManageClasses.tsx
+
+FILE BARU: 6
+CHECKPOINT_SESSION_FLOW_V2_20260820.md
+TUTORIAL_DEMO_SESSION_FLOW_V2_20260820.md
+bimbelku-backend/database/migrations/2026_08_20_094500_add_presence_session_flow_v2.php
+bimbelku-backend/tests/Feature/SessionPresenceFlowV2Test.php
+scripts/check-session-presence-v2.mjs
+DAFTAR_FILE_BERUBAH_SESSION_FLOW_V2_20260820.txt
+
+FILE DIHAPUS: 0
+Tidak ada.
+
+Catatan pemasangan:
+- Overlay file perubahan ke root project BimbelKu.
+- Tidak ada file yang perlu dihapus pada update Session Flow V2.
+- Jalankan: cd bimbelku-backend
+- Jalankan: php artisan optimize:clear
+- Jalankan: php artisan migrate
+- Jalankan: php artisan test
+- Jangan lanjut demo jika migration/test gagal.

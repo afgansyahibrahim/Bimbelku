@@ -3,6 +3,7 @@ import Navbar from "@/components/Navbar";
 import Reveal from "@/components/Reveal";
 import StudentPackageLink from "@/components/StudentPackageLink";
 import {
+  ArrowLeft,
   ArrowRight,
   BarChart3,
   BookOpenCheck,
@@ -29,7 +30,7 @@ const journey = [
   {
     icon: Radar,
     title: "Pilih cara belajar",
-    description: "Gunakan Paket Belajar untuk kebutuhan yang lebih personal atau bergabung ke Kelas Murah yang jadwalnya sudah tersedia.",
+    description: "Gunakan Paket Belajar untuk kebutuhan yang lebih personal atau bergabung ke Kelas Kelompok yang jadwalnya sudah tersedia.",
   },
   {
     icon: GraduationCap,
@@ -57,7 +58,7 @@ const benefits = [
   {
     icon: BookOpenCheck,
     title: "Progress berbasis materi",
-    description: "Paket Belajar memantau Bab hingga Subbab, sedangkan Kelas Murah cukup per Bab. Progress tidak disamakan dengan jumlah sesi yang terpakai.",
+    description: "Paket Belajar dan Kelas Kelompok memantau perkembangan per Bab. Progress materi tidak disamakan dengan jumlah sesi yang terpakai.",
   },
   {
     icon: Clock3,
@@ -89,8 +90,19 @@ export default function WhyUs() {
             <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-b from-transparent to-[#0b1729]/80" />
           </div>
 
-          <div className="relative mx-auto grid max-w-7xl items-center gap-14 lg:grid-cols-[1.02fr_.98fr] lg:gap-16">
-            <div className="min-w-0">
+          <div className="relative mx-auto max-w-7xl">
+            <Reveal direction="up">
+              <Link
+                to="/"
+                className="mb-8 inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 text-sm font-black text-slate-100 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+              >
+                <ArrowLeft size={17} aria-hidden="true" />
+                Kembali ke Beranda
+              </Link>
+            </Reveal>
+
+            <div className="grid items-center gap-14 lg:grid-cols-[1.02fr_.98fr] lg:gap-16">
+              <div className="min-w-0">
               <Reveal direction="up">
                 <span className="inline-flex items-center gap-2 rounded-full border border-orange-300/20 bg-orange-400/10 px-4 py-2 text-[11px] font-black uppercase tracking-[.2em] text-orange-200 sm:text-xs">
                   <Sparkles size={15} aria-hidden="true" />
@@ -109,7 +121,7 @@ export default function WhyUs() {
 
               <Reveal delay={0.16} direction="up">
                 <p className="mt-6 max-w-2xl text-base font-medium leading-7 text-slate-300 sm:text-lg sm:leading-8">
-                  Bimbel Cerdas membantu menyusun kebutuhan belajar dari awal: pilih materi dan jadwal, gunakan cara belajar yang sesuai, jalani sesi bersama tutor, lalu pantau perkembangan tanpa mencampur progress materi dengan jumlah pertemuan.
+                  BimbelKu membantu menyusun kebutuhan belajar dari awal: pilih materi dan jadwal, gunakan cara belajar yang sesuai, jalani sesi bersama tutor, lalu pantau perkembangan tanpa mencampur progress materi dengan jumlah pertemuan.
                 </p>
               </Reveal>
 
@@ -170,6 +182,7 @@ export default function WhyUs() {
                 </div>
               </div>
             </Reveal>
+            </div>
           </div>
         </section>
 
@@ -180,7 +193,7 @@ export default function WhyUs() {
                 <p className="text-xs font-black uppercase tracking-[.2em] text-orange-600">Pilih sesuai kebutuhan</p>
                 <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl lg:text-5xl">Dua cara belajar, satu tujuan.</h2>
                 <p className="mt-5 text-base font-medium leading-7 text-slate-600 sm:text-lg">
-                  Tidak semua kebutuhan belajar harus memakai format yang sama. Karena itu Bimbel Cerdas memisahkan Paket Belajar dan Kelas Murah dengan alur yang mudah dibedakan.
+                  Tidak semua kebutuhan belajar harus memakai format yang sama. Karena itu BimbelKu memisahkan Paket Belajar dan Kelas Kelompok dengan alur yang mudah dibedakan.
                 </p>
               </div>
             </Reveal>
@@ -203,7 +216,7 @@ export default function WhyUs() {
                     <div className="mt-6 space-y-3">
                       {[
                         "Jadwal dipilih sejak awal saat membuat paket.",
-                        "Progress materi dicatat dari Bab sampai Subbab.",
+                        "Progress materi dicatat per Bab agar mudah dipahami murid dan tutor.",
                         "Riwayat sesi membantu melihat perubahan progress dari waktu ke waktu.",
                       ].map((text) => (
                         <div key={text} className="flex gap-3 text-sm font-semibold leading-6 text-slate-700">
@@ -229,7 +242,7 @@ export default function WhyUs() {
                       </div>
                       <span className="rounded-full bg-indigo-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-[.16em] text-indigo-700">Belajar bersama</span>
                     </div>
-                    <h3 className="mt-6 text-2xl font-black text-slate-950 sm:text-3xl">Kelas Murah</h3>
+                    <h3 className="mt-6 text-2xl font-black text-slate-950 sm:text-3xl">Kelas Kelompok</h3>
                     <p className="mt-3 text-sm font-medium leading-6 text-slate-600 sm:text-base sm:leading-7">
                       Cocok kalau kamu ingin bergabung ke kelas bersama dengan jadwal dan materi yang sudah tersedia, lalu belajar dengan peserta lain dalam satu kelas.
                     </p>
@@ -246,7 +259,7 @@ export default function WhyUs() {
                       ))}
                     </div>
                     <StudentPackageLink to="/student/kelas-murah" className="mt-7 inline-flex min-h-11 items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-5 text-sm font-black text-indigo-700 transition hover:bg-indigo-100">
-                      Lihat Kelas Murah <ArrowRight size={16} aria-hidden="true" />
+                      Lihat Kelas Kelompok <ArrowRight size={16} aria-hidden="true" />
                     </StudentPackageLink>
                   </div>
                 </article>
@@ -318,8 +331,8 @@ export default function WhyUs() {
         </section>
 
         <section className="px-4 pb-24 sm:px-6 sm:pb-28">
-          <Reveal>
-            <div className="mx-auto flex max-w-5xl flex-col items-center overflow-hidden rounded-[2rem] border border-orange-100 bg-gradient-to-br from-orange-50 via-white to-amber-50 px-6 py-10 text-center shadow-sm sm:px-10 sm:py-12">
+          <Reveal width="100%">
+            <div className="mx-auto flex w-full max-w-5xl flex-col items-center overflow-hidden rounded-[2rem] border border-orange-100 bg-gradient-to-br from-orange-50 via-white to-amber-50 px-6 py-10 text-center shadow-sm sm:px-10 sm:py-12">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-lg shadow-orange-200">
                 <Sparkles size={22} aria-hidden="true" />
               </div>

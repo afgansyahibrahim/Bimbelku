@@ -69,7 +69,6 @@ class DatabaseSeeder extends Seeder
             'is_online' => true,
             'is_offline' => true,
             'is_private_active' => true,
-            'is_group_active' => true,
         ]);
 
         TeacherAvailability::updateOrCreate(

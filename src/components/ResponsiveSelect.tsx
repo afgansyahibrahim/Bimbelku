@@ -74,7 +74,7 @@ export function ResponsiveSelect({
         sideOffset={6}
         collisionPadding={12}
         className={cn(
-          "z-[500] max-h-[min(20rem,calc(100dvh-1.5rem))] max-w-[calc(100dvw-1.5rem)] rounded-2xl border-slate-200 bg-white shadow-2xl",
+          "z-[var(--layer-detail-popover)] max-h-[min(20rem,calc(100dvh-1.5rem))] max-w-[calc(100dvw-1.5rem)] rounded-2xl border-slate-200 bg-white shadow-2xl",
           tone === "emerald" && "border-emerald-200",
           contentClassName,
         )}
@@ -198,9 +198,9 @@ export function ResponsiveMultiSelect({
             );
           }) : <p className="p-8 text-center text-sm font-semibold text-slate-500">Opsi tidak ditemukan.</p>}
         </div>
-        <DialogFooter className="border-t border-slate-100 bg-white p-4 sm:flex-row sm:justify-between sm:space-x-0">
-          <button type="button" onClick={() => onChange([])} className="h-11 rounded-xl border border-slate-200 px-4 text-sm font-black text-slate-700">Kosongkan</button>
-          <button type="button" onClick={() => setOpen(false)} className="h-11 rounded-xl bg-indigo-600 px-5 text-sm font-black text-white">Selesai ({values.length})</button>
+        <DialogFooter className="grid grid-cols-1 gap-2 border-t border-slate-100 bg-white p-4 min-[360px]:grid-cols-2 sm:flex sm:flex-row sm:justify-between sm:space-x-0">
+          <button type="button" onClick={() => onChange([])} className="min-h-11 min-w-0 rounded-xl border border-slate-200 px-4 py-2 text-sm font-black text-slate-700">Kosongkan</button>
+          <button type="button" onClick={() => setOpen(false)} className="min-h-11 min-w-0 rounded-xl bg-indigo-600 px-5 py-2 text-sm font-black text-white">Selesai ({values.length})</button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

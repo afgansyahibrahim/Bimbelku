@@ -1,122 +1,47 @@
-import { Button } from "@/components/ui/button";
-import { ArrowRight, Check, Sparkles } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import Reveal from "@/components/Reveal";
-import RegistrationGuardLink from "@/components/RegistrationGuardLink";
 import StudentPackageLink from "@/components/StudentPackageLink";
+import { Button } from "@/components/ui/button";
 
-const studentBenefits = [
-  { 
-    title: "Tutor Terverifikasi",
-    desc: "Identitas, foto wajah langsung, dan bukti kualifikasi diperiksa admin."
-  },
-  { 
-    title: "Pencocokan Otomatis",
-    desc: "Materi, jenjang, jadwal, mode belajar, performa, dan jarak diperiksa sistem."
-  },
-  { 
-    title: "Harga Transparan", 
-    desc: "Harga per sesi ditetapkan admin dan terlihat sebelum transfer dilakukan."
-  },
-  { 
-    title: "Jadwal Sejak Awal",
-    desc: "Murid memilih jam terlebih dahulu dan hanya tutor yang kosong yang dicocokkan."
-  },
-];
-
-const CTASection = () => {
+export default function CTASection() {
   return (
-    <section className="py-24 relative overflow-hidden bg-[#0F172A]">
-      
-      {/* Background Effects */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-1/4 -right-1/4 w-[600px] h-[600px] rounded-full bg-violet-700/30 blur-[120px] mix-blend-screen" />
-        <div className="absolute -bottom-1/4 -left-1/4 w-[600px] h-[600px] rounded-full bg-orange-600/20 blur-[120px] mix-blend-screen" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full bg-emerald-900/10 blur-[150px] mix-blend-overlay" />
-        <div className="absolute inset-0 bg-grid-white/[0.02] bg-[length:32px_32px]" />
+    <section className="relative overflow-hidden bg-[#fffaf5] px-4 py-20 sm:px-6 sm:py-24 lg:py-28">
+      <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+        <div className="absolute left-1/2 top-0 h-px w-[min(90%,72rem)] -translate-x-1/2 bg-gradient-to-r from-transparent via-orange-200 to-transparent" />
+        <div className="absolute -left-24 bottom-0 h-64 w-64 rounded-full bg-orange-100/60 blur-3xl" />
+        <div className="absolute -right-24 top-8 h-64 w-64 rounded-full bg-indigo-100/55 blur-3xl" />
       </div>
 
-      <div className="container mx-auto px-4 relative z-10">
-        <div className="max-w-6xl mx-auto">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-            
-            {/* --- Left Side: Main CTA --- */}
-            <div className="text-center lg:text-left space-y-8">
-              <div>
-                <Reveal direction="right" delay={0.1}>
-                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 border border-white/20 backdrop-blur-md text-white text-sm font-medium mb-6">
-                        <Sparkles size={16} className="text-yellow-400 fill-yellow-400"/> 
-                        <span>Belajar sesuai kebutuhanmu</span>
-                    </div>
-                </Reveal>
-                
-                <Reveal direction="right" delay={0.2}>
-                    <h2 className="text-4xl md:text-5xl lg:text-6xl font-black text-white tracking-tight leading-tight mb-6">
-                    Belajar lebih terarah bersama <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-300 to-violet-400">tutor yang sesuai</span>
-                    </h2>
-                </Reveal>
+      <div className="relative mx-auto w-full max-w-6xl">
+        <Reveal width="100%">
+          <div className="relative mx-auto flex min-h-[330px] w-full flex-col items-center justify-center overflow-hidden rounded-[2.25rem] border border-orange-100/90 bg-white px-6 py-12 text-center shadow-[0_22px_70px_rgba(124,45,18,0.08)] sm:min-h-[370px] sm:px-10 sm:py-16 lg:px-16">
+            <div className="pointer-events-none absolute inset-x-0 top-0 mx-auto h-1 w-24 rounded-b-full bg-gradient-to-r from-orange-500 via-orange-400 to-indigo-500" aria-hidden="true" />
+            <div className="pointer-events-none absolute -left-12 -top-12 h-36 w-36 rounded-full border border-orange-100" aria-hidden="true" />
+            <div className="pointer-events-none absolute -bottom-16 -right-16 h-44 w-44 rounded-full border border-indigo-100" aria-hidden="true" />
 
-                <Reveal direction="right" delay={0.3}>
-                    <p className="text-slate-300 text-lg md:text-xl max-w-xl mx-auto lg:mx-0 leading-relaxed">
-                    Susun paket, pilih mapel, dan tentukan jadwal. Radar BimbelKu akan mencarikan tutor yang sesuai.
-                    </p>
-                </Reveal>
+            <div className="relative z-10 mx-auto flex w-full max-w-3xl flex-col items-center">
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-orange-600 sm:text-xs">Langkah berikutnya</p>
+              <h2 className="mx-auto mt-4 max-w-3xl text-balance text-3xl font-black leading-[1.08] tracking-tight text-slate-950 sm:text-4xl lg:text-5xl">
+                Belajar lebih terarah, mulai dari kebutuhanmu.
+              </h2>
+              <p className="mx-auto mt-5 max-w-2xl text-sm font-medium leading-7 text-slate-600 sm:text-base sm:leading-8 lg:text-lg">
+                Tentukan mata pelajaran dan jadwalmu. BimbelKu membantu mencarikan tutor yang sesuai, lalu progress belajarmu tetap tercatat.
+              </p>
+
+              <div className="mt-8 flex w-full justify-center sm:mt-9">
+                <StudentPackageLink to="/student/packages/new" className="w-full max-w-[19rem] sm:w-auto sm:max-w-none">
+                  <Button
+                    size="xl"
+                    className="h-14 w-full rounded-2xl bg-slate-950 px-7 font-black text-white shadow-lg shadow-slate-950/15 transition hover:-translate-y-0.5 hover:bg-slate-800 sm:w-auto"
+                  >
+                    Cari Bimbingan <ArrowRight className="ml-2 h-5 w-5" />
+                  </Button>
+                </StudentPackageLink>
               </div>
-              
-              <Reveal direction="up" delay={0.4}>
-                  <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-                      <StudentPackageLink to="/student/packages/new">
-                        <Button size="xl" className="w-full sm:w-auto rounded-2xl bg-white text-slate-900 hover:bg-slate-100 font-bold text-base shadow-xl shadow-white/10 transition-all hover-scale-105 active:scale-95 flex items-center gap-2">
-                          Mulai Cari Tutor <ArrowRight className="h-5 w-5" />
-                        </Button>
-                      </StudentPackageLink>
-                  </div>
-              </Reveal>
             </div>
-
-            {/* --- Right Side: Glassmorphism Card --- */}
-            <Reveal direction="left" delay={0.5} width="100%">
-                <div className="relative">
-                    <div className="absolute inset-0 bg-gradient-to-tr from-indigo-600 to-blue-500 blur-2xl opacity-20 rounded-[3rem] transform rotate-3 scale-105"></div>
-                    
-                    <div className="bg-white/5 backdrop-blur-2xl border border-white/10 rounded-[2.5rem] p-8 md:p-10 shadow-2xl relative z-10 overflow-hidden group hover:border-white/20 transition-all duration-500">
-                      
-                      <div className="mb-8">
-                          <h3 className="text-3xl font-black text-white mb-2">
-                            Alur yang jelas
-                          </h3>
-                          <p className="text-slate-400">Kenapa harus belajar di BimbelKu?</p>
-                      </div>
-
-                      <ul className="space-y-5 mb-10">
-                        {studentBenefits.map((benefit, index) => (
-                          <Reveal key={index} delay={0.6 + (index * 0.1)} direction="left">
-                            <li className="flex items-start gap-4 group/item">
-                                <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-emerald-500/20 flex items-center justify-center border border-white/10 group-hover/item:border-white/30 transition-colors">
-                                    <Check className="h-5 w-5 text-emerald-400" strokeWidth={3} />
-                                </div>
-                                <div>
-                                    <h4 className="text-white font-bold text-lg mb-1 group-hover/item:text-blue-300 transition-colors">{benefit.title}</h4>
-                                    <span className="text-slate-400 text-sm leading-snug">{benefit.desc}</span>
-                                </div>
-                            </li>
-                          </Reveal>
-                        ))}
-                      </ul>
-
-                      <RegistrationGuardLink to="/register?role=student">
-                        <Button size="lg" className="w-full h-14 text-base rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold shadow-lg shadow-blue-600/30 border-0 transition-all hover-scale-102 active:scale-[0.98]">
-                          Buat Akun Siswa Gratis
-                        </Button>
-                      </RegistrationGuardLink>
-                    </div>
-                </div>
-            </Reveal>
-
           </div>
-        </div>
+        </Reveal>
       </div>
     </section>
   );
-};
-
-export default CTASection;
+}

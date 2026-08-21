@@ -13,9 +13,9 @@ class ClassroomSystemMessageService
     {
         $booking->loadMissing([
             'teacher:id,name',
-            'bookingRequest:id,subject_name,education_level,grade,chapter,subtopic,topic,learning_goal',
+            'bookingRequest:id,subject_name,education_level,grade,chapter,learning_goal',
             'participants.student:id,name',
-            'participants.bookingRequest:id,subject_name,education_level,grade,chapter,subtopic,topic,learning_goal',
+            'participants.bookingRequest:id,subject_name,education_level,grade,chapter,learning_goal',
             'participants.order:id,order_id,status,amount,learning_package_id',
             'order:id,order_id,status,amount,learning_package_id',
         ]);
@@ -40,7 +40,7 @@ class ClassroomSystemMessageService
         $request = $booking->bookingRequest
             ?? $booking->participants->first()?->bookingRequest;
         $subject = $request?->subject_name ?: 'Bimbingan belajar';
-        $topic = $request?->chapter ?: ($request?->subtopic ?: $request?->topic);
+        $topic = $request?->chapter;
         $studentNames = $booking->participants
             ->filter(fn ($participant) => $participant->order?->status === 'paid')
             ->pluck('student.name')
@@ -51,11 +51,9 @@ class ClassroomSystemMessageService
             ? max(1, $booking->start_at->diffInMinutes($booking->end_at))
             : max(60, (int) $booking->duration_hours * 60);
 
-        $isPrivate = $booking->class_type !== 'group';
         $metadata = [
             'title' => 'Pesanan belajar terhubung',
-            // Detail invoice peserta tidak ditaruh pada ruang kelompok agar tidak bocor ke murid lain.
-            'order_code' => $isPrivate ? $order->order_id : null,
+            'order_code' => $order->order_id,
             'subject' => $subject,
             'topic' => $topic,
             'education_level' => $request?->education_level,
@@ -69,9 +67,7 @@ class ClassroomSystemMessageService
             'learning_mode' => $booking->learning_mode,
             'class_type' => $booking->class_type,
             'booking_status' => $booking->status,
-            'amount' => $isPrivate
-                ? (float) ($order->amount ?? $booking->total_amount ?? 0)
-                : null,
+            'amount' => (float) ($order->amount ?? $booking->total_amount ?? 0),
             'action_label' => 'Lihat detail kelas',
             'action_url_student' => "/student/my-classes?booking={$booking->id}",
             'action_url_teacher' => "/guru/kelas?booking={$booking->id}",
@@ -92,8 +88,7 @@ class ClassroomSystemMessageService
             ],
         );
 
-        // Ruang kelompok dapat menerima peserta berbayar berikutnya. Ringkasannya diperbarui,
-        // tetapi pesan tidak dibuat ulang sehingga notifikasi chat tetap idempoten.
+        // Ringkasan dapat berubah saat data transaksi diperbarui, tetapi pesan tetap idempoten.
         if (!$message->wasRecentlyCreated && $message->metadata !== $metadata) {
             $message->update(['metadata' => $metadata]);
         }

@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   BookOpen,
   CalendarDays,
   CheckCircle2,
-  ChevronDown,
   Circle,
   Clock3,
   History,
@@ -22,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import http, { getApiError } from "@/lib/http";
 import { notify } from "@/lib/notify";
 
-type TopicStatus = "not_started" | "in_progress" | "completed" | "review_needed" | string;
+type MaterialStatus = "not_started" | "in_progress" | "completed" | "review_needed" | string;
 
 type TeacherProgressData = {
   id: number;
@@ -36,17 +35,18 @@ type TeacherProgressData = {
   student: { id?: number | null; name: string };
   allocated_sessions: number;
   progress_summary: {
-    total_topics: number;
-    completed_topics: number;
-    in_progress_topics: number;
+    total_chapters: number;
+    completed_chapters: number;
+    in_progress_chapters: number;
     progress_percent: number;
   };
-  learning_topics: Array<{
-    id: number;
-    chapter?: string | null;
-    title: string;
-    status: TopicStatus;
+  learning_chapters: Array<{
+    chapter: string;
+    curriculum_chapter_id?: number | null;
+    status: MaterialStatus;
     needs_review: boolean;
+    started_at?: string | null;
+    completed_at?: string | null;
   }>;
   sessions: Array<{
     id: number;
@@ -67,10 +67,8 @@ type TeacherProgressData = {
       no_material_change?: boolean;
       no_change_reason?: string | null;
       published_at: string;
-      topics?: Array<{
-        topic_id: number;
-        chapter?: string | null;
-        title?: string | null;
+      chapters?: Array<{
+        chapter: string;
         activity_type?: string | null;
         status_before?: string | null;
         status_after?: string | null;
@@ -187,8 +185,8 @@ export default function TeacherLearningProgressDetail() {
         </section>
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Summary label="Subbab selesai" value={`${summary.completed_topics}/${summary.total_topics}`} icon={CheckCircle2} />
-          <Summary label="Sedang dipelajari" value={summary.in_progress_topics} icon={BookOpen} />
+          <Summary label="Bab selesai" value={`${summary.completed_chapters}/${summary.total_chapters}`} icon={CheckCircle2} />
+          <Summary label="Sedang dipelajari" value={summary.in_progress_chapters} icon={BookOpen} />
           <Summary label="Sesi dilaporkan" value={`${data.sessions.filter((session) => session.progress_report).length}/${data.allocated_sessions}`} icon={History} />
           <Summary label="Sesi dialokasikan" value={data.allocated_sessions} icon={CalendarDays} />
         </div>
@@ -206,38 +204,26 @@ export default function TeacherLearningProgressDetail() {
 }
 
 function MaterialPanel({ data }: { data: TeacherProgressData }) {
-  const chapters = useMemo(() => {
-    const grouped = new Map<string, TeacherProgressData["learning_topics"]>();
-    for (const topic of data.learning_topics) {
-      const chapter = topic.chapter?.trim() || "Materi belajar";
-      grouped.set(chapter, [...(grouped.get(chapter) || []), topic]);
-    }
-    return [...grouped.entries()];
-  }, [data.learning_topics]);
-
   return (
     <section className="rounded-[1.75rem] border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/35 to-blue-50/45 p-4 shadow-[0_14px_36px_rgba(30,64,175,0.07)] sm:p-6">
-      <div><h2 className="text-lg font-black text-slate-900">Kondisi materi saat ini</h2><p className="mt-1 text-sm leading-6 text-slate-500">Gunakan bagian ini untuk melihat posisi murid sekarang. Riwayat Sesi menjelaskan kapan setiap perubahan terjadi.</p></div>
-      <div className="mt-5 space-y-3">
-        {chapters.map(([chapter, topics], index) => {
-          const completed = topics.filter((topic) => topic.status === "completed").length;
-          const percent = topics.length ? Math.round((completed / topics.length) * 100) : 0;
-          return (
-            <details key={chapter} open={index === 0 && percent < 100} className="group overflow-hidden rounded-2xl border border-indigo-100 bg-indigo-50/55">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 marker:hidden">
-                <div className="min-w-0"><p className="break-words font-black text-slate-900">{chapter}</p><p className="mt-1 text-xs text-slate-500">{completed} dari {topics.length} subbab selesai</p></div>
-                <div className="flex shrink-0 items-center gap-2"><span className="text-sm font-black text-indigo-700">{percent}%</span><ChevronDown size={17} className="text-slate-400 transition group-open:rotate-180" /></div>
-              </summary>
-              <div className="border-t border-indigo-100 bg-white p-3 sm:p-4">
-                <div className="mb-4 h-2 overflow-hidden rounded-full bg-indigo-50"><div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-600" style={{ width: `${percent}%` }} /></div>
-                <div className="space-y-2">{topics.map((topic) => <TopicRow key={topic.id} topic={topic} />)}</div>
-              </div>
-            </details>
-          );
-        })}
-        {chapters.length === 0 && <p className="rounded-xl bg-slate-50 p-5 text-sm text-slate-500">Subbab belum tersedia pada paket ini.</p>}
+      <div><h2 className="text-lg font-black text-slate-900">Kondisi materi saat ini</h2><p className="mt-1 text-sm leading-6 text-slate-500">Progress ditampilkan per Bab agar posisi belajar murid cepat dibaca. Riwayat Sesi menjelaskan kapan perubahan tersebut terjadi.</p></div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        {data.learning_chapters.map((chapter) => <ChapterRow key={`${chapter.curriculum_chapter_id || chapter.chapter}`} chapter={chapter} />)}
+        {data.learning_chapters.length === 0 && <p className="rounded-xl bg-slate-50 p-5 text-sm text-slate-500 sm:col-span-2">Bab belum tersedia pada paket ini.</p>}
       </div>
     </section>
+  );
+}
+
+function ChapterRow({ chapter }: { chapter: TeacherProgressData["learning_chapters"][number] }) {
+  const done = chapter.status === "completed";
+  const active = chapter.status === "in_progress" || chapter.status === "review_needed";
+  const Icon = done ? (chapter.needs_review ? RotateCcw : CheckCircle2) : active ? BookOpen : Circle;
+  return (
+    <article className={`flex min-h-24 items-start gap-3 rounded-2xl border p-4 ${done ? "border-emerald-100 bg-emerald-50" : active ? "border-indigo-100 bg-white" : "border-slate-100 bg-white"}`}>
+      <Icon size={18} className={`mt-0.5 shrink-0 ${done ? (chapter.needs_review ? "text-amber-600" : "text-emerald-600") : active ? "text-indigo-600" : "text-slate-300"}`} />
+      <div className="min-w-0"><p className="break-words text-sm font-black text-slate-800">{chapter.chapter}</p><p className={`mt-1 text-xs font-bold ${done && chapter.needs_review ? "text-amber-700" : done ? "text-emerald-700" : active ? "text-indigo-700" : "text-slate-400"}`}>{statusLabel(chapter.status, chapter.needs_review)}</p>{chapter.completed_at && <p className="mt-2 text-[11px] font-semibold text-slate-400">Selesai {dateTime(chapter.completed_at)}</p>}</div>
+    </article>
   );
 }
 
@@ -258,17 +244,17 @@ function HistoryPanel({ data, onOpenSession }: { data: TeacherProgressData; onOp
                 <>
                   <h3 className="mt-4 text-sm font-black text-slate-900">{report.material_covered}</h3>
                   {report.no_material_change && <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs font-bold text-amber-800">Tidak ada perubahan status materi · {noChangeReasonLabel(report.no_change_reason)}</div>}
-                  {report.topics?.length ? (
+                  {report.chapters?.length ? (
                     <div className="mt-3 space-y-2">
-                      {report.topics.map((topic) => (
-                        <div key={`${session.id}-${topic.topic_id}`} className="rounded-xl border border-indigo-100 bg-white p-3">
-                          <p className="text-sm font-black text-slate-900">{topic.title || "Subbab"}</p>
-                          <p className="mt-1 text-xs font-semibold text-slate-500">{statusLabel(topic.status_before)} <span className="px-1 text-indigo-400">→</span> <span className="font-black text-indigo-700">{statusLabel(topic.status_after, Boolean(topic.needs_review))}</span></p>
-                          {topic.notes && <p className="mt-2 text-xs leading-5 text-slate-500">{topic.notes}</p>}
+                      {report.chapters.map((chapter) => (
+                        <div key={`${session.id}-${chapter.chapter}`} className="rounded-xl border border-indigo-100 bg-white p-3">
+                          <p className="text-sm font-black text-slate-900">{chapter.chapter}</p>
+                          <p className="mt-1 text-xs font-semibold text-slate-500">{statusLabel(chapter.status_before)} <span className="px-1 text-indigo-400">→</span> <span className="font-black text-indigo-700">{statusLabel(chapter.status_after, Boolean(chapter.needs_review))}</span></p>
+                          {chapter.notes && <p className="mt-2 text-xs leading-5 text-slate-500">{chapter.notes}</p>}
                         </div>
                       ))}
                     </div>
-                  ) : !report.no_material_change ? <p className="mt-3 rounded-xl bg-white p-3 text-sm text-slate-500">Tidak ada perubahan subbab terstruktur pada laporan ini.</p> : null}
+                  ) : !report.no_material_change ? <p className="mt-3 rounded-xl bg-white p-3 text-sm text-slate-500">Tidak ada perubahan Bab terstruktur pada laporan ini.</p> : null}
                   {report.notes && <p className="mt-3 rounded-xl bg-white p-3 text-sm leading-6 text-slate-600"><b>Catatan:</b> {report.notes}</p>}
                   {session.booking_id && <Button type="button" variant="outline" onClick={() => onOpenSession(session.booking_id!)} className="mt-4 rounded-xl border-indigo-100 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"><MessageSquareText size={16} className="mr-2" />Lihat laporan lengkap</Button>}
                 </>
@@ -278,18 +264,6 @@ function HistoryPanel({ data, onOpenSession }: { data: TeacherProgressData; onOp
         })}
       </div>
     </section>
-  );
-}
-
-function TopicRow({ topic }: { topic: TeacherProgressData["learning_topics"][number] }) {
-  const done = topic.status === "completed";
-  const active = topic.status === "in_progress" || topic.status === "review_needed";
-  const Icon = done ? (topic.needs_review ? RotateCcw : CheckCircle2) : active ? BookOpen : Circle;
-  return (
-    <div className={`flex items-start gap-3 rounded-xl border p-3 ${done ? "border-emerald-100 bg-emerald-50" : active ? "border-indigo-100 bg-indigo-50/80" : "border-slate-100 bg-slate-50"}`}>
-      <Icon size={18} className={`mt-0.5 shrink-0 ${done ? (topic.needs_review ? "text-amber-600" : "text-emerald-600") : active ? "text-indigo-600" : "text-slate-300"}`} />
-      <div><p className="text-sm font-bold text-slate-800">{topic.title}</p><p className={`mt-1 text-xs font-bold ${done ? "text-emerald-700" : active ? "text-indigo-700" : "text-slate-400"}`}>{statusLabel(topic.status, topic.needs_review)}</p></div>
-    </div>
   );
 }
 

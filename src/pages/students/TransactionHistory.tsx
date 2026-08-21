@@ -106,7 +106,7 @@ const statusInfo: Record<string, { label: string; className: string; icon: typeo
 
 const rupiah = (value: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
 const orderKindLabel = (kind: OrderItem["order_kind"]) => kind === "cheap_class"
-  ? "Kelas Murah"
+  ? "Kelas Kelompok"
   : kind === "package"
     ? "Paket Baru"
     : "Privat lama";
@@ -208,11 +208,11 @@ export default function TransactionHistory() {
   );
 
   return (
-    <StudentLayout title="Riwayat Transaksi">
+    <StudentLayout title="Riwayat Pembayaran">
       <div className="mx-auto max-w-6xl space-y-6 pb-12">
         <section className="grid gap-4 rounded-[1.75rem] bg-gradient-to-br from-slate-950 to-indigo-950 p-5 text-white sm:rounded-[2rem] sm:p-7 lg:grid-cols-[1fr_20rem] lg:items-end">
           <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Keuangan murid</p><h1 className="mt-3 text-2xl font-black sm:text-3xl">Tagihan, transfer, refund, dan saldo</h1><p className="mt-2 text-sm text-indigo-100/70">Semua nominal dan status keputusan admin tercatat di sini.</p><Button onClick={load} variant="outline" className="mt-5 w-full rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white sm:w-auto"><RefreshCw size={16} className="mr-2" />Muat ulang</Button></div>
-          <div className="rounded-2xl border border-white/15 bg-white/10 p-5 backdrop-blur-sm"><div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/10 text-indigo-200"><WalletCards size={20} /></span><div><p className="text-xs font-black uppercase tracking-wide text-indigo-200">Saldo BimbelKu</p><p className="mt-1 text-2xl font-black">{rupiah(wallet.balance)}</p></div></div>{wallet.reserved_balance > 0 && <p className="mt-3 rounded-xl bg-amber-300/10 px-3 py-2 text-xs font-bold text-amber-100">{rupiah(wallet.reserved_balance)} sedang ditahan untuk pembayaran yang diperiksa.</p>}<p className="mt-3 text-xs leading-5 text-indigo-100/70">Store credit dari refund untuk Paket Belajar atau Kelas Murah. Saldo tidak dapat ditarik tunai dan seluruh mutasinya tercatat otomatis.</p></div>
+          <div className="rounded-2xl border border-white/15 bg-white/10 p-5 backdrop-blur-sm"><div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/10 text-indigo-200"><WalletCards size={20} /></span><div><p className="text-xs font-black uppercase tracking-wide text-indigo-200">Saldo BimbelKu</p><p className="mt-1 text-2xl font-black">{rupiah(wallet.balance)}</p></div></div>{wallet.reserved_balance > 0 && <p className="mt-3 rounded-xl bg-amber-300/10 px-3 py-2 text-xs font-bold text-amber-100">{rupiah(wallet.reserved_balance)} sedang ditahan untuk pembayaran yang diperiksa.</p>}<p className="mt-3 text-xs leading-5 text-indigo-100/70">Store credit dari refund untuk Paket Belajar atau Kelas Kelompok. Saldo tidak dapat ditarik tunai dan seluruh mutasinya tercatat otomatis.</p></div>
         </section>
         {wallet.transactions.length > 0 && (
           <section className="overflow-hidden rounded-[1.5rem] border border-indigo-100 bg-white">
@@ -321,7 +321,7 @@ export default function TransactionHistory() {
                           <div className="min-w-0">
                             <p className="text-xs font-black text-slate-900">Tujuan refund tersimpan</p>
                             {order.refund.destination_method === "bimbelku_balance" ? (
-                              <p className="mt-1 text-xs leading-5 text-slate-600">Saldo BimbelKu · dapat dipakai untuk Paket Belajar/Kelas Murah dan tidak dapat ditarik tunai.</p>
+                              <p className="mt-1 text-xs leading-5 text-slate-600">Saldo BimbelKu · dapat dipakai untuk Paket Belajar/Kelas Kelompok dan tidak dapat ditarik tunai.</p>
                             ) : (
                               <><p className="mt-1 break-words text-xs leading-5 text-slate-600">{order.refund.destination_bank_name} · {order.refund.destination_account_number} · a.n. {order.refund.destination_account_name}</p>{walletRefundAmount > 0 && <p className="mt-1 text-xs leading-5 text-indigo-700">{rupiah(walletRefundAmount)} kembali ke Saldo BimbelKu · admin mentransfer {rupiah(externalRefundAmount)}.</p>}</>
                             )}
@@ -399,7 +399,7 @@ export default function TransactionHistory() {
         )}
       </div>
       {refundBank && (
-        <div role="presentation" className="fixed inset-0 z-[110] grid place-items-center bg-slate-950/70 p-3 backdrop-blur-sm" onClick={() => setRefundBank(null)}>
+        <div role="presentation" className="fixed inset-0 z-[var(--layer-modal)] grid place-items-center bg-slate-950/70 p-3 backdrop-blur-sm" onClick={() => setRefundBank(null)}>
           <div role="dialog" aria-modal="true" aria-labelledby="refund-bank-title" className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-[1.5rem] bg-white p-4 shadow-2xl sm:rounded-[2rem] sm:p-6" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -434,7 +434,7 @@ export default function TransactionHistory() {
           </div>
         </div>
       )}
-      {proof && <div role="presentation" className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/75 p-4 backdrop-blur-sm" onClick={() => setProof(null)}><div role="dialog" aria-modal="true" aria-label="Detail transaksi" className="max-w-xl rounded-[2rem] bg-white p-3 shadow-2xl" onClick={(event) => event.stopPropagation()}><ProtectedImage source={proof} alt="Bukti transaksi" className="max-h-[78dvh] w-full rounded-2xl object-contain" /><Button variant="ghost" className="mt-2 w-full rounded-xl" onClick={() => setProof(null)}>Tutup</Button></div></div>}
+      {proof && <div role="presentation" className="fixed inset-0 z-[var(--layer-detail)] grid place-items-center bg-slate-950/75 p-3 backdrop-blur-sm sm:p-4" onClick={() => setProof(null)}><div role="dialog" aria-modal="true" aria-label="Detail transaksi" className="max-h-[calc(100dvh-1.5rem)] w-full max-w-xl overflow-y-auto rounded-[2rem] bg-white p-3 shadow-2xl" onClick={(event) => event.stopPropagation()}><ProtectedImage source={proof} alt="Bukti transaksi" className="max-h-[78dvh] w-full rounded-2xl object-contain" /><Button variant="ghost" className="mt-2 w-full rounded-xl" onClick={() => setProof(null)}>Tutup</Button></div></div>}
     </StudentLayout>
   );
 }

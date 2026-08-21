@@ -32,7 +32,7 @@ class DemoPackageRenewalCommandTest extends TestCase
         $source = LearningPackage::query()
             ->where('student_id', $student->id)
             ->where('package_code', 'like', 'DEMO-RENEW-SOURCE-%')
-            ->with('subjects.learningTopics')
+            ->with('subjects.chapters')
             ->latest('id')
             ->firstOrFail();
 
@@ -42,11 +42,6 @@ class DemoPackageRenewalCommandTest extends TestCase
             ->assertJsonPath('data.0.can_renew', true);
 
         $subject = $source->subjects->firstOrFail();
-        $oldTopic = $subject->learningTopics->firstOrFail();
-        $newTopic = \App\Models\LearningTopic::query()
-            ->where('subject_name', 'Matematika Demo Renewal')
-            ->where('chapter', 'Fungsi dan Persamaan Kuadrat')
-            ->firstOrFail();
         $newChapter = \App\Models\CurriculumChapter::query()
             ->where('curriculum_subject_id', $subject->curriculum_subject_id)
             ->where('title', 'Fungsi dan Persamaan Kuadrat')
@@ -60,7 +55,6 @@ class DemoPackageRenewalCommandTest extends TestCase
         $subjectPayload = [
             'curriculum_subject_id' => $subject->curriculum_subject_id,
             'curriculum_chapter_ids' => [$subject->curriculum_chapter_id, $newChapter->id],
-            'learning_topic_ids' => [$oldTopic->learning_topic_id, $newTopic->id],
             'learning_goal' => 'Melanjutkan materi baru dan menguatkan satu materi lama.',
             'weekdays' => [1, 2, 3, 4],
             'schedules' => $starts,
@@ -102,10 +96,11 @@ class DemoPackageRenewalCommandTest extends TestCase
         $this->getJson("/api/student/packages/{$source->id}")
             ->assertOk()
             ->assertJsonPath('can_renew', false);
-        $renewal = LearningPackage::query()->with('subjects.learningTopics')->findOrFail($renewalId);
-        $this->assertTrue($renewal->subjects->first()->learningTopics->every(fn ($topic) => $topic->status === 'not_started'));
-        $reviewTopic = $renewal->subjects->first()->learningTopics->firstWhere('learning_topic_id', $oldTopic->learning_topic_id);
-        $this->assertTrue((bool) $reviewTopic?->needs_review);
+        $renewal = LearningPackage::query()->with('subjects.chapters')->findOrFail($renewalId);
+        $this->assertTrue($renewal->subjects->first()->chapters->every(fn ($topic) => $topic->status === 'not_started'));
+        $reviewTopic = $renewal->subjects->first()->chapters->firstWhere('curriculum_chapter_id', $subject->curriculum_chapter_id);
+        $this->assertNotNull($reviewTopic);
+        $this->assertTrue((bool) $reviewTopic->needs_review);
 
         $this->artisan('demo:package-renewal payment-paid')->assertExitCode(0);
 
@@ -131,9 +126,20 @@ class DemoPackageRenewalCommandTest extends TestCase
         $this->assertSame('active', $renewal->status);
         $this->assertSame(3, (int) $renewal->used_sessions);
 
+        $finalBooking = $renewal->fresh()->subjects()->firstOrFail()->sessions()->where('sequence', 4)->firstOrFail()->booking()->firstOrFail();
+        $this->assertSame('presence_confirmation_v2', $finalBooking->session_flow_version);
+
+        Sanctum::actingAs($teacher);
+        $this->getJson('/api/session-action/next')
+            ->assertOk()
+            ->assertJsonPath('data.kind', 'teacher_mark_ready');
+        $this->postJson("/api/teacher/bookings/{$finalBooking->id}/ready", [
+            'focus_note' => 'Review akhir Bab Persamaan Linear.',
+        ])->assertOk();
+
         Sanctum::actingAs($student);
         $this->getJson('/api/session-action/next')
             ->assertOk()
-            ->assertJsonPath('data.kind', 'student_generate_pin');
+            ->assertJsonPath('data.kind', 'student_confirm_presence');
     }
 }

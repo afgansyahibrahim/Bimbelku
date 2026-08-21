@@ -101,7 +101,6 @@ class TeacherOfferResponseWindowTest extends TestCase
             'is_online' => $online,
             'is_offline' => $offline,
             'is_private_active' => true,
-            'is_group_active' => false,
         ]);
         TeacherAvailability::create([
             'user_id' => $teacher->id,

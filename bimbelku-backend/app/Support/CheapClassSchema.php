@@ -70,7 +70,7 @@ final class CheapClassSchema
             'booking_participants' => ['id', 'booking_id', 'student_id', 'status'],
             'cheap_class_templates' => [
                 'id', 'template_code', 'curriculum_subject_id', 'curriculum_chapter_id', 'subjects', 'teacher_id', 'subject_name',
-                'education_level', 'grade', 'chapter', 'subtopic', 'topic',
+                'education_level', 'grade', 'chapter', 'topic',
                 'first_session_date', 'start_time', 'duration_minutes', 'session_count',
                 'recurrence_days', 'recurrence_enabled', 'recurrence_anchor_at',
                 'next_publish_at', 'last_published_at', 'last_skipped_at',
@@ -86,7 +86,7 @@ final class CheapClassSchema
                 'generation_source', 'template_settings_version', 'template_snapshot',
                 'curriculum_subject_id', 'curriculum_chapter_id', 'subjects',
                 'teacher_id', 'subject_name', 'education_level', 'grade',
-                'chapter', 'subtopic', 'topic', 'starts_at', 'ends_at', 'session_count',
+                'chapter', 'topic', 'starts_at', 'ends_at', 'session_count',
                 'registration_opens_at', 'registration_deadline',
                 'price_per_student', 'price_per_session', 'custom_price_per_student', 'minimum_participants',
                 'maximum_participants', 'payment_window_minutes', 'status',
@@ -153,7 +153,7 @@ final class CheapClassSchema
             'missing' => $missing,
             'message' => $missing === []
                 ? null
-                : 'Database Kelas Murah belum diperbarui. Jalankan php artisan migrate dari folder bimbelku-backend.',
+                : 'Database Kelas Kelompok belum diperbarui. Jalankan php artisan migrate dari folder bimbelku-backend.',
         ];
     }
 

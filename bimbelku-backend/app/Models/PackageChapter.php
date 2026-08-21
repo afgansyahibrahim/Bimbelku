@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class PackageLearningTopic extends Model
+class PackageChapter extends Model
 {
     protected $guarded = ['id'];
 
@@ -20,13 +20,13 @@ class PackageLearningTopic extends Model
         return $this->belongsTo(PackageSubject::class, 'package_subject_id');
     }
 
-    public function catalogTopic()
+    public function curriculumChapter()
     {
-        return $this->belongsTo(LearningTopic::class, 'learning_topic_id');
+        return $this->belongsTo(CurriculumChapter::class, 'curriculum_chapter_id');
     }
 
     public function logs()
     {
-        return $this->hasMany(PackageSessionTopicLog::class);
+        return $this->hasMany(PackageSessionChapterLog::class);
     }
 }

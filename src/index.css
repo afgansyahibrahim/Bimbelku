@@ -34,6 +34,21 @@
 
     --radius: 0.75rem;
 
+    /*
+     * Global interaction layers. Keep these ordered so a local z-index cannot
+     * accidentally place evidence behind the case that opened it.
+     * 10 dropdown, 20 modal, 30 detail, 40 viewer, 50 critical alert.
+     */
+    --layer-dropdown: 1000;
+    --layer-modal: 2000;
+    --layer-modal-content: 2001;
+    --layer-detail: 3000;
+    --layer-detail-content: 3001;
+    --layer-detail-popover: 3500;
+    --layer-preview: 4000;
+    --layer-alert: 5000;
+    --layer-alert-content: 5001;
+
     /* Custom colors */
     --coral: 16 85% 60%;
     --coral-light: 16 85% 95%;
@@ -221,9 +236,39 @@
 }
 
 @media (max-width: 639px) {
+  /* Guard rail mobile: konten dinamis (judul mapel, nama paket, kode, status,
+     dan teks API) tidak boleh memaksa halaman melebar di Android kecil. */
+  article,
+  form,
+  fieldset,
+  [role="dialog"] {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  article > *,
+  form > *,
+  fieldset > *,
+  [role="dialog"] > * {
+    min-width: 0;
+  }
+
+  article :where(h1, h2, h3, h4, p, span, a, button),
+  [role="dialog"] :where(h1, h2, h3, h4, p, span, a, button) {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  img,
+  video,
+  canvas {
+    max-width: 100%;
+  }
+
   input,
   select,
   textarea {
+    max-width: 100%;
     font-size: 16px !important;
   }
 

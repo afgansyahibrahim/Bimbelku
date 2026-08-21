@@ -99,7 +99,6 @@ class CheapClassScheduleRulesTest extends TestCase
             ]],
             'education_level' => 'SD',
             'grade' => 'Kelas 6',
-            'subtopic' => null,
             'topic' => null,
             'registration_open_date' => '2026-08-17',
             'registration_open_time' => '08:00',

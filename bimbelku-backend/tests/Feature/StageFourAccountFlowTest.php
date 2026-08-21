@@ -112,6 +112,42 @@ class StageFourAccountFlowTest extends TestCase
         ]);
     }
 
+
+    public function test_student_registration_profile_fields_are_saved_and_returned_after_login(): void
+    {
+        $response = $this->postJson('/api/register', [
+            'name' => 'Murid Profil Lengkap',
+            'email' => 'murid.profil@example.com',
+            'phone' => '081234567894',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'role' => 'student',
+            'student_education_level' => 'SMP',
+            'grade' => 'Kelas 7',
+            'school_name' => 'SMP Contoh',
+            'address' => 'Jl. Contoh No. 1',
+            'date_of_birth' => now()->subYears(20)->toDateString(),
+            'terms_accepted' => true,
+            'privacy_accepted' => true,
+        ]);
+
+        $response->assertCreated();
+
+        $student = User::query()->where('email', 'murid.profil@example.com')->firstOrFail();
+        $this->assertSame('SMP', $student->student_education_level);
+        $this->assertSame('Kelas 7', $student->grade);
+        $this->assertSame('SMP Contoh', $student->school_name);
+        $this->assertSame('Jl. Contoh No. 1', $student->address);
+
+        Sanctum::actingAs($student);
+        $this->getJson('/api/user')
+            ->assertOk()
+            ->assertJsonPath('student_education_level', 'SMP')
+            ->assertJsonPath('grade', 'Kelas 7')
+            ->assertJsonPath('school_name', 'SMP Contoh')
+            ->assertJsonPath('address', 'Jl. Contoh No. 1');
+    }
+
     public function test_teacher_registration_remains_pending_with_private_documents(): void
     {
         $this->seed(CurriculumCatalogSeeder::class);

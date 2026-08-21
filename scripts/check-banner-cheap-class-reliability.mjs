@@ -52,11 +52,11 @@ for (const route of [
 
 expect(
   permissionCatalog.includes("cheap-class-templates|cheap-classes"),
-  "endpoint Kelas Murah admin wajib memakai izin content.manage",
+  "endpoint Kelas Kelompok admin wajib memakai izin content.manage",
 );
 expect(
   frontendPermissions.includes("stage-five|kelas-murah"),
-  "rute halaman Kelas Murah admin wajib dipetakan ke content.manage",
+  "rute halaman Kelas Kelompok admin wajib dipetakan ke content.manage",
 );
 expect(
   contentController.includes("no-store, max-age=0, must-revalidate"),
@@ -116,7 +116,7 @@ expect(
     && cheapClassPage.includes("session_count")
     && studentCheapClassPage.includes("Jadwal semua sesi")
     && teacherCheapClassPage.includes("item.sessions.map"),
-  "paket Kelas Murah wajib menyimpan dan menampilkan seluruh sesi",
+  "paket Kelas Kelompok wajib menyimpan dan menampilkan seluruh sesi",
 );
 expect(
   cheapClassController.includes("'weekdays' => ['required', 'array', 'min:1', 'max:4']")
@@ -140,7 +140,7 @@ expect(
     && !cheapClassPage.includes("Ulangi penawaran otomatis")
     && cheapClassPage.includes("Tinjau sebelum dibuat")
     && cheapClassPage.includes("onContinue={() => void createPackage()}")
-    && studentCheapClassPage.includes("Sesi berikutnya tidak memiliki tagihan baru"),
+    && studentCheapClassPage.includes("Tidak ada tagihan baru pada sesi berikutnya"),
   "satu template wajib membuat satu paket dan satu pembayaran untuk seluruh sesi",
 );
 expect(
@@ -196,7 +196,7 @@ expect(
   cheapClassSchema.includes("Schema::getColumnListing")
     && cheapClassSchema.includes("teacher_subjects")
     && cheapClassSchema.includes("orders"),
-  "kesiapan Kelas Murah wajib memeriksa skema utama dan data pendukung",
+  "kesiapan Kelas Kelompok wajib memeriksa skema utama dan data pendukung",
 );
 expect(
   cheapClassService.includes("reopenRegistrationIfSeatAvailable"),
@@ -233,7 +233,7 @@ expect(
     && paymentPage.includes('const returnPath = orderKind === "cheap_class"')
     && paymentPage.includes('? "/student/kelas-murah"')
     && pendingPaymentPopup.includes('orderKind === "cheap_class"'),
-  "tombol pembayaran Kelas Murah wajib membuka invoice yang tepat dan kembali ke halaman yang tepat",
+  "tombol pembayaran Kelas Kelompok wajib membuka invoice yang tepat dan kembali ke halaman yang tepat",
 );
 expect(
   cheapClassService.includes("['submitted', 'paid', 'refund_pending', 'refunded']")
@@ -247,32 +247,32 @@ expect(
 );
 expect(
   workflowCommand.includes("CheapClassSchema::status()['ready']"),
-  "scheduler lama tidak boleh gagal saat migration Kelas Murah belum terpasang",
+  "scheduler lama tidak boleh gagal saat migration Kelas Kelompok belum terpasang",
 );
 expect(
   httpClient.includes("/student\\/cheap-classes\\/\\d+\\/join$"),
-  "gabung Kelas Murah wajib mengirim kunci idempotensi",
+  "gabung Kelas Kelompok wajib mengirim kunci idempotensi",
 );
 expect(
   httpClient.includes('url === "/admin/cheap-class-templates"')
-    && apiRoutes.includes("->middleware(['throttle:10,1', 'idempotency'])"),
-  "pembuatan paket Kelas Murah wajib dilindungi kunci idempotensi",
+    && apiRoutes.includes("->middleware(['throttle:admin-cheap-class-template-create', 'idempotency'])"),
+  "pembuatan paket Kelas Kelompok wajib dilindungi kunci idempotensi",
 );
 expect(
   sessionWorkflow.includes("order.cheapClassEnrollment")
     && sessionWorkflow.includes("cheapClassEnrollment?->update(['status' => 'refunded'])"),
-  "refund selesai wajib menyinkronkan status peserta Kelas Murah",
+  "refund selesai wajib menyinkronkan status peserta Kelas Kelompok",
 );
 expect(
   financeOperations.includes("class_details_snapshot")
     && financeOperations.includes("$snapshot['subject'] ?? null"),
-  "daftar refund admin wajib menampilkan mapel Kelas Murah dari snapshot pesanan",
+  "daftar refund admin wajib menampilkan mapel Kelas Kelompok dari snapshot pesanan",
 );
 
 if (failures.length) {
-  console.error("Pemeriksaan banner dan Kelas Murah gagal:");
+  console.error("Pemeriksaan banner dan Kelas Kelompok gagal:");
   failures.forEach((failure) => console.error("- " + failure));
   process.exit(1);
 }
 
-console.log("Pemeriksaan banner dinamis dan akses Kelas Murah admin lulus.");
+console.log("Pemeriksaan banner dinamis dan akses Kelas Kelompok admin lulus.");

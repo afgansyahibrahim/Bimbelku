@@ -93,7 +93,12 @@ expect(orderController.includes("payPackage"), "unggah bukti paket wajib memilik
 expect(adminPayment.includes("activatePaidPackage"), "verifikasi admin wajib memulai pencarian tutor paket");
 expect(checkout.includes("refund_pending"), "verifikasi paket yang terlambat wajib masuk antrean refund");
 expect(expiryCommand.includes("expirePackagePayments"), "scheduler wajib menutup tagihan paket kedaluwarsa");
-expect(expiryCommand.includes("whereNull('learning_package_id')"), "scheduler lama tidak boleh memproses order paket sebagai order tunggal");
+expect(
+  expiryCommand.includes("whereNotNull('learning_package_id')")
+    && expiryCommand.includes("subjects.bookingRequest.offers")
+    && expiryCommand.includes("'status' => 'payment_expired'"),
+  "scheduler paket wajib memproses relasi paket secara eksplisit dan tidak menghidupkan matching sebelum pembayaran",
+);
 expect(adminController.includes("INTERNAL_DESTINATIONS"), "tujuan banner internal wajib memakai daftar aman");
 expect(adminController.includes("Tautan luar wajib memakai HTTPS"), "tautan banner luar wajib memakai HTTPS");
 expect(adminController.includes("normalizeDateWindow") && adminController.includes("setTimezone($timezone)"), "waktu promo wajib dinormalisasi memakai zona waktu aplikasi");

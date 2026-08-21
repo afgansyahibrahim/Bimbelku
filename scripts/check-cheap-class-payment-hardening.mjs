@@ -26,11 +26,11 @@ expect(
 );
 expect(
   service.includes("$confirmedCount >= (int) $class->maximum_participants")
-    && service.includes("Pembayaran Kelas Murah melebihi kapasitas maksimum kelas"),
+    && service.includes("Pembayaran Kelas Kelompok melebihi kapasitas maksimum kelas"),
   "verifikasi admin wajib memiliki pengaman kuota maksimum lapis kedua",
 );
 expect(
-  service.includes("Urutan lock seluruh mutasi Kelas Murah: class -> enrollment -> order")
+  service.includes("Urutan lock seluruh mutasi Kelas Kelompok: class -> enrollment -> order")
     && service.includes("Samakan urutan lock dengan join/cancel agar verifikasi paralel aman")
     && service.includes("Urutan lock konsisten: class -> enrollment -> order"),
   "submit, verifikasi, dan pembatalan wajib memakai urutan lock yang konsisten",
@@ -38,7 +38,7 @@ expect(
 expect(
   service.includes("$enrollment->status === 'payment_submitted' && $order?->status === 'submitted'")
     && service.includes("'status' => 'cancellation_pending'")
-    && service.includes("Kelas Murah dibatalkan sistem sebelum bukti pembayaran selesai diperiksa"),
+    && service.includes("Kelas Kelompok dibatalkan sistem sebelum bukti pembayaran selesai diperiksa"),
   "bukti submitted pada kelas yang dibatalkan sistem wajib tetap diperiksa dan direfund hanya bila valid",
 );
 expect(
@@ -60,19 +60,19 @@ expect(
   payment.includes('const returnPath = orderKind === "cheap_class"')
     && payment.includes('? "/student/kelas-murah"')
     && payment.includes('navigate(returnPath)'),
-  "tombol kembali pembayaran Kelas Murah wajib mengikuti returnPath order_kind ke halaman Kelas Murah",
+  "tombol kembali pembayaran Kelas Kelompok wajib mengikuti returnPath order_kind ke halaman Kelas Kelompok",
 );
 expect(
   tests.includes("test_student_cannot_cancel_after_payment_proof_submission")
     && tests.includes("test_student_cannot_cancel_after_payment_is_verified")
     && tests.includes("test_system_cancellation_keeps_submitted_proof_for_review_and_refunds_only_when_valid")
     && tests.includes("test_second_verification_guard_refunds_anomalous_payment_above_maximum_capacity"),
-  "regression test hardening pembayaran Kelas Murah wajib tersedia",
+  "regression test hardening pembayaran Kelas Kelompok wajib tersedia",
 );
 
 if (failures.length) {
-  console.error("Pemeriksaan hardening pembayaran Kelas Murah gagal:");
+  console.error("Pemeriksaan hardening pembayaran Kelas Kelompok gagal:");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
-console.log("Pemeriksaan hardening pembayaran Kelas Murah lulus.");
+console.log("Pemeriksaan hardening pembayaran Kelas Kelompok lulus.");

@@ -1,0 +1,10 @@
+import fs from "node:fs";
+const read=(f)=>fs.readFileSync(f,"utf8"); const checks=[]; const add=(l,o)=>checks.push([l,!!o]);
+const routes=read("bimbelku-backend/routes/api.php"), session=read("bimbelku-backend/app/Http/Controllers/Api/LearningSessionController.php"), test=read("bimbelku-backend/tests/Feature/SessionPresenceFlowV2Test.php"), hub=read("src/components/LearningSessionHub.tsx");
+add("presence routes exist", routes.includes("presence-confirm") && routes.includes("/ready"));
+add("legacy PIN routes are gone", !routes.includes("session-pin") && !routes.includes("learning-plan"));
+add("session controller requires student confirmation", session.includes("student_confirmed_at") && session.includes("studentConfirmPresence"));
+add("progress logs are chapter-native", session.includes("PackageSessionChapterLog") && !session.includes("PackageSessionTopicLog"));
+add("UI is one-tap presence", hub.includes("Saya Sudah Hadir") && hub.includes("Saya Siap Mengajar"));
+add("feature test covers presence and final approval", test.includes("presence-confirm") && test.includes("/approve") && !test.includes("session-pin"));
+let failed=0; for(const [l,o] of checks){console.log(`${o?'PASS':'FAIL'}  ${l}`); if(!o) failed++;} if(failed) process.exit(1); console.log(`\n${checks.length}/${checks.length} Session Presence V2 checks PASS`);

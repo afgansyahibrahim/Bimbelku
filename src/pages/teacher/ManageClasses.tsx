@@ -11,7 +11,6 @@ import {
   CheckCircle2,
   Clock3,
   ExternalLink,
-  FileCheck2,
   FileWarning,
   Filter,
   GraduationCap,
@@ -27,7 +26,6 @@ import {
   WalletCards,
 } from "lucide-react";
 import TeacherLayout from "@/components/TeacherLayout";
-import ProtectedImage, { openProtectedFile } from "@/components/ProtectedImage";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -38,7 +36,6 @@ import { Textarea } from "@/components/ui/textarea";
 import http, { getApiError, getCached } from "@/lib/http";
 import { isValidHttpUrl, validateUpload } from "@/lib/validation";
 
-const CameraCapture = lazy(() => import("@/components/CameraCapture"));
 const LearningSessionHub = lazy(() => import("@/components/LearningSessionHub"));
 
 interface Participant {
@@ -62,13 +59,12 @@ interface TeacherClass {
   education_level?: string;
   grade?: string;
   chapter?: string;
-  subtopic?: string;
-  topic?: string;
   learning_goal?: string;
-  attachment_url?: string;
   method: "online" | "offline";
-  type: "private" | "group";
   status: string;
+  tutor_ready_at?: string | null;
+  student_confirmed_at?: string | null;
+  session_focus_note?: string | null;
   start_at: string;
   end_at: string;
   duration_hours: number;
@@ -79,13 +75,12 @@ interface TeacherClass {
   teacher_net_amount?: number;
   commission_percent: number;
   payout_status: string;
-  completion_evidence_url?: string;
   completion_notes?: string;
   objection_deadline?: string;
   participants: Participant[];
   latest_report?: { type: string; status: string; chronology: string };
   latest_dispute?: { status: string; reason: string };
-  package_progress?: { total_topics: number; completed_topics: number; in_progress_topics: number; progress_percent: number } | null;
+  package_progress?: { total_chapters: number; completed_chapters: number; in_progress_chapters: number; progress_percent: number } | null;
   completion_steps: { check_in: boolean; attendance: boolean; check_out: boolean; progress: boolean; progress_reported_count: number; progress_required_count: number };
   latest_progress_report?: { id: number; session_number: number; material_covered: string; progress_percent: number; published_at: string } | null;
   can_complete: boolean;
@@ -93,7 +88,7 @@ interface TeacherClass {
   can_report_emergency: boolean;
 }
 
-type Action = "complete" | "absence" | "emergency";
+type Action = "absence" | "emergency";
 type MethodFilter = "all" | TeacherClass["method"];
 type ScheduleSort = "nearest" | "farthest";
 type ClassScope = "active" | "history";
@@ -150,7 +145,6 @@ const normalizeTeacherClass = (value: unknown): TeacherClass | null => {
     id,
     subject: typeof value.subject === "string" && value.subject.trim() ? value.subject : "Mata pelajaran",
     method: value.method === "offline" ? "offline" : "online",
-    type: value.type === "group" ? "group" : "private",
     status: typeof value.status === "string" && value.status ? value.status : "confirmed",
     start_at: typeof value.start_at === "string" ? value.start_at : "",
     end_at: typeof value.end_at === "string" ? value.end_at : "",
@@ -219,7 +213,6 @@ export default function ManageClasses() {
   const [processing, setProcessing] = useState(false);
   const [meetingLink, setMeetingLink] = useState("");
   const [evidence, setEvidence] = useState<File | null>(null);
-  const [evidenceCapturedAt, setEvidenceCapturedAt] = useState("");
   const [notes, setNotes] = useState("");
   const [studentId, setStudentId] = useState("");
   const [incidentType, setIncidentType] = useState("");
@@ -228,7 +221,7 @@ export default function ManageClasses() {
   const [impact, setImpact] = useState("");
   const [hubBookingId, setHubBookingId] = useState<number | null>(null);
   const [hubReturnClass, setHubReturnClass] = useState<TeacherClass | null>(null);
-  const [hubInitialTab, setHubInitialTab] = useState<"session" | "plan" | "progress">("session");
+  const [hubInitialTab, setHubInitialTab] = useState<"session" | "progress">("session");
   const [classScope, setClassScope] = useState<ClassScope>("active");
   const [methodFilter, setMethodFilter] = useState<MethodFilter>("all");
   const [scheduleSort, setScheduleSort] = useState<ScheduleSort>("nearest");
@@ -329,9 +322,8 @@ export default function ManageClasses() {
   const openAction = (type: Action, item: TeacherClass) => {
     setAction({ type, item });
     setEvidence(null);
-    setEvidenceCapturedAt("");
     setNotes("");
-    setStudentId(item.type === "private" ? String(item.participants?.[0]?.student_id || "") : "");
+    setStudentId(String(item.participants?.[0]?.student_id || ""));
     setIncidentType("");
     setIncidentAt(localDateTimeInput());
     setIncidentLocation("");
@@ -345,16 +337,18 @@ export default function ManageClasses() {
     const item = classes.find((row) => row.id === sessionId);
     if (!item) return;
 
-    if (["checkin", "attendance", "checkout", "plan", "progress"].includes(deepAction)) {
+    if (["checkout", "progress", "ready", "session"].includes(deepAction)) {
       setHubReturnClass(item);
-      setHubInitialTab(deepAction === "progress" ? "progress" : deepAction === "plan" ? "plan" : "session");
+      setHubInitialTab(deepAction === "progress" ? "progress" : "session");
       setHubBookingId(item.id);
       setSelected(null);
       return;
     }
 
     if (deepAction === "complete" && !action) {
-      openAction("complete", item);
+      setHubReturnClass(item);
+      setHubInitialTab("progress");
+      setHubBookingId(item.id);
       setSelected(null);
     }
   }, [action, classes, searchParams]);
@@ -362,11 +356,6 @@ export default function ManageClasses() {
   const submitAction = async (event: FormEvent) => {
     event.preventDefault();
     if (!action || !evidence) return;
-    if (action.type === "absence" && action.item.type === "group" && !studentId) {
-      notify.error("Pilih murid yang dilaporkan tidak hadir.");
-      return;
-    }
-
     if (action.type === "emergency") {
       const accepted = await confirm({
         title: "Laporkan keadaan darurat?",
@@ -380,12 +369,7 @@ export default function ManageClasses() {
     const payload = new FormData();
     payload.append("evidence", evidence);
     let endpoint = "";
-    if (action.type === "complete") {
-      endpoint = "complete";
-      payload.append("notes", notes);
-      payload.append("capture_source", "camera");
-      payload.append("captured_at", evidenceCapturedAt);
-    } else if (action.type === "absence") {
+    if (action.type === "absence") {
       endpoint = "absence";
       payload.append("chronology", notes);
       if (studentId) payload.append("student_id", studentId);
@@ -414,13 +398,10 @@ export default function ManageClasses() {
   };
 
   const selectEvidence = (file?: File) => {
-    const completionOnly = action?.type === "complete";
     const error = validateUpload(file, {
-      label: completionOnly ? "Foto pelaksanaan" : "Bukti laporan",
+      label: "Bukti laporan",
       maxSizeMb: 5,
-      extensions: completionOnly
-        ? ["jpg", "jpeg", "png", "webp"]
-        : ["jpg", "jpeg", "png", "webp", "pdf"],
+      extensions: ["jpg", "jpeg", "png", "webp", "pdf"],
     });
     if (error) {
       notify.error(error);
@@ -434,12 +415,12 @@ export default function ManageClasses() {
     <TeacherLayout title="Kelas Saya">
       <div className="mx-auto max-w-7xl space-y-7 pb-12">
         <section data-tour="teacher-classes-hero" className="flex flex-col justify-between gap-5 rounded-[1.7rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-5 text-white shadow-xl sm:rounded-[2rem] sm:p-7 md:flex-row md:items-end">
-          <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Pelaksanaan sesi</p><h1 className="mt-3 text-2xl font-black sm:text-3xl">Kelas yang sudah dipesan</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Sistem membimbing penyelesaian sesi dari check-in sampai progress dan konfirmasi. Kelas yang selesai tetap dapat dibuka dari tab Riwayat.</p></div>
+          <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Pelaksanaan sesi</p><h1 className="mt-3 text-2xl font-black sm:text-3xl">Kelas yang sudah dipesan</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Sistem membimbing sesi dari konfirmasi hadir sampai hasil belajar dan keputusan murid. Kelas yang selesai tetap dapat dibuka dari tab Riwayat.</p></div>
           <Button onClick={() => void loadClasses()} variant="outline" className="rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"><RefreshCw size={16} className="mr-2" />Muat ulang</Button>
         </section>
 
         <section data-tour="teacher-class-steps" className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {["Check-in PIN", "Catat kehadiran", "Check-out", "Isi progress", "Konfirmasi sesi"].map((label, index) => <div key={label} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm"><span className="grid h-7 w-7 place-items-center rounded-lg bg-indigo-50 text-xs font-black text-indigo-700">{index + 1}</span><p className="mt-2 text-xs font-black leading-5 text-slate-700">{label}</p></div>)}
+          {["Siap mulai", "Kehadiran", "Akhiri sesi", "Hasil belajar", "Konfirmasi murid"].map((label, index) => <div key={label} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm"><span className="grid h-7 w-7 place-items-center rounded-lg bg-indigo-50 text-xs font-black text-indigo-700">{index + 1}</span><p className="mt-2 text-xs font-black leading-5 text-slate-700">{label}</p></div>)}
         </section>
 
         {!loadError && classes.length > 0 && (
@@ -531,7 +512,7 @@ export default function ManageClasses() {
         ) : (
           <div data-tour="teacher-class-list" className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             {visibleClasses.map((item) => (
-              <article key={item.id} className="render-auto flex flex-col rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm transition hover-rise hover-shadow-xl">
+              <article key={item.id} className="render-auto flex min-w-0 max-w-full flex-col overflow-hidden rounded-[1.6rem] border border-slate-100 bg-white p-4 shadow-sm transition hover-rise hover-shadow-xl sm:rounded-[2rem] sm:p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ${item.method === "online" ? "bg-indigo-50 text-indigo-600" : "bg-emerald-50 text-emerald-600"}`}>
                     {item.method === "online" ? <Monitor /> : <MapPin />}
@@ -544,23 +525,22 @@ export default function ManageClasses() {
                     <span className="rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-700">{statusLabels[item.status] || item.status}</span>
                   </div>
                 </div>
-                <p className="mt-5 text-xs font-black uppercase tracking-widest text-indigo-500">{item.subject} · {item.type === "group" ? "Kelompok" : "Privat"}</p><h2 className="mt-1 text-xl font-black text-slate-900">{item.chapter || item.topic || "Sesi belajar"}</h2>
+                <p className="mt-5 min-w-0 break-words text-xs font-black uppercase tracking-[.14em] text-indigo-500 sm:tracking-widest">{item.subject} · Privat</p><h2 className="mt-1 min-w-0 break-words text-lg font-black leading-snug text-slate-900 sm:text-xl">{item.chapter || "Sesi belajar"}</h2>
                 <div className="mt-4 space-y-2 text-xs text-slate-600"><Info icon={CalendarDays} text={dateTime(item.start_at)} /><Info icon={Users} text={`${item.participants.length} murid`} /><Info icon={Clock3} text={`${item.duration_hours} jam`} /></div>
                 {item.package_progress && <div className="mt-4 rounded-xl bg-slate-50 p-3"><div className="flex items-center justify-between gap-3"><p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Progress materi</p><span className="text-sm font-black text-indigo-700">{item.package_progress.progress_percent}%</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-indigo-600" style={{ width: `${item.package_progress.progress_percent}%` }} /></div></div>}
                 {item.completion_steps.check_out && !item.completion_steps.progress && !teacherHistoryStatuses.has(item.status) && (
                   <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                    <div className="flex items-start gap-3"><AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" /><div><p className="text-[10px] font-black uppercase tracking-[.14em] text-amber-700">Hasil belajar belum diisi</p><p className="mt-1 text-sm font-black text-amber-950">Catat progress pertemuan sekarang</p><p className="mt-1 text-xs leading-5 text-amber-800">Pilih Bab/Subbab yang dibahas dan simpan hasil belajar sebelum sesi dapat diselesaikan.</p></div></div>
+                    <div className="flex items-start gap-3"><AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" /><div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[.14em] text-amber-700">Hasil belajar belum diisi</p><p className="mt-1 text-sm font-black text-amber-950">Catat progress pertemuan sekarang</p><p className="mt-1 text-xs leading-5 text-amber-800">Pilih Bab yang dibahas dan simpan hasil belajar sebelum sesi dapat diselesaikan.</p></div></div>
                     <Button type="button" onClick={() => { setHubReturnClass(item); setHubInitialTab("progress"); setHubBookingId(item.id); }} className="mt-3 min-h-10 w-full rounded-xl bg-amber-500 font-black text-slate-950 hover:bg-amber-600"><BarChart3 size={16} className="mr-2" />Isi Hasil Belajar</Button>
                   </div>
                 )}
                 {item.can_complete && !teacherHistoryStatuses.has(item.status) && (
                   <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-                    <p className="text-[10px] font-black uppercase tracking-[.14em] text-emerald-700">Administrasi lengkap</p><p className="mt-1 text-sm font-black text-emerald-950">Sesi siap diselesaikan</p><p className="mt-1 text-xs leading-5 text-emerald-800">Hasil belajar sudah tersimpan. Kirim bukti pelaksanaan untuk meneruskan sesi ke keputusan murid.</p>
-                    <Button type="button" onClick={() => openAction("complete", item)} className="mt-3 min-h-10 w-full rounded-xl bg-emerald-600 font-black hover:bg-emerald-700"><CheckCircle2 size={16} className="mr-2" />Selesaikan Sesi</Button>
+                    <p className="text-[10px] font-black uppercase tracking-[.14em] text-emerald-700">Administrasi lengkap</p><p className="mt-1 text-sm font-black text-emerald-950">Menunggu keputusan murid</p><p className="mt-1 text-xs leading-5 text-emerald-800">Hasil belajar sudah tersimpan. Murid otomatis diminta mengecek sesi.</p>
                   </div>
                 )}
                 {item.status === "awaiting_student_approval" && (
-                  <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="text-[10px] font-black uppercase tracking-[.14em] text-amber-700">Menunggu murid</p><p className="mt-1 text-sm font-black text-amber-950">Persetujuan sesi sudah diminta</p><p className="mt-1 text-xs leading-5 text-amber-800">Tidak ada tindakan tutor lagi. Murid sedang diminta memeriksa bukti dan mengonfirmasi sesi.</p></div>
+                  <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="text-[10px] font-black uppercase tracking-[.14em] text-amber-700">Menunggu murid</p><p className="mt-1 text-sm font-black text-amber-950">Keputusan sesi sudah diminta</p><p className="mt-1 text-xs leading-5 text-amber-800">Tidak ada tindakan tutor lagi. Murid sedang diminta memilih Sesi Sesuai atau Ada masalah.</p></div>
                 )}
                 <div className="mt-auto grid gap-2 pt-5 sm:grid-cols-2"><Button variant="outline" onClick={() => { setSelected(item); setMeetingLink(item.meeting_link || ""); }} className="rounded-xl">{teacherHistoryStatuses.has(item.status) ? "Lihat detail" : "Kelola sesi"}</Button>{item.package_subject_id ? <Link to={`/guru/progress/package-subject/${item.package_subject_id}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 text-sm font-black text-white hover:bg-indigo-700"><BarChart3 size={16} />Lihat Progress</Link> : <Button type="button" variant="outline" onClick={() => { setHubReturnClass(item); setHubInitialTab("progress"); setHubBookingId(item.id); }} className="rounded-xl border-indigo-200 text-indigo-700"><BarChart3 size={16} className="mr-2" />Progress sesi</Button>}</div>
               </article>
@@ -580,17 +560,15 @@ export default function ManageClasses() {
             >
               <ArrowLeft size={16} className="mr-2" />Kembali ke daftar kelas
             </Button>
-            <DialogHeader><DialogTitle className="text-2xl">{selected.subject} · {selected.chapter || selected.topic || "Sesi belajar"}</DialogTitle><DialogDescription>{dateTime(selected.start_at)} · {selected.type === "group" ? "Kelompok" : "Privat"}</DialogDescription></DialogHeader>
+            <DialogHeader><DialogTitle className="text-2xl">{selected.subject} · {selected.chapter || "Sesi belajar"}</DialogTitle><DialogDescription>{dateTime(selected.start_at)} · Privat</DialogDescription></DialogHeader>
             <div className="grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm sm:grid-cols-2"><Info icon={GraduationCap} text={`${selected.education_level || ""} ${selected.grade || ""}`} /><Info icon={Clock3} text={timeRange(selected.start_at, selected.end_at)} /><Info icon={selected.method === "online" ? Monitor : MapPin} text={selected.method === "online" ? "Online" : selected.address || "Alamat murid"} /><Info icon={WalletCards} text={`Komisi admin ${selected.commission_percent}%`} /></div>
             {selected.learning_goal && <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4"><p className="text-xs font-black uppercase tracking-widest text-indigo-500">Tujuan murid</p><p className="mt-2 text-sm leading-6 text-indigo-900">{selected.learning_goal}</p></div>}
-            {selected.attachment_url && <Button type="button" variant="outline" className="rounded-xl" onClick={() => void openProtectedFile(selected.attachment_url!, "lampiran-materi").catch(() => notify.error("Lampiran tidak dapat dibuka."))}><ExternalLink size={16} className="mr-2" />Buka lampiran materi</Button>}
             {selected.method === "online" ? (["confirmed", "in_progress"].includes(selected.status) ? <div><Label className="font-bold">Tautan Google Meet/Zoom</Label><div className="mt-2 flex gap-2"><Input type="url" className="h-11 rounded-xl" value={meetingLink} onChange={(event) => setMeetingLink(event.target.value)} placeholder="https://..." /><Button aria-label="Simpan tautan kelas" onClick={() => saveMeetingLink(selected)} disabled={processing} className="rounded-xl bg-indigo-600"><Link2 size={16} /></Button></div></div> : <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-sm text-slate-600"><p className="font-black text-slate-800">Tautan sesi</p>{selected.meeting_link ? <a href={selected.meeting_link} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 font-bold text-indigo-700 underline">Buka tautan kelas <ExternalLink size={13} /></a> : <p className="mt-1 text-xs">Tidak ada tautan tersimpan.</p>}</div>) : selected.maps_link ? <Button asChild className="rounded-xl bg-emerald-600 hover:bg-emerald-700"><a href={selected.maps_link} target="_blank" rel="noreferrer"><MapPin size={16} className="mr-2" />Buka lokasi murid</a></Button> : <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-sm text-amber-800">Alamat lengkap dibuka setelah pembayaran dikonfirmasi.</div>}
             <div><p className="text-sm font-black text-slate-800">Peserta</p><div className="mt-2 space-y-2">{selected.participants.length ? selected.participants.map((participant) => <div key={participant.id} className="flex items-center justify-between rounded-xl border border-slate-100 p-3 text-sm"><div><p className="font-bold text-slate-800">{participant.name}</p><p className="text-xs text-slate-400">{participant.status}</p></div><span className="font-bold text-slate-600">{rupiah(participant.amount)}</span></div>) : <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-500">Data peserta belum tersedia.</p>}</div></div>
             {["confirmed", "in_progress", "awaiting_student_approval", "disputed", "absence_review", "admin_review_required", "completed"].includes(selected.status) && <div className="grid gap-2 sm:grid-cols-2"><Button variant="outline" className="rounded-xl border-indigo-200 text-indigo-700" onClick={() => { setHubReturnClass(selected); setHubInitialTab("session"); setHubBookingId(selected.id); setSelected(null); }}><MessageCircle size={16} className="mr-2" />Buka ruang belajar</Button>{selected.package_subject_id && <Button asChild variant="outline" className="rounded-xl border-violet-200 text-violet-700"><Link to={`/guru/progress/package-subject/${selected.package_subject_id}`}><BarChart3 size={16} className="mr-2" />Lihat Progress Kelas</Link></Button>}</div>}
-            {["confirmed", "in_progress", "awaiting_student_approval", "completed"].includes(selected.status) && <CompletionGuide item={selected} onOpenProgress={() => { setHubReturnClass(selected); setHubInitialTab("progress"); setHubBookingId(selected.id); setSelected(null); }} onConfirm={() => openAction("complete", selected)} />}
+            {["confirmed", "in_progress", "awaiting_student_approval", "completed"].includes(selected.status) && <CompletionGuide item={selected} onOpenProgress={() => { setHubReturnClass(selected); setHubInitialTab("progress"); setHubBookingId(selected.id); setSelected(null); }} />}
             {selected.latest_report && <div className="flex gap-3 rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900"><FileWarning className="shrink-0" /><div><p className="font-black">Laporan {selected.latest_report.status}</p><p className="mt-1 line-clamp-3 leading-6">{selected.latest_report.chronology}</p></div></div>}
             {selected.latest_dispute && <div className="flex gap-3 rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm text-rose-900"><ShieldAlert className="shrink-0" /><div><p className="font-black">Keberatan murid {selected.latest_dispute.status}</p><p className="mt-1 leading-6">{selected.latest_dispute.reason}</p></div></div>}
-            {selected.completion_evidence_url && <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4"><div className="flex items-center gap-2 font-black text-emerald-900"><FileCheck2 size={18} />Bukti sudah dikirim</div><ProtectedImage source={selected.completion_evidence_url} alt="Bukti sesi" className="mt-3 max-h-64 w-full rounded-xl bg-white object-contain" /><p className="mt-3 text-sm text-emerald-800">{selected.completion_notes}</p></div>}
             <div className="grid gap-2 sm:grid-cols-2">{selected.can_report_absence && <Button variant="outline" onClick={() => openAction("absence", selected)} className="rounded-xl border-amber-200 text-amber-700"><UserRoundX size={16} className="mr-2" />Murid absen</Button>}{selected.can_report_emergency && <Button variant="outline" onClick={() => openAction("emergency", selected)} className="rounded-xl border-rose-200 text-rose-700"><AlertTriangle size={16} className="mr-2" />Darurat</Button>}</div>
             {selected.status === "completed" && <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">Pendapatan bersih {rupiah(selected.teacher_net_amount)} · status pencairan: {selected.payout_status}.</div>}
           </>}
@@ -600,12 +578,11 @@ export default function ManageClasses() {
       <Dialog open={Boolean(action)} onOpenChange={(open) => { if (!open) { setAction(null); clearSessionActionQuery(); } }}>
         <DialogContent className="max-h-[92dvh] overflow-y-auto rounded-[2rem] sm:max-w-lg">
           {action && <>
-            <DialogHeader><DialogTitle>{action.type === "complete" ? "Selesaikan sesi & kirim bukti" : action.type === "absence" ? "Laporkan murid tidak hadir" : "Laporkan keadaan darurat"}</DialogTitle><DialogDescription>{action.type === "complete" ? "Hasil belajar sudah wajib lengkap. Setelah bukti dikirim, murid memiliki waktu untuk menyatakan sesi sesuai atau mengajukan keberatan." : action.type === "absence" ? "Laporan dapat diajukan setelah keterlambatan lebih dari 15 menit dan akan diperiksa admin." : "Refund penuh langsung masuk antrean. Bukti dan kronologi akan diperiksa admin."}</DialogDescription></DialogHeader>
+            <DialogHeader><DialogTitle>{action.type === "absence" ? "Laporkan murid tidak hadir" : "Laporkan keadaan darurat"}</DialogTitle><DialogDescription>{action.type === "absence" ? "Laporan dapat diajukan setelah keterlambatan lebih dari 15 menit dan akan diperiksa admin." : "Refund penuh langsung masuk antrean. Bukti dan kronologi akan diperiksa admin."}</DialogDescription></DialogHeader>
             <form onSubmit={submitAction} className="space-y-4">
-              {action.type === "absence" && action.item.type === "group" && <div><Label>Pilih murid</Label><Select value={studentId} onValueChange={setStudentId}><SelectTrigger className="mt-2 h-11 rounded-xl"><SelectValue placeholder="Murid yang tidak hadir" /></SelectTrigger><SelectContent>{action.item.participants.filter((item) => item.order_status === "paid" || item.status === "paid").map((item) => <SelectItem key={item.student_id} value={String(item.student_id)}>{item.name}</SelectItem>)}</SelectContent></Select></div>}
               {action.type === "emergency" && <><div><Label>Jenis keadaan</Label><Input required maxLength={120} className="mt-2 rounded-xl" value={incidentType} onChange={(event) => setIncidentType(event.target.value)} placeholder="Contoh: kecelakaan dalam perjalanan" /></div><div><Label>Waktu kejadian</Label><Input required type="datetime-local" className="mt-2 rounded-xl" value={incidentAt} onChange={(event) => setIncidentAt(event.target.value)} /></div><div><Label>Lokasi kejadian</Label><Input required maxLength={500} className="mt-2 rounded-xl" value={incidentLocation} onChange={(event) => setIncidentLocation(event.target.value)} /></div><div><Label>Dampak terhadap sesi</Label><Textarea required minLength={20} maxLength={1500} className="mt-2 min-h-24 rounded-xl" value={impact} onChange={(event) => setImpact(event.target.value)} /></div></>}
-              <div><Label>{action.type === "complete" ? "Catatan pelaksanaan" : "Kronologi lengkap"}</Label><Textarea required minLength={action.type === "complete" ? 20 : action.type === "absence" ? 30 : 50} maxLength={action.type === "emergency" ? 3000 : action.type === "absence" ? 2500 : 2000} className="mt-2 min-h-36 rounded-xl" value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Tuliskan kejadian dengan jelas dan masuk akal" /></div>
-              {action.type === "complete" ? <div><Label>Bukti pelaksanaan dari kamera</Label><div className="mt-2"><Suspense fallback={<div className="h-12 rounded-xl bg-slate-100 animate-pulse" aria-hidden="true" />}><CameraCapture file={evidence} required onCapture={(file) => { selectEvidence(file); setEvidenceCapturedAt(new Date().toISOString()); }} label="Ambil foto pelaksanaan sekarang" dialogTitle="Foto bukti pelaksanaan" dialogDescription="Ambil foto kondisi kelas saat ini. Galeri tidak digunakan agar waktu pengambilan dapat diverifikasi." captureButtonLabel="Ambil bukti" facingMode="environment" guideShape="frame" /></Suspense></div><p className="mt-2 text-xs leading-5 text-slate-500">Foto harus diambil langsung dan dikirim dalam 20 menit.</p></div> : <div><Label>Bukti yang dapat dipercaya</Label><Input required className="mt-2" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(event) => selectEvidence(event.target.files?.[0])} /></div>}
+              <div><Label>Kronologi lengkap</Label><Textarea required minLength={action.type === "absence" ? 30 : 50} maxLength={action.type === "emergency" ? 3000 : 2500} className="mt-2 min-h-36 rounded-xl" value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Tuliskan kejadian dengan jelas dan masuk akal" /></div>
+              <div><Label>Bukti yang dapat dipercaya</Label><Input required className="mt-2" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(event) => selectEvidence(event.target.files?.[0])} /></div>
               <Button className={`w-full rounded-xl ${action.type === "emergency" ? "bg-rose-600 hover:bg-rose-700" : "bg-indigo-600 hover:bg-indigo-700"}`} disabled={processing}>{processing && <Loader2 size={16} className="mr-2 animate-spin" />}Kirim</Button>
             </form>
           </>}
@@ -642,22 +619,19 @@ export default function ManageClasses() {
   );
 }
 
-function CompletionGuide({ item, onOpenProgress, onConfirm }: { item: TeacherClass; onOpenProgress: () => void; onConfirm: () => void }) {
+function CompletionGuide({ item, onOpenProgress }: { item: TeacherClass; onOpenProgress: () => void }) {
   const steps = item.completion_steps;
   const confirmationDone = ["awaiting_student_approval", "completed"].includes(item.status);
   const rows = [
-    { label: "Kehadiran tutor", done: confirmationDone || steps.check_in },
-    { label: "Kehadiran murid", done: confirmationDone || steps.attendance },
+    { label: "Murid sudah mengonfirmasi hadir", done: confirmationDone || steps.check_in },
     { label: "Sesi sudah diakhiri", done: confirmationDone || steps.check_out },
     { label: "Hasil belajar tersimpan", done: confirmationDone || steps.progress },
-    { label: "Sesi diselesaikan", done: confirmationDone },
+    { label: "Keputusan murid", done: item.status === "completed" },
   ];
   const canOpenProgress = steps.check_out && !confirmationDone;
-  const prerequisitesReady = steps.check_in && steps.attendance && steps.check_out && steps.progress;
-
-  return <section className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 sm:p-5"><div><p className="text-sm font-black text-indigo-950">Penyelesaian sesi</p><p className="mt-1 text-xs leading-5 text-indigo-700">Kamu tidak perlu menghafal alurnya. Selesaikan langkah yang masih aktif; hasil belajar wajib diisi setelah sesi diakhiri.</p></div><div className="mt-4 space-y-2">{rows.map((row, index) => <div key={row.label} className="flex items-center gap-3 rounded-xl bg-white px-3 py-2.5"><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg text-xs font-black ${row.done ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"}`}>{row.done ? <CheckCircle2 size={15} /> : index + 1}</span><span className={`text-sm font-bold ${row.done ? "text-slate-700" : "text-slate-500"}`}>{row.label}</span></div>)}</div>{!confirmationDone && <div className="mt-4 grid gap-2 sm:grid-cols-2"><Button type="button" variant="outline" onClick={onOpenProgress} disabled={!canOpenProgress} className="rounded-xl border-indigo-200 bg-white text-indigo-700"><BarChart3 size={16} className="mr-2" />{steps.progress ? "Lihat Hasil Belajar" : "Isi Hasil Belajar"}</Button><Button type="button" onClick={onConfirm} disabled={!item.can_complete} className="rounded-xl bg-emerald-600 font-black hover:bg-emerald-700"><CheckCircle2 size={16} className="mr-2" />Selesaikan Sesi</Button></div>}{!steps.check_out && !confirmationDone && <p className="mt-3 text-xs font-semibold text-slate-500">Hasil belajar baru dapat diisi setelah sesi diakhiri.</p>}{steps.check_out && !steps.progress && <p className="mt-3 text-xs font-bold text-amber-700">Hasil belajar belum lengkap. Isi hasil belajar agar sesi dapat diselesaikan.</p>}{prerequisitesReady && !item.can_complete && !confirmationDone && <p className="mt-3 text-xs font-semibold text-slate-500">Administrasi sudah lengkap. Tombol Selesaikan Sesi aktif mulai 15 menit sebelum jadwal berakhir.</p>}{confirmationDone && <p className="mt-3 rounded-xl bg-white p-3 text-xs font-bold text-emerald-700">Semua langkah dari sisi tutor sudah selesai. Hasil belajar tersimpan dan sesi sedang menunggu keputusan murid atau sudah final.</p>}</section>;
+  return <section className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 sm:p-5"><div><p className="text-sm font-black text-indigo-950">Penyelesaian sesi</p><p className="mt-1 text-xs leading-5 text-indigo-700">Setelah sesi diakhiri, cukup simpan hasil belajar. BimbelKu otomatis meminta keputusan murid.</p></div><div className="mt-4 space-y-2">{rows.map((row, index) => <div key={row.label} className="flex items-center gap-3 rounded-xl bg-white px-3 py-2.5"><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg text-xs font-black ${row.done ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"}`}>{row.done ? <CheckCircle2 size={15} /> : index + 1}</span><span className={`text-sm font-bold ${row.done ? "text-slate-700" : "text-slate-500"}`}>{row.label}</span></div>)}</div>{!confirmationDone && <Button type="button" variant="outline" onClick={onOpenProgress} disabled={!canOpenProgress} className="mt-4 w-full rounded-xl border-indigo-200 bg-white text-indigo-700"><BarChart3 size={16} className="mr-2" />{steps.progress ? "Lihat Hasil Belajar" : "Isi Hasil Belajar"}</Button>}{!steps.check_out && !confirmationDone && <p className="mt-3 text-xs font-semibold text-slate-500">Hasil belajar baru dapat diisi setelah sesi diakhiri.</p>}{confirmationDone && <p className="mt-3 rounded-xl bg-white p-3 text-xs font-bold text-emerald-700">{item.status === "completed" ? "Sesi sudah final." : "Semua langkah Tutor sudah selesai. Menunggu keputusan murid."}</p>}</section>;
 }
 
 function Info({ icon: Icon, text }: { icon: typeof Clock3; text: string }) {
-  return <div className="flex items-start gap-2 rounded-xl bg-white/70 px-3 py-2.5"><Icon size={15} className="mt-0.5 shrink-0 text-indigo-500" /><span className="leading-5">{text || "-"}</span></div>;
+  return <div className="flex min-w-0 items-start gap-2 rounded-xl bg-white/70 px-3 py-2.5"><Icon size={15} className="mt-0.5 shrink-0 text-indigo-500" /><span className="min-w-0 break-words leading-5">{text || "-"}</span></div>;
 }

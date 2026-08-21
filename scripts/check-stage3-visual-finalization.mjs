@@ -1,0 +1,10 @@
+import fs from "node:fs"; import path from "node:path";
+const root=process.cwd(); const read=(f)=>fs.readFileSync(path.join(root,f),"utf8"); const exists=(f)=>fs.existsSync(path.join(root,f));
+const checks=[]; const add=(l,o)=>checks.push([l,!!o]);
+const app=read("src/App.tsx"), adminLayout=read("src/components/AdminLayout.tsx"), chapters=read("src/pages/admin/Chapters.tsx");
+add("admin curriculum route is chapter-native", app.includes('/admin/chapters') && adminLayout.includes('/admin/chapters'));
+add("chapter admin page exists", exists("src/pages/admin/Chapters.tsx") && chapters.includes("Bab"));
+add("legacy Subbab models retired", !exists("bimbelku-backend/app/Models/LearningTopic.php") && !exists("bimbelku-backend/app/Models/PackageLearningTopic.php"));
+add("legacy requests page retired", !exists("src/pages/students/LegacyRequests.tsx"));
+add("session V1 model retired", !exists("bimbelku-backend/app/Models/LearningPlan.php"));
+let failed=0; for(const [l,o] of checks){console.log(`${o?'PASS':'FAIL'}  ${l}`); if(!o) failed++;} if(failed) process.exit(1); console.log(`\n${checks.length}/${checks.length} Production finalization checks PASS`);

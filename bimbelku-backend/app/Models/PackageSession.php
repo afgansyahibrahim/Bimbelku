@@ -19,9 +19,9 @@ class PackageSession extends Model
         return $this->belongsTo(PackageSubject::class, 'package_subject_id');
     }
 
-    public function topicLogs()
+    public function chapterLogs()
     {
-        return $this->hasMany(PackageSessionTopicLog::class);
+        return $this->hasMany(PackageSessionChapterLog::class);
     }
 
     public function booking()

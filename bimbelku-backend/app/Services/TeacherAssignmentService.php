@@ -2,16 +2,10 @@
 
 namespace App\Services;
 
-use App\Models\Booking;
-use App\Models\BookingParticipant;
 use App\Models\BookingRequest;
-use App\Models\GroupPool;
 use App\Models\MatchingOperationLog;
 use App\Models\Notification;
-use App\Models\Order;
 use App\Models\PackageSession;
-use App\Models\PaymentSetting;
-use App\Models\Setting;
 use App\Models\TeacherOffer;
 use App\Models\TeacherProfile;
 use App\Models\User;
@@ -23,8 +17,6 @@ class TeacherAssignmentService
 {
     public function __construct(
         private readonly TeacherMatchingService $matchingService,
-        private readonly HourlyRateService $rateService,
-        private readonly TeacherOfferReleaseService $offerReleaseService,
         private readonly PackageCheckoutService $packageCheckoutService,
     ) {
     }
@@ -151,7 +143,6 @@ class TeacherAssignmentService
         return DB::transaction(function () use ($bookingRequest, $teacher, $admin, $reason) {
             $lockedRequest = BookingRequest::query()
                 ->with([
-                    'groupPool.members',
                     'packageSubject.package',
                     'packageSubject.sessions',
                     'offers',
@@ -159,6 +150,7 @@ class TeacherAssignmentService
                 ->lockForUpdate()
                 ->findOrFail($bookingRequest->id);
 
+            abort_unless($lockedRequest->package_subject_id, 410, 'Flow pemesanan langsung lama sudah dipensiunkan.');
             abort_unless(
                 in_array($lockedRequest->status, ['matching', 'teacher_pending', 'no_teacher'], true),
                 422,
@@ -259,9 +251,7 @@ class TeacherAssignmentService
                     'teacher_name' => $teacher->name,
                     'manual_offer_id' => $manualOffer->id,
                     'affected_request_ids' => $requestIds->values()->all(),
-                    'source_type' => $lockedRequest->package_subject_id
-                        ? 'package'
-                        : ($lockedRequest->group_pool_id ? 'group' : 'single'),
+                    'source_type' => 'package',
                 ],
             ]);
 
@@ -283,237 +273,16 @@ class TeacherAssignmentService
     public function acceptOffer(TeacherOffer $teacherOffer, User $teacher): array
     {
         $teacherOffer->loadMissing('bookingRequest.packageSubject');
-        if ($teacherOffer->bookingRequest?->package_subject_id) {
-            return [
-                'type' => 'package',
-                'data' => $this->packageCheckoutService->acceptPackageOffer($teacherOffer, $teacher),
-            ];
-        }
+        abort_unless(
+            $teacherOffer->bookingRequest?->package_subject_id,
+            410,
+            'Flow pemesanan langsung lama sudah dipensiunkan. Gunakan Paket Belajar.'
+        );
 
-        $result = DB::transaction(function () use ($teacherOffer, $teacher) {
-            $offer = TeacherOffer::query()->lockForUpdate()->findOrFail($teacherOffer->id);
-            $requestSnapshot = $offer->bookingRequest()->firstOrFail();
-            $groupPool = $requestSnapshot->group_pool_id
-                ? GroupPool::query()->lockForUpdate()->findOrFail($requestSnapshot->group_pool_id)
-                : null;
-            $bookingRequest = BookingRequest::query()
-                ->with('student')
-                ->lockForUpdate()
-                ->findOrFail($requestSnapshot->id);
-
-            abort_unless($offer->status === 'pending', 422, 'Penawaran ini sudah diproses.');
-            abort_unless(
-                $bookingRequest->status === 'teacher_pending'
-                    && (int) $bookingRequest->matched_teacher_id === (int) $teacher->id,
-                422,
-                'Permintaan ini sudah dialihkan atau dibatalkan.'
-            );
-            abort_if($bookingRequest->class_type === 'group' && !$groupPool, 422, 'Data kelompok tidak lengkap.');
-            abort_if($offer->expires_at->isPast(), 422, 'Batas waktu jawaban sudah berakhir.');
-
-            $lockedTeacher = User::query()->lockForUpdate()->findOrFail($teacher->id);
-            abort_unless($lockedTeacher->status === 'active', 422, 'Akun tutor sedang tidak aktif.');
-
-            $profile = TeacherProfile::query()
-                ->where('user_id', $teacher->id)
-                ->lockForUpdate()
-                ->first();
-            abort_unless(
-                $profile
-                    && $profile->verified_at
-                    && $profile->is_accepting_requests
-                    && $profile->points > 0,
-                422,
-                'Profil tutor sedang tidak dapat menerima permintaan.'
-            );
-            if ($profile->suspended_until?->isFuture()) {
-                abort(
-                    422,
-                    'Penerimaan murid dibatasi sampai '
-                        .$profile->suspended_until->translatedFormat('d M Y, H:i')
-                        .' WIB.'
-                );
-            }
-
-            $paymentSettings = PaymentSetting::query()->lockForUpdate()->first();
-            abort_unless(
-                $paymentSettings
-                    && filled($paymentSettings->bank_name)
-                    && filled($paymentSettings->account_number)
-                    && filled($paymentSettings->account_name),
-                503,
-                'Rekening pembayaran belum dikonfigurasi admin.'
-            );
-
-            $profile->setRelation('user', $lockedTeacher);
-            abort_if(
-                $error = $this->matchingService->compatibilityError($profile, $bookingRequest),
-                422,
-                $error
-            );
-
-            $startAt = $this->matchingService->startAt($bookingRequest);
-            $endAt = $this->matchingService->endAt($bookingRequest);
-            abort_if(
-                $this->matchingService->teacherHasConflict($lockedTeacher->id, $startAt, $endAt),
-                422,
-                'Jadwal bertabrakan dengan kelas lain.'
-            );
-
-            $hourlyRate = $bookingRequest->hourly_rate !== null
-                ? (int) round((float) $bookingRequest->hourly_rate)
-                : $this->rateService->resolve(
-                    $bookingRequest->subject_name,
-                    $bookingRequest->education_level,
-                    $bookingRequest->class_type,
-                    $bookingRequest->learning_mode
-                );
-            $perStudentAmount = $hourlyRate * $bookingRequest->duration_hours;
-            $commissionPercent = (float) (Setting::where('key', 'admin_fee')->value('value') ?? 20);
-            $paymentWindow = max(10, (int) (Setting::where('key', 'payment_window_minutes')->value('value') ?? 30));
-            $paymentDueAt = now()->addMinutes($paymentWindow)->min($startAt);
-            abort_if($paymentDueAt->lte(now()), 422, 'Jadwal kelas sudah dimulai.');
-
-            $memberRequests = $bookingRequest->class_type === 'group'
-                ? BookingRequest::query()
-                    ->where('group_pool_id', $bookingRequest->group_pool_id)
-                    ->whereIn('status', ['matching', 'teacher_pending'])
-                    ->with('student')
-                    ->lockForUpdate()
-                    ->get()
-                : collect([$bookingRequest]);
-
-            abort_if(
-                $bookingRequest->class_type === 'group'
-                    && $memberRequests->count() < (int) $groupPool?->minimum_participants,
-                422,
-                'Jumlah anggota kelompok belum memenuhi batas minimum.'
-            );
-
-            $booking = Booking::updateOrCreate(
-                ['booking_request_id' => $bookingRequest->id],
-                [
-                    'student_id' => $bookingRequest->student_id,
-                    'teacher_id' => $lockedTeacher->id,
-                    'group_pool_id' => $bookingRequest->group_pool_id,
-                    'start_at' => $startAt,
-                    'end_at' => $endAt,
-                    'duration_hours' => $bookingRequest->duration_hours,
-                    'learning_mode' => $bookingRequest->learning_mode,
-                    'class_type' => $bookingRequest->class_type,
-                    'hourly_rate' => $hourlyRate,
-                    'total_amount' => $perStudentAmount,
-                    'gross_amount' => 0,
-                    'teacher_net_amount' => 0,
-                    'commission_percent' => $commissionPercent,
-                    'status' => $bookingRequest->class_type === 'group' ? 'payment_collecting' : 'awaiting_payment',
-                    'payment_due_at' => $paymentDueAt,
-                    'address' => $groupPool?->address ?? $bookingRequest->address,
-                    'maps_link' => $groupPool?->maps_link ?? $bookingRequest->maps_link,
-                    'completion_evidence' => null,
-                    'completion_notes' => null,
-                    'completion_submitted_at' => null,
-                    'objection_deadline' => null,
-                    'student_approved_at' => null,
-                    'completed_at' => null,
-                    'payout_status' => 'locked',
-                ]
-            );
-
-            $booking->participants()->update(['status' => 'cancelled']);
-            $firstOrder = null;
-
-            foreach ($memberRequests as $memberRequest) {
-                $participant = BookingParticipant::updateOrCreate(
-                    ['booking_id' => $booking->id, 'student_id' => $memberRequest->student_id],
-                    [
-                        'booking_request_id' => $memberRequest->id,
-                        'amount' => $perStudentAmount,
-                        'status' => 'awaiting_payment',
-                        'approved_at' => null,
-                    ]
-                );
-
-                $snapshot = [
-                    'flow_version' => 3,
-                    'booking_id' => $booking->id,
-                    'booking_request_id' => $memberRequest->id,
-                    'teacher_id' => $lockedTeacher->id,
-                    'teacher_name' => $lockedTeacher->name,
-                    'student_name' => $memberRequest->student?->name ?? 'Murid',
-                    'subject' => $memberRequest->subject_name,
-                    'education_level' => $memberRequest->education_level,
-                    'grade' => $memberRequest->grade,
-                    'chapter' => $memberRequest->chapter,
-                    'subtopic' => $memberRequest->subtopic,
-                    'topic' => $memberRequest->topic,
-                    'type' => $memberRequest->class_type === 'private' ? 'Privat' : 'Kelompok',
-                    'method' => $memberRequest->learning_mode,
-                    'start_at' => $startAt->toIso8601String(),
-                    'end_at' => $endAt->toIso8601String(),
-                    'duration_hours' => $memberRequest->duration_hours,
-                    'hourly_rate' => $hourlyRate,
-                    'admin_fee_percent' => $commissionPercent,
-                ];
-
-                $order = Order::create([
-                    'user_id' => $memberRequest->student_id,
-                    'classroom_id' => null,
-                    'booking_id' => $booking->id,
-                    'amount' => $perStudentAmount,
-                    'status' => 'pending',
-                    'class_details_snapshot' => $snapshot,
-                    'order_id' => 'INV-'.now()->format('YmdHis').'-'.$memberRequest->id.'-'.random_int(10, 99),
-                ]);
-
-                $participant->update(['order_id' => $order->id]);
-                $firstOrder ??= $order;
-                $memberRequest->update([
-                    'booking_id' => $booking->id,
-                    'status' => 'awaiting_payment',
-                    'matched_teacher_id' => $lockedTeacher->id,
-                    'teacher_decision_deadline' => null,
-                    'payment_due_at' => $paymentDueAt,
-                    'hourly_rate' => $hourlyRate,
-                    'total_amount' => $perStudentAmount,
-                ]);
-
-                Notification::create([
-                    'user_id' => $memberRequest->student_id,
-                    'title' => 'Tutor menerima permintaan',
-                    'message' => "{$lockedTeacher->name} menerima permintaan. Tagihan sudah tersedia sampai {$paymentDueAt->translatedFormat('H:i')} WIB.",
-                    'type' => 'success',
-                    'target_url' => '/student/packages',
-                ]);
-            }
-
-            $booking->update(['order_id' => $firstOrder?->id]);
-            $offer->update(['status' => 'accepted', 'responded_at' => now()]);
-            $bookingRequest->offers()->whereKeyNot($offer->id)->where('status', 'pending')->update([
-                'status' => 'cancelled',
-                'responded_at' => now(),
-            ]);
-            $profile->update(['no_response_streak' => 0, 'no_response_window_started_at' => null]);
-
-            if ($groupPool) {
-                $groupPool->update(['teacher_id' => $lockedTeacher->id, 'status' => 'payment_collecting']);
-            }
-
-            return ['booking' => $booking->fresh(['participants.order']), 'payment_due_at' => $paymentDueAt];
-        }, 3);
-
-        $acceptedBooking = $result['booking'];
-        $this->offerReleaseService
-            ->releaseConflictingForTeacher(
-                $teacher->id,
-                $acceptedBooking->start_at,
-                $acceptedBooking->end_at,
-                $teacherOffer->id,
-                'Jadwal bentrok setelah tutor menerima sesi lain'
-            )
-            ->each(fn (BookingRequest $releasedRequest) => $this->matchingService->dispatchNextOffer($releasedRequest));
-
-        return ['type' => 'single', 'data' => $result];
+        return [
+            'type' => 'package',
+            'data' => $this->packageCheckoutService->acceptPackageOffer($teacherOffer, $teacher),
+        ];
     }
 
     private function teacherHasPackageConflict(
@@ -559,14 +328,6 @@ class TeacherAssignmentService
 
     private function activeRequestIds(BookingRequest $bookingRequest): Collection
     {
-        if (!$bookingRequest->group_pool_id) {
-            return collect([$bookingRequest->id]);
-        }
-
-        $ids = $bookingRequest->groupPool?->members()
-            ->whereIn('status', ['waiting', 'joined'])
-            ->pluck('booking_request_id') ?? collect();
-
-        return $ids->isNotEmpty() ? $ids : collect([$bookingRequest->id]);
+        return collect([$bookingRequest->id]);
     }
 }

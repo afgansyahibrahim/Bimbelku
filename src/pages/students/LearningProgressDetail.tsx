@@ -5,7 +5,6 @@ import {
   BookOpen,
   CalendarDays,
   CheckCircle2,
-  ChevronDown,
   Circle,
   Clock3,
   GraduationCap,
@@ -27,18 +26,16 @@ import { notify } from "@/lib/notify";
 import {
   CheapClassChapterProgress,
   CheapClassProgress,
-  PackageLearningTopicProgress,
+  PackageLearningChapterProgress,
   PackageSubjectProgress,
   StudentPackageProgress,
   cheapClassChapterStats,
   materialStatusLabel,
-  packageTopicStats,
+  packageChapterStats,
 } from "@/lib/studentProgress";
 
-type ProgressHistoryTopic = {
-  topic_id: number;
-  chapter?: string | null;
-  title?: string | null;
+type ProgressHistoryChapter = {
+  chapter: string;
   activity_type?: string | null;
   status_before?: string | null;
   status_after?: string | null;
@@ -66,7 +63,7 @@ type StudentClassRow = {
       no_material_change?: boolean;
       no_change_reason?: string | null;
       published_at: string;
-      topics?: ProgressHistoryTopic[];
+      chapters?: ProgressHistoryChapter[];
     } | null;
     report_count?: number;
   };
@@ -159,7 +156,7 @@ export default function LearningProgressDetail() {
 
 function PackageProgressDetail({ item, classes, onOpenReport }: { item: StudentPackageProgress; classes: StudentClassRow[]; onOpenReport: (id: number) => void }) {
   const [tab, setTab] = useState<DetailTab>("material");
-  const stats = packageTopicStats(item);
+  const stats = packageChapterStats(item);
   const subjectIds = new Set((item.subjects || []).map((subject) => subject.id));
   const relatedClasses = classes
     .filter((row) => row.package_subject_id && subjectIds.has(row.package_subject_id))
@@ -177,7 +174,7 @@ function PackageProgressDetail({ item, classes, onOpenReport }: { item: StudentP
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <SummaryCard label="Subbab selesai" value={`${stats.completed}/${stats.total}`} icon={CheckCircle2} />
+        <SummaryCard label="Bab selesai" value={`${stats.completed}/${stats.total}`} icon={CheckCircle2} />
         <SummaryCard label="Sedang dipelajari" value={stats.inProgress} icon={BookOpen} />
         <SummaryCard label="Pertemuan selesai" value={`${item.used_sessions}/${item.total_sessions}`} icon={CalendarDays} />
         <SummaryCard label="Sisa sesi" value={item.remaining_sessions} icon={Clock3} />
@@ -189,7 +186,7 @@ function PackageProgressDetail({ item, classes, onOpenReport }: { item: StudentP
         <section className="rounded-[1.75rem] border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/35 to-blue-50/45 p-4 shadow-[0_14px_36px_rgba(30,64,175,0.07)] sm:p-6">
           <div className="flex items-start gap-3">
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-100 text-indigo-700"><GraduationCap size={20} /></span>
-            <div><h2 className="text-lg font-black text-slate-900">Progress materi</h2><p className="mt-1 text-sm leading-6 text-slate-500">Progress dihitung dari subbab yang benar-benar ditandai selesai oleh tutor. Jumlah sesi tidak dipakai sebagai persentase materi.</p></div>
+            <div><h2 className="text-lg font-black text-slate-900">Progress materi</h2><p className="mt-1 text-sm leading-6 text-slate-500">Progress dihitung dari Bab yang benar-benar ditandai selesai oleh tutor. Jumlah sesi tidak dipakai sebagai persentase materi.</p></div>
           </div>
           <div className="mt-5 space-y-5">
             {(item.subjects || []).map((subject) => <PackageSubjectSection key={subject.id} subject={subject} />)}
@@ -198,7 +195,7 @@ function PackageProgressDetail({ item, classes, onOpenReport }: { item: StudentP
       ) : (
         <section className="rounded-[1.75rem] border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/35 to-blue-50/45 p-4 shadow-[0_14px_36px_rgba(30,64,175,0.07)] sm:p-6">
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-            <div><h2 className="flex items-center gap-2 text-lg font-black text-slate-900"><History size={19} className="text-indigo-600" />Riwayat progress per sesi</h2><p className="mt-1 text-sm leading-6 text-slate-500">Setiap laporan memperlihatkan perubahan subbab pada sesi tersebut, bukan hanya kondisi terakhir.</p></div>
+            <div><h2 className="flex items-center gap-2 text-lg font-black text-slate-900"><History size={19} className="text-indigo-600" />Riwayat progress per sesi</h2><p className="mt-1 text-sm leading-6 text-slate-500">Setiap laporan memperlihatkan perubahan Bab pada sesi tersebut, bukan hanya kondisi terakhir.</p></div>
             <Button asChild variant="outline" className="rounded-xl"><Link to="/student/my-classes">Lihat seluruh sesi</Link></Button>
           </div>
           {reports.length === 0 ? (
@@ -214,11 +211,11 @@ function PackageProgressDetail({ item, classes, onOpenReport }: { item: StudentP
                       <span className="self-start rounded-full bg-white px-3 py-1.5 text-xs font-black text-indigo-700 ring-1 ring-indigo-100">{report.progress_percent}% setelah sesi</span>
                     </div>
                     {report.no_material_change && <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 p-3 text-sm font-bold text-amber-800">Tidak ada perubahan status materi · {noChangeReasonLabel(report.no_change_reason)}</div>}
-                    {report.topics?.length ? (
+                    {report.chapters?.length ? (
                       <div className="mt-4 space-y-2">
-                        {report.topics.map((topic) => <ProgressChangeRow key={`${row.id}-${topic.topic_id}`} topic={topic} />)}
+                        {report.chapters.map((chapter) => <ProgressChangeRow key={`${row.id}-${chapter.chapter}`} chapter={chapter} />)}
                       </div>
-                    ) : !report.no_material_change ? <p className="mt-4 rounded-xl bg-white p-3 text-sm text-slate-500">Laporan ini belum memiliki perubahan subbab terstruktur.</p> : null}
+                    ) : !report.no_material_change ? <p className="mt-4 rounded-xl bg-white p-3 text-sm text-slate-500">Laporan ini belum memiliki perubahan Bab terstruktur.</p> : null}
                     {report.notes && <p className="mt-3 rounded-xl bg-white p-3 text-sm leading-6 text-slate-600"><b>Catatan tutor:</b> {report.notes}</p>}
                     <Button type="button" variant="outline" onClick={() => onOpenReport(row.id)} className="mt-4 rounded-xl border-indigo-100 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"><MessageSquareText size={16} className="mr-2" />Lihat laporan lengkap</Button>
                   </article>
@@ -233,41 +230,37 @@ function PackageProgressDetail({ item, classes, onOpenReport }: { item: StudentP
 }
 
 function PackageSubjectSection({ subject }: { subject: PackageSubjectProgress }) {
-  const topics = subject.learning_topics || [];
-  const chapters = useMemo(() => {
-    const groups = new Map<string, PackageLearningTopicProgress[]>();
-    for (const topic of topics) {
-      const key = topic.chapter?.trim() || subject.chapter?.trim() || "Materi belajar";
-      groups.set(key, [...(groups.get(key) || []), topic]);
-    }
-    return [...groups.entries()];
-  }, [subject.chapter, topics]);
+  const chapters = subject.learning_chapters || [];
+  const completed = chapters.filter((chapter) => chapter.status === "completed").length;
 
   return (
     <div className="rounded-2xl border border-indigo-100 bg-indigo-50/55 p-3 sm:p-4">
-      <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-wider text-indigo-600">Mata pelajaran</p><h3 className="mt-1 text-lg font-black text-slate-900">{subject.name}</h3>{subject.teacher?.name && <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-slate-500"><UserRound size={13} /> Tutor {subject.teacher.name}</p>}</div><span className="rounded-full bg-white px-3 py-1.5 text-[10px] font-black text-indigo-600 ring-1 ring-indigo-100">{topics.filter((topic) => topic.status === "completed").length}/{topics.length} subbab</span></div>
-      <div className="mt-4 space-y-2">
-        {chapters.map(([chapter, chapterTopics], index) => {
-          const completed = chapterTopics.filter((topic) => topic.status === "completed").length;
-          const percent = chapterTopics.length ? Math.round((completed / chapterTopics.length) * 100) : 0;
-          return (
-            <details key={chapter} open={index === 0 && percent < 100} className="group overflow-hidden rounded-xl border border-indigo-100 bg-white">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 marker:hidden"><div className="min-w-0"><p className="break-words text-sm font-black text-slate-900">{chapter}</p><p className="mt-1 text-xs text-slate-500">{completed} dari {chapterTopics.length} subbab selesai</p></div><div className="flex shrink-0 items-center gap-2"><span className="text-sm font-black text-indigo-700">{percent}%</span><ChevronDown size={17} className="text-slate-400 transition group-open:rotate-180" /></div></summary>
-              <div className="border-t border-slate-100 p-3 sm:p-4"><div className="mb-4 h-2 overflow-hidden rounded-full bg-indigo-50"><div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-600" style={{ width: `${percent}%` }} /></div><div className="space-y-2">{chapterTopics.map((topic) => <TopicRow key={topic.id} topic={topic} />)}</div></div>
-            </details>
-          );
-        })}
-        {chapters.length === 0 && <p className="rounded-xl bg-white p-4 text-sm text-slate-500">Belum ada subbab yang tersimpan untuk mata pelajaran ini.</p>}
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <div>
+          <p className="text-xs font-black uppercase tracking-wider text-indigo-600">Mata pelajaran</p>
+          <h3 className="mt-1 text-lg font-black text-slate-900">{subject.name}</h3>
+          {subject.teacher?.name && <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-slate-500"><UserRound size={13} /> Tutor {subject.teacher.name}</p>}
+        </div>
+        <span className="self-start rounded-full bg-white px-3 py-1.5 text-[10px] font-black text-indigo-600 ring-1 ring-indigo-100">{completed}/{chapters.length} Bab</span>
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        {chapters.map((chapter) => <PackageChapterRow key={`${subject.id}-${chapter.curriculum_chapter_id || chapter.chapter}`} chapter={chapter} />)}
+        {chapters.length === 0 && <p className="rounded-xl bg-white p-4 text-sm text-slate-500 sm:col-span-2">Belum ada Bab yang tersimpan untuk mata pelajaran ini.</p>}
       </div>
     </div>
   );
 }
 
-function TopicRow({ topic }: { topic: PackageLearningTopicProgress }) {
-  const done = topic.status === "completed";
-  const active = topic.status === "in_progress" || topic.status === "review_needed";
-  const Icon = done ? (topic.needs_review ? RotateCcw : CheckCircle2) : active ? BookOpen : Circle;
-  return <div className={`flex items-start gap-3 rounded-xl p-3 ${done ? "bg-emerald-50" : active ? "bg-indigo-50/90" : "bg-slate-50"}`}><Icon size={18} className={`mt-0.5 shrink-0 ${done ? (topic.needs_review ? "text-amber-600" : "text-emerald-600") : active ? "text-indigo-600" : "text-slate-300"}`} /><div className="min-w-0"><p className="break-words text-sm font-bold text-slate-800">{topic.title}</p><p className={`mt-1 text-xs font-bold ${done && topic.needs_review ? "text-amber-700" : done ? "text-emerald-700" : active ? "text-indigo-700" : "text-slate-400"}`}>{materialStatusLabel(topic.status, Boolean(topic.needs_review))}</p></div></div>;
+function PackageChapterRow({ chapter }: { chapter: PackageLearningChapterProgress }) {
+  const done = chapter.status === "completed";
+  const active = chapter.status === "in_progress" || chapter.status === "review_needed";
+  const Icon = done ? (chapter.needs_review ? RotateCcw : CheckCircle2) : active ? BookOpen : Circle;
+  return (
+    <article className={`flex min-h-24 items-start gap-3 rounded-xl border p-4 ${done ? "border-emerald-100 bg-emerald-50/80" : active ? "border-indigo-100 bg-white" : "border-slate-100 bg-white"}`}>
+      <Icon size={18} className={`mt-0.5 shrink-0 ${done ? (chapter.needs_review ? "text-amber-600" : "text-emerald-600") : active ? "text-indigo-600" : "text-slate-300"}`} />
+      <div className="min-w-0"><p className="break-words text-sm font-black text-slate-800">{chapter.chapter}</p><p className={`mt-1 text-xs font-bold ${done && chapter.needs_review ? "text-amber-700" : done ? "text-emerald-700" : active ? "text-indigo-700" : "text-slate-400"}`}>{materialStatusLabel(chapter.status, Boolean(chapter.needs_review))}</p>{chapter.completed_at && <p className="mt-2 text-[11px] font-semibold text-slate-400">Selesai {dateTime(chapter.completed_at)}</p>}</div>
+    </article>
+  );
 }
 
 function CheapClassProgressDetail({ item }: { item: CheapClassProgress }) {
@@ -276,7 +269,7 @@ function CheapClassProgressDetail({ item }: { item: CheapClassProgress }) {
   const sessions = item.sessions || [];
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-10">
-      <ProgressHeader type="Kelas Murah" title={item.subject_name} subtitle={[item.education_level, item.grade, item.package_code].filter(Boolean).join(" · ")} percent={stats.percent} accent="brand" />
+      <ProgressHeader type="Kelas Kelompok" title={item.subject_name} subtitle={[item.education_level, item.grade, item.package_code].filter(Boolean).join(" · ")} percent={stats.percent} accent="brand" />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <SummaryCard label="Bab selesai" value={`${stats.completed}/${stats.total}`} icon={CheckCircle2} />
@@ -289,7 +282,7 @@ function CheapClassProgressDetail({ item }: { item: CheapClassProgress }) {
 
       {tab === "material" ? (
         <section className="rounded-[1.75rem] border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/35 to-blue-50/45 p-4 shadow-[0_14px_36px_rgba(30,64,175,0.07)] sm:p-6">
-          <div className="flex items-start gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-100 text-indigo-700"><Users size={20} /></span><div><h2 className="text-lg font-black text-slate-900">Progress per bab</h2><p className="mt-1 text-sm leading-6 text-slate-500">Kelas Murah sengaja tidak memakai subbab. Satu progress bab berlaku sama untuk seluruh peserta kelas.</p></div></div>
+          <div className="flex items-start gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-100 text-indigo-700"><Users size={20} /></span><div><h2 className="text-lg font-black text-slate-900">Progress per bab</h2><p className="mt-1 text-sm leading-6 text-slate-500">Progress dicatat per Bab dan berlaku sama untuk seluruh peserta Kelas Kelompok.</p></div></div>
           <div className="mt-5 space-y-3">
             {(item.subjects || []).map((chapter, index) => <CheapChapterRow key={`${chapter.subject_name}-${chapter.chapter}-${index}`} chapter={chapter} />)}
             {(item.subjects || []).length === 0 && <div className="rounded-2xl bg-slate-50 p-5 text-sm text-slate-500">Bab belum tersedia pada kelas ini.</div>}
@@ -325,8 +318,8 @@ function ProgressTabs({ value, onChange }: { value: DetailTab; onChange: (value:
   return <div className="grid grid-cols-2 gap-1.5 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-1.5"><button type="button" onClick={() => onChange("material")} className={`min-h-11 rounded-xl px-3 text-sm font-black transition ${value === "material" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:bg-white hover:text-indigo-700"}`}><BookOpen size={16} className="mr-2 inline" />Materi</button><button type="button" onClick={() => onChange("history")} className={`min-h-11 rounded-xl px-3 text-sm font-black transition ${value === "history" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:bg-white hover:text-indigo-700"}`}><History size={16} className="mr-2 inline" />Riwayat Sesi</button></div>;
 }
 
-function ProgressChangeRow({ topic }: { topic: ProgressHistoryTopic }) {
-  return <div className="rounded-xl bg-white p-3"><p className="text-sm font-black text-slate-900">{topic.title || "Subbab"}</p>{topic.chapter && <p className="mt-0.5 text-[10px] font-black uppercase tracking-wider text-slate-400">{topic.chapter}</p>}<p className="mt-2 text-xs font-semibold text-slate-500">{topicStatusLabel(topic.status_before)} <span className="px-1 text-indigo-400">→</span> <span className="font-black text-indigo-700">{topicStatusLabel(topic.status_after, Boolean(topic.needs_review))}</span></p>{topic.notes && <p className="mt-2 text-xs leading-5 text-slate-500">{topic.notes}</p>}</div>;
+function ProgressChangeRow({ chapter }: { chapter: ProgressHistoryChapter }) {
+  return <div className="rounded-xl bg-white p-3"><p className="text-sm font-black text-slate-900">{chapter.chapter}</p><p className="mt-2 text-xs font-semibold text-slate-500">{topicStatusLabel(chapter.status_before)} <span className="px-1 text-indigo-400">→</span> <span className="font-black text-indigo-700">{topicStatusLabel(chapter.status_after, Boolean(chapter.needs_review))}</span></p>{chapter.notes && <p className="mt-2 text-xs leading-5 text-slate-500">{chapter.notes}</p>}</div>;
 }
 
 function ProgressHeader({ type, title, subtitle, percent, accent: _accent }: { type: string; title: string; subtitle: string; percent: number; accent: "brand" }) {

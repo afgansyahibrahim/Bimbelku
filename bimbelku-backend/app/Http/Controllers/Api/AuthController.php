@@ -40,6 +40,7 @@ class AuthController extends Controller
             'terms_accepted' => 'accepted',
             'privacy_accepted' => 'accepted',
             'school_name' => 'nullable|string|max:255',
+            'student_education_level' => ['nullable', \Illuminate\Validation\Rule::in(EducationCatalog::LEVELS)],
             'grade' => 'nullable|string|max:50',
             'date_of_birth' => 'required_if:role,student|nullable|date|before_or_equal:today',
             'guardian_name' => ['nullable', 'string', 'max:255', 'regex:/\pL/u', 'not_regex:/\d/u'],
@@ -71,6 +72,19 @@ class AuthController extends Controller
             return response()->json([
                 'message' => $validator->errors()->first(),
                 'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        if ($request->role === 'student'
+            && $request->filled('student_education_level')
+            && $request->filled('grade')
+            && !EducationCatalog::supports(
+                $request->string('student_education_level')->toString(),
+                $request->string('grade')->toString()
+            )) {
+            return response()->json([
+                'message' => 'Kelas atau tingkat tidak sesuai dengan jenjang pendidikan.',
+                'errors' => ['grade' => ['Kelas atau tingkat tidak sesuai dengan jenjang pendidikan.']],
             ], 422);
         }
 
@@ -155,6 +169,9 @@ class AuthController extends Controller
                     'role' => $request->role,
                     'status' => $status,
                     'school_name' => $request->school_name ?? null,
+                    'student_education_level' => $request->role === 'student'
+                        ? $request->student_education_level
+                        : null,
                     'grade' => $request->grade ?? null,
                     'date_of_birth' => $request->role === 'student'
                         ? $request->date_of_birth
@@ -206,7 +223,6 @@ class AuthController extends Controller
                     'is_online' => in_array($request->teaching_method, ['online', 'hybrid'], true),
                     'is_offline' => in_array($request->teaching_method, ['offline', 'hybrid'], true),
                     'is_private_active' => true,
-                    'is_group_active' => true,
                 ]);
 
                 return $user;

@@ -32,4 +32,4 @@ for (const [ok, label] of checks) {
 }
 
 if (failed) process.exit(1);
-console.log('Pemeriksaan fondasi Kelas Murah berulang Tahap 1 lulus.');
+console.log('Pemeriksaan fondasi Kelas Kelompok berulang Tahap 1 lulus.');

@@ -249,10 +249,11 @@ export default function RefundManagement() {
       </div>
 
       {selected && (
-        <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/60 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[var(--layer-detail)] grid place-items-center bg-slate-950/60 p-3 backdrop-blur-sm sm:p-4">
           <div role="dialog" aria-modal="true" className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-[1.75rem] bg-white p-5 shadow-2xl sm:p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div><p className="text-lg font-black text-slate-950">Selesaikan refund {selected.order_id}</p><p className="mt-1 text-sm text-slate-500">Nominal terkunci: <strong>{rupiah(selected.amount)}</strong></p></div>
+            <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-start gap-2">
+              <span aria-hidden="true" className="h-10 w-10" />
+              <div className="min-w-0 text-center"><p className="break-words text-lg font-black text-slate-950">Selesaikan refund {selected.order_id}</p><p className="mt-1 text-sm text-slate-500">Nominal terkunci: <strong>{rupiah(selected.amount)}</strong></p></div>
               <button type="button" aria-label="Tutup" onClick={() => setSelected(null)} className="grid h-10 w-10 place-items-center rounded-xl hover:bg-slate-100"><X size={18} /></button>
             </div>
 

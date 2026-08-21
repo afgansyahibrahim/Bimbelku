@@ -4,7 +4,7 @@ import { ArrowLeft, Eye, LockKeyhole, MapPinned, ShieldCheck } from "lucide-reac
 const sections = [
   {
     title: "Data yang dikumpulkan",
-    text: "Kami memproses data akun, kontak, tanggal lahir murid, persetujuan kebijakan, profil akademik, pilihan Paket Belajar, mata pelajaran, bab, subbab, tujuan belajar, jadwal, keikutsertaan Kelas Murah, lampiran soal, pesan bantuan, notifikasi, rating, serta catatan transaksi, mutasi Saldo BimbelKu, dan tujuan refund rekening atau e-wallet yang dipilih murid. Data booking lama yang masih dibutuhkan untuk penyelesaian transaksi atau riwayat sistem dapat tetap disimpan. Untuk murid di bawah 18 tahun, nama, nomor, hubungan, dan waktu persetujuan orang tua atau wali juga dicatat. Untuk tutor, data mencakup kartu identitas, foto wajah langsung, ijazah atau bukti kualifikasi, rekening pencairan, lokasi dasar, dan jadwal tersedia.",
+    text: "Kami memproses data akun, kontak, tanggal lahir murid, persetujuan kebijakan, profil akademik, pilihan Paket Belajar, mata pelajaran, bab, tujuan belajar, jadwal, keikutsertaan Kelas Kelompok, lampiran soal, pesan bantuan, notifikasi, rating, serta catatan transaksi, mutasi Saldo BimbelKu, dan tujuan refund rekening atau e-wallet yang dipilih murid. Data booking lama yang masih dibutuhkan untuk penyelesaian transaksi atau riwayat sistem dapat tetap disimpan. Untuk murid di bawah 18 tahun, nama, nomor, hubungan, dan waktu persetujuan orang tua atau wali juga dicatat. Untuk tutor, data mencakup kartu identitas, foto wajah langsung, ijazah atau bukti kualifikasi, rekening pencairan, lokasi dasar, dan jadwal tersedia.",
   },
   {
     title: "Lokasi dan sesi offline",
@@ -16,7 +16,7 @@ const sections = [
   },
   {
     title: "Tujuan penggunaan",
-    text: "Data digunakan untuk autentikasi, verifikasi tutor, penyusunan Paket Belajar, pencocokan tutor setelah pembayaran Paket Belajar dinyatakan diterima, pengelolaan Kelas Murah, pencocokan materi dan jadwal, perhitungan jarak, pemrosesan transfer dan Saldo BimbelKu, komisi, refund, pencairan, pencegahan bentrok, penanganan laporan, keamanan akun, dukungan pengguna, dan pemenuhan kewajiban hukum.",
+    text: "Data digunakan untuk autentikasi, verifikasi tutor, penyusunan Paket Belajar, pencocokan tutor setelah pembayaran Paket Belajar dinyatakan diterima, pengelolaan Kelas Kelompok, pencocokan materi dan jadwal, perhitungan jarak, pemrosesan transfer dan Saldo BimbelKu, komisi, refund, pencairan, pencegahan bentrok, penanganan laporan, keamanan akun, dukungan pengguna, dan pemenuhan kewajiban hukum.",
   },
   {
     title: "Pihak yang dapat menerima data",

@@ -7,6 +7,9 @@ use App\Models\Booking;
 use App\Models\BookingDispute;
 use App\Models\BookingParticipant;
 use App\Models\Notification;
+use App\Models\PackageChapter;
+use App\Models\PackageSession;
+use App\Models\PackageSessionChapterLog;
 use App\Models\ParticipantAttendance;
 use App\Models\Refund;
 use App\Models\SessionReport;
@@ -14,7 +17,7 @@ use App\Models\TeacherAppeal;
 use App\Models\Setting;
 use App\Services\CustomerWalletService;
 use App\Services\TeacherPointService;
-use Carbon\Carbon;
+use App\Support\PackageChapterProgress;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -22,100 +25,6 @@ use Illuminate\Validation\Rule;
 
 class SessionWorkflowController extends Controller
 {
-    public function teacherComplete(Request $request, Booking $booking)
-    {
-        $this->authorizeTeacher($request, $booking);
-        $validated = $request->validate([
-            'evidence' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
-            'notes' => ['required', 'string', 'min:20', 'max:2000'],
-            'capture_source' => ['required', Rule::in(['camera'])],
-            'captured_at' => ['required', 'date'],
-        ]);
-        $capturedAt = Carbon::parse($validated['captured_at']);
-        if ($capturedAt->lt(now()->subMinutes(20)) || $capturedAt->gt(now()->addMinutes(5))) {
-            return response()->json(['message' => 'Foto bukti harus diambil langsung saat pengiriman.'], 422);
-        }
-
-        if (!in_array($booking->status, ['confirmed', 'in_progress'], true)) {
-            return response()->json(['message' => 'Bukti belum dapat dikirim pada status sesi ini.'], 422);
-        }
-        if (now()->lt($booking->end_at->copy()->subMinutes(15))) {
-            return response()->json(['message' => 'Bukti baru dapat dikirim pada 15 menit terakhir sesi.'], 422);
-        }
-        if (now()->gt($this->completionUploadDeadline($booking))) {
-            return response()->json([
-                'message' => 'Masa unggah bukti telah berakhir. Sesi harus diperiksa admin.',
-            ], 422);
-        }
-        $attendance = $booking->sessionAttendances()
-            ->where('user_id', $request->user()->id)
-            ->first();
-        if (!$attendance?->pin_verified_at || !$attendance?->check_out_at) {
-            return response()->json([
-                'message' => 'Check-in dengan PIN dan check-out harus diselesaikan sebelum bukti dikirim.',
-            ], 422);
-        }
-        $this->assertAttendanceAndProgressComplete($booking);
-
-        $path = $request->file('evidence')->store('session_evidence', 'local');
-        $objectionHours = max(1, (int) (Setting::where('key', 'student_objection_hours')->value('value') ?? 48));
-
-        try {
-            DB::transaction(function () use ($booking, $validated, $path, $objectionHours, $capturedAt) {
-                $lockedBooking = Booking::query()->lockForUpdate()->findOrFail($booking->id);
-                if (!in_array($lockedBooking->status, ['confirmed', 'in_progress'], true)) {
-                    abort(422, 'Bukti sesi ini sudah diproses atau statusnya telah berubah.');
-                }
-                if (now()->lt($lockedBooking->end_at->copy()->subMinutes(15))) {
-                    abort(422, 'Bukti baru dapat dikirim pada 15 menit terakhir sesi.');
-                }
-                if (now()->gt($this->completionUploadDeadline($lockedBooking))) {
-                    abort(422, 'Masa unggah bukti telah berakhir. Sesi harus diperiksa admin.');
-                }
-                if (!$lockedBooking->sessionAttendances()
-                    ->whereNotNull('pin_verified_at')
-                    ->whereNotNull('check_out_at')
-                    ->where('user_id', $lockedBooking->teacher_id)
-                    ->exists()) {
-                    abort(422, 'Verifikasi kehadiran dan laporan perkembangan belum lengkap.');
-                }
-                $this->assertAttendanceAndProgressComplete($lockedBooking);
-
-                $lockedBooking->update([
-                    'status' => 'awaiting_student_approval',
-                    'completion_evidence' => $path,
-                    'completion_notes' => $validated['notes'],
-                    'completion_capture_source' => $validated['capture_source'],
-                    'completion_captured_at' => $capturedAt,
-                    'completion_submitted_at' => now(),
-                    'objection_deadline' => now()->addHours($objectionHours),
-                ]);
-
-                $lockedBooking->participants()->where('status', 'paid')->with('bookingRequest')->get()
-                    ->each(function (BookingParticipant $participant) {
-                        $participant->update(['status' => 'awaiting_student_approval']);
-                        $participant->bookingRequest?->update(['status' => 'awaiting_student_approval']);
-
-                        Notification::create([
-                            'user_id' => $participant->student_id,
-                            'title' => 'Bukti sesi telah dikirim',
-                            'message' => 'Periksa bukti pelaksanaan. Persetujuan atau keberatan dapat diberikan dalam dua hari.',
-                            'type' => 'info',
-                            'target_url' => '/student/my-classes',
-                            'unique_key' => "completion-evidence:{$participant->booking_id}:{$participant->student_id}",
-                        ]);
-                    });
-            });
-        } catch (\Throwable $exception) {
-            Storage::disk('local')->delete($path);
-            throw $exception;
-        }
-
-        return response()->json([
-            'message' => 'Bukti sesi berhasil dikirim. Masa tanggapan murid berlangsung selama dua hari.',
-        ]);
-    }
-
     public function reportStudentAbsence(Request $request, Booking $booking)
     {
         $this->authorizeTeacher($request, $booking);
@@ -133,6 +42,9 @@ class SessionWorkflowController extends Controller
                 'message' => 'Laporan dapat dibuat setelah murid terlambat lebih dari 15 menit.',
             ], 422);
         }
+        if ($this->isPresenceFlow($booking) && $booking->student_confirmed_at) {
+            return response()->json(['message' => 'Kehadiran murid sudah terkonfirmasi. Gunakan alur masalah sesi bila ada kendala setelah kelas dimulai.'], 422);
+        }
 
         $participant = $this->reportedParticipant($booking, $validated['student_id'] ?? null);
         $path = $request->file('evidence')->store('absence_evidence', 'local');
@@ -145,6 +57,9 @@ class SessionWorkflowController extends Controller
                 }
                 if (now()->lt($lockedBooking->start_at->copy()->addMinutes(15))) {
                     abort(422, 'Laporan dapat dibuat setelah murid terlambat lebih dari 15 menit.');
+                }
+                if ($this->isPresenceFlow($lockedBooking) && $lockedBooking->student_confirmed_at) {
+                    abort(422, 'Kehadiran murid sudah terkonfirmasi. Gunakan alur masalah sesi bila ada kendala setelah kelas dimulai.');
                 }
 
                 $lockedParticipant = $lockedBooking->participants()
@@ -314,7 +229,7 @@ class SessionWorkflowController extends Controller
         }
         if ($booking->objection_deadline?->isPast()) {
             return response()->json([
-                'message' => 'Masa keputusan sudah berakhir dan bukti akan diperiksa admin.',
+                'message' => 'Masa keputusan sudah berakhir dan sesi akan diperiksa admin.',
             ], 422);
         }
 
@@ -333,7 +248,11 @@ class SessionWorkflowController extends Controller
                 abort(422, 'Penyelesaian sesi ini sudah diproses atau statusnya telah berubah.');
             }
             if ($lockedBooking->objection_deadline?->isPast()) {
-                abort(422, 'Masa keputusan sudah berakhir dan bukti akan diperiksa admin.');
+                abort(422, 'Masa keputusan sudah berakhir dan sesi akan diperiksa admin.');
+            }
+
+            if ($this->isPresenceFlow($lockedBooking)) {
+                $this->applyPendingPackageProgress($lockedBooking);
             }
 
             $lockedParticipant->update(['status' => 'approved', 'approved_at' => now()]);
@@ -448,6 +367,9 @@ class SessionWorkflowController extends Controller
                 'message' => 'Laporan dapat dibuat setelah tutor terlambat lebih dari 15 menit.',
             ], 422);
         }
+        if ($this->isPresenceFlow($booking) && $booking->student_confirmed_at) {
+            return response()->json(['message' => 'Sesi sudah dimulai dan kehadiran telah dikonfirmasi. Gunakan Ada masalah setelah sesi bila pelaksanaannya tidak sesuai.'], 422);
+        }
         if ($booking->reports()->where('type', 'teacher_absence')->where('reported_by', $request->user()->id)->where('status', 'pending')->exists()) {
             return response()->json(['message' => 'Laporan Anda sedang diperiksa admin.'], 422);
         }
@@ -461,6 +383,9 @@ class SessionWorkflowController extends Controller
                 }
                 if (now()->lt($lockedBooking->start_at->copy()->addMinutes(15))) {
                     abort(422, 'Laporan dapat dibuat setelah tutor terlambat lebih dari 15 menit.');
+                }
+                if ($this->isPresenceFlow($lockedBooking) && $lockedBooking->student_confirmed_at) {
+                    abort(422, 'Sesi sudah dimulai dan kehadiran telah dikonfirmasi. Gunakan Ada masalah setelah sesi bila pelaksanaannya tidak sesuai.');
                 }
                 if ($lockedBooking->reports()
                     ->where('type', 'teacher_absence')
@@ -512,24 +437,32 @@ class SessionWorkflowController extends Controller
         ], 201);
     }
 
-    public function adminCases()
+    public function adminCases(Request $request)
     {
+        $scope = (string) $request->query('scope', 'active');
+        abort_unless(in_array($scope, ['active', 'history'], true), 422, 'Scope pusat kasus tidak valid.');
+        $active = $scope === 'active';
+
         return response()->json([
             'session_reports' => SessionReport::query()
-                ->where('status', 'pending')
-                ->with(['booking.teacher', 'reportedStudent', 'reporter', 'teacher'])
+                ->when($active, fn ($query) => $query->where('status', 'pending'))
+                ->when(!$active, fn ($query) => $query->where('status', '!=', 'pending'))
+                ->with(['booking.teacher', 'reportedStudent', 'reporter', 'teacher', 'reviewer'])
                 ->latest()
                 ->limit(200)
                 ->get(),
             'disputes' => BookingDispute::query()
-                ->where('status', 'pending')
-                ->with(['booking.teacher', 'student'])
+                ->when($active, fn ($query) => $query->where('status', 'pending'))
+                ->when(!$active, fn ($query) => $query->where('status', '!=', 'pending'))
+                ->with(['booking.teacher', 'booking.latestLearningProgressReport', 'student', 'resolver'])
                 ->latest()
                 ->limit(200)
                 ->get(),
             'completion_reviews' => Booking::query()
-                ->where('status', 'admin_review_required')
-                ->with(['teacher', 'participants.student'])
+                ->whereNotNull('admin_review_required_at')
+                ->when($active, fn ($query) => $query->where('status', 'admin_review_required'))
+                ->when(!$active, fn ($query) => $query->where('status', '!=', 'admin_review_required'))
+                ->with(['teacher', 'participants.student', 'latestLearningProgressReport'])
                 ->latest('admin_review_required_at')
                 ->limit(200)
                 ->get(),
@@ -540,7 +473,8 @@ class SessionWorkflowController extends Controller
                 ->limit(200)
                 ->get(),
             'teacher_appeals' => TeacherAppeal::query()
-                ->where('status', 'pending')
+                ->when($active, fn ($query) => $query->where('status', 'pending'))
+                ->when(!$active, fn ($query) => $query->where('status', '!=', 'pending'))
                 ->with(['teacher:id,name,email', 'pointEntry.booking.bookingRequest:id,subject_name'])
                 ->latest()
                 ->limit(200)
@@ -553,8 +487,12 @@ class SessionWorkflowController extends Controller
                     'evidence_url' => $appeal->evidence_path
                         ? "teacher-appeals/{$appeal->id}/evidence"
                         : null,
+                    'status' => $appeal->status,
+                    'review_notes' => $appeal->review_notes,
+                    'reviewed_at' => $appeal->reviewed_at,
                     'created_at' => $appeal->created_at,
                 ]),
+            'scope' => $scope,
         ]);
     }
 
@@ -598,9 +536,7 @@ class SessionWorkflowController extends Controller
             if ($validated['resolution'] === 'student_refund') {
                 $this->queueRefund($participant, $booking, 'Keberatan murid disetujui');
                 $booking->update([
-                    'status' => $booking->class_type === 'private'
-                        ? 'refund_pending'
-                        : 'awaiting_student_approval',
+                    'status' => 'refund_pending',
                     'payout_status' => 'locked',
                 ]);
                 $pointService->change(
@@ -612,6 +548,9 @@ class SessionWorkflowController extends Controller
                     $validated['notes']
                 );
             } else {
+                if ($this->isPresenceFlow($booking)) {
+                    $this->applyPendingPackageProgress($booking);
+                }
                 $participant->update(['status' => 'approved', 'approved_at' => now()]);
                 $participant->bookingRequest?->update(['status' => 'completed']);
                 $this->finalizeBookingIfSettled($booking);
@@ -622,7 +561,7 @@ class SessionWorkflowController extends Controller
                 'title' => 'Keberatan telah diputuskan',
                 'message' => $validated['resolution'] === 'student_refund'
                     ? 'Keberatan disetujui. Refund penuh masuk antrean transfer.'
-                    : 'Bukti tutor dinyatakan memadai dan pembayaran diteruskan.',
+                    : 'Sesi dinyatakan valid dan hak tutor diteruskan.',
                 'type' => 'info',
                 'target_url' => $validated['resolution'] === 'student_refund'
                     ? '/student/history'
@@ -747,9 +686,7 @@ class SessionWorkflowController extends Controller
                         ->lockForUpdate()
                         ->get()
                         ->isNotEmpty();
-                    $participantStatus = $booking->completion_evidence
-                        ? 'awaiting_student_approval'
-                        : 'paid';
+                    $participantStatus = $booking->learningProgressReports()->exists() ? 'awaiting_student_approval' : 'paid';
                     $participant->update(['status' => $participantStatus]);
                     $participant->bookingRequest?->update(['status' => $restoredStatus]);
                     $booking->update([
@@ -786,28 +723,11 @@ class SessionWorkflowController extends Controller
             if ($accepted) {
                 $participant->update(['status' => 'no_show_confirmed', 'approved_at' => now()]);
                 $participant->bookingRequest?->update(['status' => 'completed']);
-                $otherParticipantsStillActive = $booking->participants()
-                    ->where('id', '!=', $participant->id)
-                    ->whereIn('status', ['paid', 'awaiting_student_approval', 'admin_review_required'])
-                    ->exists();
-
-                if ($booking->class_type === 'group' && $otherParticipantsStillActive) {
-                    $restoredStatus = $this->restoredStatusAfterReport($booking);
-                    $booking->update([
-                        'status' => $restoredStatus,
-                        'admin_review_required_at' => $restoredStatus === 'admin_review_required'
-                            ? now()
-                            : null,
-                    ]);
-                } else {
-                    $this->finalizeBookingIfSettled($booking);
-                }
+                $this->finalizeBookingIfSettled($booking);
             } else {
                 $restoredStatus = $this->restoredStatusAfterReport($booking);
                 $participant->update([
-                    'status' => $booking->completion_evidence
-                        ? 'awaiting_student_approval'
-                        : 'paid',
+                    'status' => $booking->learningProgressReports()->exists() ? 'awaiting_student_approval' : 'paid',
                 ]);
                 $participant->bookingRequest?->update(['status' => $restoredStatus]);
                 $booking->update([
@@ -866,6 +786,10 @@ class SessionWorkflowController extends Controller
                 abort(422, 'Sesi ini tidak menunggu pemeriksaan admin.');
             }
 
+            if ($validated['action'] === 'approve' && $this->isPresenceFlow($lockedBooking)) {
+                $this->applyPendingPackageProgress($lockedBooking);
+            }
+
             $lockedBooking->participants()->whereIn('status', [
                 'paid',
                 'awaiting_student_approval',
@@ -882,7 +806,7 @@ class SessionWorkflowController extends Controller
                         $this->queueRefund(
                             $participant,
                             $lockedBooking,
-                            'Pemeriksaan bukti oleh admin'
+                            'Pemeriksaan sesi oleh admin'
                         );
                     }
                 });
@@ -897,7 +821,7 @@ class SessionWorkflowController extends Controller
             }
         });
 
-        return response()->json(['message' => 'Pemeriksaan bukti sesi berhasil diselesaikan.']);
+        return response()->json(['message' => 'Pemeriksaan sesi berhasil diselesaikan.']);
     }
 
     public function completeRefund(
@@ -1127,38 +1051,6 @@ class SessionWorkflowController extends Controller
         abort_unless((int) $booking->teacher_id === (int) $request->user()->id, 403);
     }
 
-    private function assertAttendanceAndProgressComplete(Booking $booking): void
-    {
-        $participants = $booking->participants()
-            ->whereHas('order', fn ($query) => $query->where('status', 'paid'))
-            ->get();
-        if ($participants->isEmpty()) {
-            abort(422, 'Peserta berbayar belum tersedia.');
-        }
-        $attendances = ParticipantAttendance::query()
-            ->where('booking_id', $booking->id)
-            ->get()
-            ->keyBy('booking_participant_id');
-        if ($participants->contains(fn ($participant) => !$attendances->has($participant->id))) {
-            abort(422, 'Kehadiran seluruh murid harus dicatat sebelum bukti dikirim.');
-        }
-
-        $studentsRequiringProgress = $participants
-            ->filter(fn ($participant) => in_array(
-                $attendances->get($participant->id)?->status,
-                ['present', 'late', 'partial'],
-                true
-            ))
-            ->pluck('student_id');
-        $reportedStudentIds = $booking->learningProgressReports()
-            ->whereIn('student_id', $studentsRequiringProgress)
-            ->pluck('student_id')
-            ->unique();
-        if ($reportedStudentIds->count() !== $studentsRequiringProgress->unique()->count()) {
-            abort(422, 'Laporan perkembangan setiap murid yang hadir harus diterbitkan sebelum bukti dikirim.');
-        }
-    }
-
     private function studentParticipant(Request $request, Booking $booking): BookingParticipant
     {
         return $booking->participants()
@@ -1169,13 +1061,9 @@ class SessionWorkflowController extends Controller
 
     private function reportedParticipant(Booking $booking, ?int $studentId): BookingParticipant
     {
-        if ($booking->class_type === 'group' && !$studentId) {
-            abort(422, 'Murid yang tidak hadir wajib dipilih.');
-        }
-
         return $booking->participants()
             ->where('student_id', $studentId ?? $booking->student_id)
-            ->where('status', 'paid')
+            ->whereHas('order', fn ($query) => $query->where('status', 'paid'))
             ->firstOrFail();
     }
 
@@ -1205,6 +1093,61 @@ class SessionWorkflowController extends Controller
         $this->refreshBookingAmounts($booking);
 
         return $refund;
+    }
+
+    private function isPresenceFlow(Booking $booking): bool
+    {
+        return $booking->class_type === 'private';
+    }
+
+    /**
+     * Session Flow V2 keeps Bab changes provisional until the murid accepts the
+     * session (or Admin rules the session valid). The report/log exists for the
+     * audit trail, while the package state remains untouched during a dispute.
+     */
+    private function applyPendingPackageProgress(Booking $booking): void
+    {
+        $packageSession = PackageSession::query()
+            ->where('booking_id', $booking->id)
+            ->first();
+
+        if (!$packageSession) {
+            return;
+        }
+
+        $logs = PackageSessionChapterLog::query()
+            ->where('package_session_id', $packageSession->id)
+            ->whereNotNull('learning_progress_report_id')
+            ->orderBy('id')
+            ->get();
+
+        if ($logs->isEmpty()) {
+            return;
+        }
+
+        $chapters = PackageChapter::query()
+            ->where('package_subject_id', $packageSession->package_subject_id)
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
+        foreach ($logs as $log) {
+            /** @var PackageChapter|null $chapter */
+            $chapter = $chapters->get((int) $log->package_chapter_id);
+            if (!$chapter) {
+                continue;
+            }
+
+            $nextStatus = (string) $log->status_after;
+            $chapter->update([
+                'status' => $nextStatus,
+                'needs_review' => (bool) $log->needs_review_after,
+                'started_at' => $chapter->started_at ?? now(),
+                'completed_at' => $nextStatus === 'completed'
+                    ? ($chapter->completed_at ?? now())
+                    : null,
+            ]);
+        }
+
     }
 
     private function refreshBookingAmounts(Booking $booking): void
@@ -1263,35 +1206,12 @@ class SessionWorkflowController extends Controller
 
     private function restoredStatusAfterReport(Booking $booking): string
     {
-        if ($booking->completion_evidence) {
+        if ($booking->learningProgressReports()->exists()) {
             return 'awaiting_student_approval';
         }
-
-        if (now()->lt($booking->start_at)) {
-            return 'confirmed';
-        }
-
-        if (now()->lt($booking->end_at)) {
-            return 'in_progress';
-        }
-
-        $completionGraceMinutes = max(
-            15,
-            (int) (Setting::where('key', 'completion_upload_grace_minutes')->value('value') ?? 120)
-        );
-
-        return now()->lte($booking->end_at->copy()->addMinutes($completionGraceMinutes))
-            ? 'confirmed'
-            : 'admin_review_required';
+        if (now()->lt($booking->start_at)) return 'confirmed';
+        if ($booking->student_confirmed_at && now()->lt($booking->end_at)) return 'in_progress';
+        return 'admin_review_required';
     }
 
-    private function completionUploadDeadline(Booking $booking): Carbon
-    {
-        $completionGraceMinutes = max(
-            15,
-            (int) (Setting::where('key', 'completion_upload_grace_minutes')->value('value') ?? 120)
-        );
-
-        return $booking->end_at->copy()->addMinutes($completionGraceMinutes);
-    }
 }

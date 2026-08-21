@@ -8,9 +8,8 @@ use App\Models\BookingRequest;
 use App\Models\CurriculumChapter;
 use App\Models\CurriculumSubject;
 use App\Models\LearningPackage;
-use App\Models\LearningTopic;
 use App\Models\Order;
-use App\Models\PackageLearningTopic;
+use App\Models\PackageChapter;
 use App\Models\PackagePlan;
 use App\Models\PackageSession;
 use App\Models\PackageSubject;
@@ -50,7 +49,6 @@ class DemoSessionReminder extends Command
     private function setup(): int
     {
         [$student, $teacher] = $this->ensureDemoUsers();
-
         $booking = DB::transaction(function () use ($student, $teacher) {
             $this->archivePreviousDemo($student->id, $teacher->id);
 
@@ -95,27 +93,6 @@ class DemoSessionReminder extends Command
                 ]
             );
 
-            $topicNames = [
-                'Mengenal bentuk persamaan linear',
-                'Menentukan nilai variabel',
-                'Menyelesaikan soal cerita',
-            ];
-            $catalogTopics = collect($topicNames)->map(function (string $name, int $index) {
-                return LearningTopic::query()->firstOrCreate(
-                    [
-                        'subject_name' => 'Matematika Demo Session',
-                        'education_level' => 'SMP',
-                        'grade' => 'Kelas 7',
-                        'chapter' => 'Persamaan Linear',
-                        'name' => $name,
-                    ],
-                    [
-                        'sort_order' => $index + 1,
-                        'is_active' => true,
-                    ]
-                );
-            });
-
             // setup menaruh sesi pada jendela check-in sekarang. Rule pemesanan 72 jam
             // tidak disentuh karena command hanya membentuk fixture lokal setelah order dianggap paid.
             $start = now()->subMinutes(2)->startOfMinute();
@@ -145,11 +122,9 @@ class DemoSessionReminder extends Command
                 'curriculum_subject_id' => $catalogSubject->id,
                 'curriculum_chapter_id' => $chapter->id,
                 'curriculum_chapter_ids' => [$chapter->id],
-                'learning_topic_ids' => $catalogTopics->pluck('id')->map(fn ($id) => (int) $id)->all(),
                 'assigned_teacher_id' => $teacher->id,
                 'subject_name' => 'Matematika',
                 'chapter' => 'Persamaan Linear',
-                'subtopic' => $topicNames[0].', '.$topicNames[1].', '.$topicNames[2],
                 'learning_goal' => 'Memahami persamaan linear dan menyelesaikan soal secara mandiri.',
                 'allocated_sessions' => 1,
                 'unit_price' => $amount,
@@ -157,19 +132,14 @@ class DemoSessionReminder extends Command
                 'status' => 'active',
             ]);
 
-            foreach ($catalogTopics->values() as $index => $catalogTopic) {
-                PackageLearningTopic::create([
-                    'package_subject_id' => $packageSubject->id,
-                    'curriculum_chapter_id' => $chapter->id,
-                    'learning_topic_id' => $catalogTopic->id,
-                    'chapter' => 'Persamaan Linear',
-                    'title' => $catalogTopic->name,
-                    'normalized_title' => mb_strtolower(preg_replace('/\s+/u', ' ', trim($catalogTopic->name))),
-                    'status' => 'not_started',
-                    'needs_review' => false,
-                    'sort_order' => $index + 1,
-                ]);
-            }
+            PackageChapter::create([
+                'package_subject_id' => $packageSubject->id,
+                'curriculum_chapter_id' => $chapter->id,
+                'title' => $chapter->title,
+                'status' => 'not_started',
+                'needs_review' => false,
+                'sort_order' => 1,
+            ]);
 
             $bookingRequest = BookingRequest::create([
                 'student_id' => $student->id,
@@ -180,8 +150,6 @@ class DemoSessionReminder extends Command
                 'education_level' => 'SMP',
                 'grade' => 'Kelas 7',
                 'chapter' => 'Persamaan Linear',
-                'subtopic' => implode(', ', $topicNames),
-                'topic' => 'Latihan persamaan linear satu variabel.',
                 'learning_goal' => 'Memahami persamaan linear dan menyelesaikan soal secara mandiri.',
                 'learning_mode' => 'online',
                 'class_type' => 'private',
@@ -231,6 +199,7 @@ class DemoSessionReminder extends Command
                 'hourly_rate' => $amount,
                 'total_amount' => $amount,
                 'status' => 'confirmed',
+                'session_flow_version' => 'presence_confirmation_v2',
                 'commission_percent' => 20,
                 'gross_amount' => $amount,
                 'teacher_net_amount' => $amount * 0.8,
@@ -270,12 +239,12 @@ class DemoSessionReminder extends Command
         $this->line('Booking ID : '.$booking->id);
         $this->line('Jadwal : '.$booking->start_at->format('d-m-Y H:i').' - '.$booking->end_at->format('H:i'));
         $this->newLine();
-        $this->comment('1) Murid: buat PIN.');
-        $this->comment('2) Tutor: masukkan PIN, catat kehadiran, isi Target Belajar.');
-        $this->comment('3) Murid: setujui Target Belajar.');
-        $this->comment('4) Jalankan checkout-ready hanya saat ingin mempercepat akhir sesi.');
-        $this->comment('5) Tutor: Akhiri Sesi -> Isi Hasil Belajar (Bab/Subbab) -> Selesaikan Sesi.');
-        $this->comment('6) Murid: Periksa Sesi -> Ya, sesi sesuai.');
+        $this->comment('Session Flow V2 aktif.');
+        $this->comment('1) Tutor: buka Ruang Belajar -> Saya Siap Mengajar.');
+        $this->comment('2) Murid: buka Kelas Saya -> Saya Sudah Hadir.');
+        $this->comment('3) Belajar seperti biasa. Jalankan checkout-ready saat ingin mempercepat akhir sesi.');
+        $this->comment('4) Tutor: Akhiri Sesi -> Isi Hasil Belajar per Bab.');
+        $this->comment('5) Murid: pilih Sesi Sesuai atau Ada masalah.');
         $this->comment('Rule pemesanan 72 jam production tidak diubah.');
 
         return self::SUCCESS;
@@ -328,26 +297,27 @@ class DemoSessionReminder extends Command
         }
 
         $booking->load([
-            'sessionAttendances', 'participantAttendances', 'learningProgressReports', 'learningPlan',
-            'packageSession.subject.package', 'packageSession.subject.learningTopics', 'participants.order',
+            'sessionAttendances', 'participantAttendances', 'learningProgressReports',
+            'packageSession.subject.package', 'packageSession.subject.chapters', 'participants.order',
         ]);
         $teacherAttendance = $booking->sessionAttendances->firstWhere('user_id', $booking->teacher_id);
         $package = $booking->packageSession?->subject?->package;
-        $topics = $booking->packageSession?->subject?->learningTopics ?? collect();
+        $chapters = $booking->packageSession?->subject?->chapters ?? collect();
 
         $this->table(['Data', 'Nilai'], [
             ['Paket Belajar', $package?->package_code ?: '-'],
             ['Status paket', $package?->status ?: '-'],
             ['Booking ID', $booking->id],
             ['Status sesi', $booking->status],
+            ['Flow sesi', 'presence_confirmation_v2'],
+            ['Tutor siap', $booking->tutor_ready_at ? 'ya' : 'belum'],
+            ['Murid konfirmasi hadir', $booking->student_confirmed_at ? 'ya' : 'belum'],
             ['Mulai', optional($booking->start_at)->format('d-m-Y H:i')],
             ['Selesai', optional($booking->end_at)->format('d-m-Y H:i')],
             ['Order paid', $booking->participants->first()?->order?->status === 'paid' ? 'ya' : 'tidak'],
-            ['Subbab', $topics->count()],
+            ['Bab paket', $chapters->count()],
             ['Tutor check-in', $teacherAttendance?->check_in_at ? 'ya' : 'belum'],
             ['Kehadiran murid', $booking->participantAttendances->count() ? 'tersimpan' : 'belum'],
-            ['Target belajar', $booking->learningPlan ? 'tersimpan' : 'belum'],
-            ['Target disetujui murid', $booking->learningPlan?->student_acknowledged_at ? 'ya' : 'belum'],
             ['Tutor check-out', $teacherAttendance?->check_out_at ? 'ya' : 'belum'],
             ['Laporan progress', $booking->learningProgressReports->count()],
             ['Menunggu persetujuan murid', $booking->status === 'awaiting_student_approval' ? 'ya' : 'tidak'],
@@ -382,8 +352,6 @@ class DemoSessionReminder extends Command
                 $booking->update([
                     'status' => 'completed',
                     'objection_deadline' => null,
-                    'session_pin_hash' => null,
-                    'session_pin_expires_at' => null,
                     'completed_at' => now(),
                     'payout_status' => 'cancelled',
                 ]);

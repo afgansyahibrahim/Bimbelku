@@ -221,7 +221,7 @@ export default function Profile() {
           ? "Izin lokasi ditolak. Aktifkan izin lokasi browser, lalu coba lagi."
           : locationError.code === locationError.TIMEOUT
             ? "Pengambilan lokasi terlalu lama. Pastikan GPS atau lokasi perangkat aktif."
-            : "Titik lokasi belum berhasil diambil. Coba lagi atau isi koordinat secara manual.";
+            : "Lokasi belum berhasil diambil. Pastikan GPS/lokasi perangkat aktif lalu coba lagi.";
         notify.error(message);
       },
       { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 },
@@ -292,7 +292,7 @@ export default function Profile() {
         return;
       }
       if (!user.latitude.trim() || !user.longitude.trim() || !Number.isFinite(Number(user.latitude)) || !Number.isFinite(Number(user.longitude))) {
-        notify.error("Ambil titik lokasi perangkat atau isi latitude dan longitude dengan benar.");
+        notify.error("Tekan tombol Atur Lokasi agar titik lokasi perangkat tersimpan.");
         return;
       }
       if (!user.location_consent_at) {
@@ -655,7 +655,7 @@ export default function Profile() {
                   <MapPin className="mt-0.5 shrink-0" size={19} />
                   <div className="min-w-0 flex-1">
                     <p className="font-black">Lengkapi lokasi untuk melanjutkan pesanan offline</p>
-                    <p className="mt-1 text-sm leading-6 text-blue-700">Ambil titik perangkat, isi alamat lengkap, centang persetujuan, lalu simpan.</p>
+                    <p className="mt-1 text-sm leading-6 text-blue-700">Isi alamat lengkap, tekan Atur Lokasi, centang persetujuan, lalu simpan.</p>
                   </div>
                   {returnTo && (
                     <button type="button" onClick={() => navigate(returnTo)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-blue-700" aria-label="Kembali ke pemesanan">
@@ -679,7 +679,7 @@ export default function Profile() {
                   className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
                   {isLocating ? <Loader2 className="animate-spin" size={17} /> : <LocateFixed size={17} />}
-                  {isLocating ? "Mengambil lokasi…" : "Gunakan lokasi perangkat"}
+                  {isLocating ? "Mengatur lokasi…" : user.latitude && user.longitude ? "Atur Ulang Lokasi" : "Atur Lokasi"}
                 </button>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
@@ -687,17 +687,18 @@ export default function Profile() {
                   <label className="text-xs font-black uppercase tracking-widest text-slate-400">Alamat lengkap</label>
                   <textarea ref={addressInputRef} value={user.address} onChange={(event) => setUser({ ...user, address: event.target.value })} rows={3} className="w-full resize-y rounded-2xl border border-transparent bg-slate-50 p-4 font-medium text-slate-700 outline-none transition focus:border-emerald-200 focus:bg-white focus:ring-4 focus:ring-emerald-50" placeholder="Alamat belajar untuk kelas offline" />
                 </div>
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400">Tautan Google Maps</label>
-                  <input type="url" value={user.maps_link} onChange={(event) => setUser({ ...user, maps_link: event.target.value })} className="w-full rounded-2xl border border-transparent bg-slate-50 p-4 font-medium text-slate-700 outline-none transition focus:border-emerald-200 focus:bg-white focus:ring-4 focus:ring-emerald-50" placeholder="https://maps.google.com/..." />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400">Latitude</label>
-                  <input inputMode="decimal" value={user.latitude} onChange={(event) => setUser({ ...user, latitude: event.target.value })} className="w-full rounded-2xl border border-transparent bg-slate-50 p-4 font-medium text-slate-700 outline-none transition focus:border-emerald-200 focus:bg-white focus:ring-4 focus:ring-emerald-50" placeholder="-6.200000" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400">Longitude</label>
-                  <input inputMode="decimal" value={user.longitude} onChange={(event) => setUser({ ...user, longitude: event.target.value })} className="w-full rounded-2xl border border-transparent bg-slate-50 p-4 font-medium text-slate-700 outline-none transition focus:border-emerald-200 focus:bg-white focus:ring-4 focus:ring-emerald-50" placeholder="106.816666" />
+                <div className="md:col-span-2">
+                  <div className={`flex items-start gap-3 rounded-2xl border p-4 ${user.latitude && user.longitude ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+                    <LocateFixed className={`mt-0.5 shrink-0 ${user.latitude && user.longitude ? "text-emerald-600" : "text-amber-600"}`} size={18} />
+                    <div className="min-w-0">
+                      <p className={`text-sm font-black ${user.latitude && user.longitude ? "text-emerald-800" : "text-amber-800"}`}>
+                        {user.latitude && user.longitude ? "Lokasi perangkat sudah diatur" : "Lokasi perangkat belum diatur"}
+                      </p>
+                      <p className={`mt-1 text-xs leading-5 ${user.latitude && user.longitude ? "text-emerald-700" : "text-amber-700"}`}>
+                        Koordinat disimpan otomatis oleh sistem dan tidak perlu kamu isi atau pahami.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
               <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm font-semibold leading-6 text-emerald-900">
@@ -706,13 +707,13 @@ export default function Profile() {
               </label>
               <div className="mt-4 space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:p-5">
                 <p className="text-sm leading-6 text-slate-600">
-                  Lokasi kamu dipakai sistem untuk mencocokkan tutor offline terdekat. Koordinat rinci hanya dibuka setelah hubungan bimbel terbentuk.
+                  Lokasi dipakai sistem untuk mencocokkan tutor offline terdekat. Kamu cukup mengatur lokasi dari perangkat; data teknisnya disimpan otomatis.
                 </p>
                 <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
                   <Shield size={16} />
                   Lokasi kamu dilindungi. Tidak pernah ditampilkan ke publik.
                 </div>
-                <p className="text-xs text-slate-400">Kosongkan kolom lokasi lalu simpan jika ingin menghapus data lokasi.</p>
+
               </div>
               {locationSetupRequested && (
                 <button

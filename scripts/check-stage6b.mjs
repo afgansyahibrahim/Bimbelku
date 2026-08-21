@@ -48,11 +48,11 @@ expect(messages.includes("client_token") && messages.includes("Coba kirim ulang"
 expect(messages.includes("attachment") && messages.includes("is_read") && messages.includes("CheckCheck"), "chat mendukung lampiran privat dan status baca");
 expect(notifications.includes("/notifications/read-all") && notifications.includes("target_url"), "pusat notifikasi mendukung baca semua dan tautan tindakan");
 
-expect(hub.includes("participant-attendance") && hub.includes("Simpan kehadiran murid"), "tutor mencatat kehadiran seluruh peserta");
-expect(hub.includes("schedule-changes") && hub.includes("Jadwal lama tetap berlaku"), "perubahan jadwal membutuhkan persetujuan pihak terdampak");
-expect(hub.includes("student_id: reportForm.student_id") && hub.includes("Murid yang dilaporkan"), "laporan perkembangan kelompok dipilih per murid");
-expect(classes.includes("CameraCapture") && classes.includes('capture_source", "camera"') && classes.includes("captured_at"), "bukti penyelesaian diambil langsung dari kamera");
-expect(completion.includes("assertAttendanceAndProgressComplete") && completion.includes("completion_capture_source"), "backend menolak penyelesaian tanpa kehadiran, progres, dan bukti kamera");
+expect(hub.includes("Saya Siap Mengajar") && hub.includes("Saya Sudah Hadir") && hub.includes("presence-confirm"), "Session Flow V2 memakai konfirmasi kehadiran satu-tap");
+expect(hub.includes("schedule-changes") && hub.includes("Setujui") && hub.includes("Tolak"), "perubahan jadwal membutuhkan persetujuan pihak terdampak");
+expect(hub.includes("chapter_updates") || classes.includes("Isi Hasil Belajar"), "hasil belajar memakai progres Bab pada flow final");
+expect(!classes.includes("CameraCapture") && classes.includes("Isi Hasil Belajar"), "bukti kamera Session V1 sudah dipensiunkan dan diganti Hasil Belajar V2");
+expect(completion.includes("student_confirmed_at") && completion.includes("studentApprove") && completion.includes("studentDispute"), "Session Flow V2 menjaga konfirmasi murid dan keputusan akhir sesi");
 
 for (const balance of ["held", "available", "requested", "paid"]) {
   expect(salary.includes(`balances.${balance}`), `dompet memisahkan saldo ${balance}`);
@@ -64,7 +64,7 @@ for (const table of ["classroom_message_reads", "participant_attendances", "sche
   expect(migration.includes(`'${table}'`), `migrasi membuat ${table}`);
 }
 expect(routes.includes("LearningSessionController::class, 'conversations'") && routes.includes("TeacherOperationsController::class, 'dashboard'"), "API percakapan dan dashboard tutor tersedia");
-expect(routes.includes("storeParticipantAttendance") && routes.includes("ScheduleChangeController::class, 'respond'"), "API kehadiran dan persetujuan jadwal tersedia");
+expect(routes.includes("studentConfirmPresence") && routes.includes("ScheduleChangeController::class, 'respond'"), "API konfirmasi kehadiran V2 dan persetujuan jadwal tersedia");
 expect(routes.includes("TeacherOperationsController::class, 'resolveAppeal'"), "admin dapat memutus banding tutor");
 expect(learning.includes("whereDoesntHave('reads'") && learning.includes("client_token"), "backend menghitung pesan belum dibaca dan idempotensi kirim");
 expect(schedule.includes("teacherHasConflict") && schedule.includes("Jadwal baru bertabrakan"), "backend memeriksa bentrok tutor dan peserta");

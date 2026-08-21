@@ -38,7 +38,7 @@ class TeacherOperationsController extends Controller
         $classes = Booking::query()
             ->where('teacher_id', $teacherId)
             ->whereIn('status', [...$activeStatuses, 'completed'])
-            ->with(['bookingRequest:id,subject_name,chapter,subtopic', 'participants:id,booking_id,student_id,status'])
+            ->with(['bookingRequest:id,subject_name,chapter', 'participants:id,booking_id,student_id,status'])
             ->latest('start_at')
             ->limit(100)
             ->get();

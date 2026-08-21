@@ -20,7 +20,6 @@ import {
   ShieldCheck,
   UserCheck,
   UserRound,
-  UsersRound,
   Wifi,
 } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
@@ -57,7 +56,7 @@ interface SearchItem {
   education_level: string;
   grade?: string | null;
   learning_mode: "online" | "offline";
-  class_type: "private" | "group";
+  class_type: "private";
   scheduled_at?: string | null;
   status: "matching" | "teacher_pending" | "no_teacher" | "expired";
   status_label: string;
@@ -83,13 +82,11 @@ interface SearchItem {
     accepted: number;
   };
   source: {
-    type: "package" | "group" | "single";
-    label: "Paket Belajar" | "Arsip sistem lama";
-    is_legacy: boolean;
+    type: "package";
+    label: "Paket Belajar";
+    is_legacy: false;
     package_id?: number | null;
     package_status?: string | null;
-    group_pool_id?: number | null;
-    group_status?: string | null;
   };
 }
 
@@ -147,8 +144,6 @@ interface SearchDetail extends SearchItem {
   };
   request_details: {
     chapter?: string | null;
-    subtopic?: string | null;
-    topic?: string | null;
     learning_goal?: string | null;
     address_available: boolean;
     coordinates_available: boolean;
@@ -176,7 +171,6 @@ interface SearchResponse {
 
 type StatusFilter = "all" | "attention" | SearchItem["status"];
 type ModeFilter = "all" | SearchItem["learning_mode"];
-type ClassFilter = "all" | SearchItem["class_type"];
 type SearchScope = "active" | "history";
 
 const emptyResponse: SearchResponse = {
@@ -222,7 +216,6 @@ export default function TutorSearchMonitoring() {
     [...activeStatusOptions, ...historyStatusOptions].some((option) => option.value === initialStatus) ? initialStatus : "all",
   );
   const [mode, setMode] = useState<ModeFilter>("all");
-  const [classType, setClassType] = useState<ClassFilter>("all");
   const [searchText, setSearchText] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -254,7 +247,6 @@ export default function TutorSearchMonitoring() {
           status,
           scope,
           learning_mode: mode,
-          class_type: classType,
           q: appliedSearch || undefined,
           page,
           per_page: 20,
@@ -266,7 +258,7 @@ export default function TutorSearchMonitoring() {
     } finally {
       setIsLoading(false);
     }
-  }, [appliedSearch, classType, mode, page, scope, status]);
+  }, [appliedSearch, mode, page, scope, status]);
 
   const loadDetail = useCallback(async (id: number) => {
     setDetailLoading(true);
@@ -452,8 +444,8 @@ export default function TutorSearchMonitoring() {
   };
 
   const activeFilterCount = useMemo(
-    () => Number(status !== "all") + Number(mode !== "all") + Number(classType !== "all") + Number(Boolean(appliedSearch)),
-    [appliedSearch, classType, mode, status],
+    () => Number(status !== "all") + Number(mode !== "all") + Number(Boolean(appliedSearch)),
+    [appliedSearch, mode, status],
   );
 
   return (
@@ -528,16 +520,6 @@ export default function TutorSearchMonitoring() {
                 { value: "all", label: "Semua mode" },
                 { value: "online", label: "Online" },
                 { value: "offline", label: "Offline" },
-              ]}
-            />
-            <FilterSelect
-              label="Jenis kelas"
-              value={classType}
-              onChange={(value) => { setClassType(value as ClassFilter); setPage(1); }}
-              options={[
-                { value: "all", label: "Semua jenis" },
-                { value: "private", label: "Privat" },
-                { value: "group", label: "Kelompok" },
               ]}
             />
             <button type="submit" className="min-h-11 rounded-xl bg-slate-950 px-5 text-sm font-black text-white hover:bg-slate-800">
@@ -645,16 +627,6 @@ export default function TutorSearchMonitoring() {
                   </div>
                 </div>
 
-                {detail.source.is_legacy && (
-                  <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
-                    <History className="mt-0.5 shrink-0" size={20} />
-                    <div>
-                      <p className="font-black">Arsip sistem lama</p>
-                      <p className="mt-1 text-sm leading-5">Data ini dipertahankan agar penawaran atau kelas lama yang masih sah dapat diselesaikan. Permintaan baru tidak lagi dibuat melalui alur privat/kelompok lama.</p>
-                    </div>
-                  </div>
-                )}
-
                 {detail.attention_reason && (
                   <div className="flex gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-800">
                     <AlertTriangle className="mt-0.5 shrink-0" size={20} />
@@ -668,7 +640,7 @@ export default function TutorSearchMonitoring() {
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <InfoBox icon={CalendarClock} label="Jadwal" value={formatDateTime(detail.scheduled_at)} />
                   <InfoBox icon={detail.learning_mode === "online" ? Wifi : MapPin} label="Mode" value={detail.learning_mode === "online" ? "Online" : `Offline · ${detail.search_radius_km} km`} />
-                  <InfoBox icon={detail.class_type === "group" ? UsersRound : UserRound} label="Jenis" value={detail.class_type === "group" ? "Kelompok" : "Privat"} />
+                  <InfoBox icon={UserRound} label="Jenis" value="Privat" />
                   <InfoBox icon={Clock3} label="Lama pencarian" value={formatDuration(detail.search_age_minutes)} />
                 </div>
 
@@ -686,7 +658,6 @@ export default function TutorSearchMonitoring() {
                     <DetailRow label="Mapel" value={detail.subject_name} />
                     <DetailRow label="Jenjang" value={`${detail.education_level}${detail.grade ? ` · ${detail.grade}` : ""}`} />
                     <DetailRow label="Bab" value={detail.request_details.chapter || "Tidak diisi"} />
-                    <DetailRow label="Submateri" value={detail.request_details.subtopic || detail.request_details.topic || "Tidak diisi"} />
                     <DetailRow label="Sumber" value={sourceLabel(detail)} />
                     <DetailRow label="Lokasi lengkap" value={detail.request_details.address_available && detail.request_details.coordinates_available ? "Tersedia dan terlindungi" : "Belum lengkap"} />
                   </DetailPanel>
@@ -1172,7 +1143,5 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 }
 
 function sourceLabel(detail: SearchDetail) {
-  if (detail.source.type === "package") return `Paket Belajar #${detail.source.package_id || "-"}`;
-  if (detail.source.type === "group") return `Arsip sistem lama · kelompok #${detail.source.group_pool_id || "-"}`;
-  return "Arsip sistem lama · privat/satuan";
+  return `Paket Belajar #${detail.source.package_id || "-"}`;
 }

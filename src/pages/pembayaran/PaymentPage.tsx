@@ -162,7 +162,7 @@ export default function PaymentPage() {
       ? "/student/packages"
       : "/student/history";
   const returnAction = isCheapClass
-    ? "Lihat Kelas Murah"
+    ? "Lihat Kelas Kelompok"
     : isPackage
       ? "Lihat Paket Belajar"
       : "Lihat Riwayat Transaksi";
@@ -435,7 +435,7 @@ export default function PaymentPage() {
   const cancel = async () => {
     if (!order) return;
     const approved = await confirm({
-      title: isCheapClass ? "Batalkan keikutsertaan Kelas Murah?" : "Batalkan tagihan?",
+      title: isCheapClass ? "Batalkan keikutsertaan Kelas Kelompok?" : "Batalkan tagihan?",
       description: isCheapClass
         ? "Kursi akan dilepas. Kamu masih dapat bergabung kembali jika pendaftaran masih dibuka dan kuota tersedia. Pembatalan tidak tersedia setelah bukti pembayaran dikirim."
         : "Tagihan dan pesanan akan dibatalkan. Tindakan ini tidak dapat dipulihkan.",

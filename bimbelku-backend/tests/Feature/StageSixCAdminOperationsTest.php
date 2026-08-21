@@ -5,7 +5,11 @@ namespace Tests\Feature;
 use App\Models\Booking;
 use App\Models\BookingRequest;
 use App\Models\MatchingOperationLog;
+use App\Models\LearningPackage;
 use App\Models\Order;
+use App\Models\PackagePlan;
+use App\Models\PackageSession;
+use App\Models\PackageSubject;
 use App\Models\PaymentSetting;
 use App\Models\TeacherAvailability;
 use App\Models\TeacherOffer;
@@ -33,7 +37,7 @@ class StageSixCAdminOperationsTest extends TestCase
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
         $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
         $teacher = User::factory()->create(['role' => 'teacher', 'status' => 'active']);
-        $bookingRequest = $this->makeSearch($student, [
+        $bookingRequest = $this->makePackageSearch($student, [
             'status' => 'teacher_pending',
             'matched_teacher_id' => $teacher->id,
             'teacher_response_deadline' => now()->subMinute(),
@@ -122,7 +126,7 @@ class StageSixCAdminOperationsTest extends TestCase
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
         $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
         $teacher = $this->makeEligibleTeacher();
-        $bookingRequest = $this->makeSearch($student, [
+        $bookingRequest = $this->makePackageSearch($student, [
             'status' => 'no_teacher',
             'hourly_rate' => 100000,
             'total_amount' => 100000,
@@ -148,12 +152,12 @@ class StageSixCAdminOperationsTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('data.teacher.id', $teacher->id)
-            ->assertJsonPath('data.assignment_type', 'single');
+            ->assertJsonPath('data.assignment_type', 'package');
 
         $this->assertDatabaseHas('booking_requests', [
             'id' => $bookingRequest->id,
             'matched_teacher_id' => $teacher->id,
-            'status' => 'awaiting_payment',
+            'status' => 'confirmed',
         ]);
         $this->assertDatabaseHas('teacher_offers', [
             'booking_request_id' => $bookingRequest->id,
@@ -163,7 +167,7 @@ class StageSixCAdminOperationsTest extends TestCase
         $this->assertDatabaseHas('bookings', [
             'booking_request_id' => $bookingRequest->id,
             'teacher_id' => $teacher->id,
-            'status' => 'awaiting_payment',
+            'status' => 'confirmed',
         ]);
         $this->assertDatabaseHas('matching_operation_logs', [
             'booking_request_id' => $bookingRequest->id,
@@ -179,7 +183,7 @@ class StageSixCAdminOperationsTest extends TestCase
         $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
         $otherStudent = User::factory()->create(['role' => 'student', 'status' => 'active']);
         $teacher = $this->makeEligibleTeacher();
-        $target = $this->makeSearch($student, [
+        $target = $this->makePackageSearch($student, [
             'status' => 'no_teacher',
             'hourly_rate' => 100000,
             'total_amount' => 100000,
@@ -210,7 +214,7 @@ class StageSixCAdminOperationsTest extends TestCase
             'confirmed_teacher_consent' => true,
         ])
             ->assertStatus(422)
-            ->assertJsonPath('message', 'Jadwal tutor bertabrakan dengan kelas lain.');
+            ->assertJsonPath('message', 'Salah satu jadwal paket bertabrakan dengan kelas tutor.');
 
         $this->assertDatabaseMissing('matching_operation_logs', [
             'booking_request_id' => $target->id,
@@ -221,6 +225,90 @@ class StageSixCAdminOperationsTest extends TestCase
             'teacher_id' => $teacher->id,
             'status' => 'accepted',
         ]);
+    }
+
+    public function test_admin_class_monitoring_is_server_paginated_and_attention_first(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-01 10:00:00', 'Asia/Jakarta'));
+        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
+        $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
+        $teacher = User::factory()->create(['role' => 'teacher', 'status' => 'active']);
+
+        foreach (range(1, 25) as $index) {
+            $start = now()->addDays($index)->setTime(15, 0);
+            $request = $this->makeSearch($student, [
+                'subject_name' => $index === 25 ? 'Fisika Monitoring' : 'Matematika',
+                'chapter' => $index === 25 ? 'Gerak Lurus' : 'Bilangan',
+                'learning_mode' => 'online',
+                'status' => 'in_progress',
+                'scheduled_date' => $start->toDateString(),
+                'start_time' => '15:00:00',
+                'end_time' => '16:00:00',
+                'matched_teacher_id' => $teacher->id,
+            ]);
+            Booking::create([
+                'booking_request_id' => $request->id,
+                'student_id' => $student->id,
+                'teacher_id' => $teacher->id,
+                'start_at' => $start,
+                'end_at' => $start->copy()->addHour(),
+                'duration_hours' => 1,
+                'learning_mode' => 'online',
+                'class_type' => 'private',
+                'hourly_rate' => 100000,
+                'total_amount' => 100000,
+                'status' => 'in_progress',
+            ]);
+        }
+
+        $attentionRequest = $this->makeSearch($student, [
+            'subject_name' => 'Kimia',
+            'chapter' => 'Stoikiometri',
+            'learning_mode' => 'online',
+            'status' => 'admin_review_required',
+            'matched_teacher_id' => $teacher->id,
+        ]);
+        Booking::create([
+            'booking_request_id' => $attentionRequest->id,
+            'student_id' => $student->id,
+            'teacher_id' => $teacher->id,
+            'start_at' => now()->subHour(),
+            'end_at' => now(),
+            'duration_hours' => 1,
+            'learning_mode' => 'online',
+            'class_type' => 'private',
+            'hourly_rate' => 100000,
+            'total_amount' => 100000,
+            'status' => 'admin_review_required',
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        $this->getJson('/api/admin/classes')
+            ->assertOk()
+            ->assertJsonPath('meta.scope', 'attention')
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('summary.attention', 1)
+            ->assertJsonPath('summary.active', 26)
+            ->assertJsonPath('data.0.needs_admin_attention', true);
+
+        $firstPage = $this->getJson('/api/admin/classes?scope=active&per_page=20')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 26)
+            ->assertJsonPath('meta.per_page', 20)
+            ->assertJsonPath('meta.current_page', 1);
+        $this->assertCount(20, $firstPage->json('data'));
+
+        $secondPage = $this->getJson('/api/admin/classes?scope=active&per_page=20&page=2')
+            ->assertOk()
+            ->assertJsonPath('meta.current_page', 2);
+        $this->assertCount(6, $secondPage->json('data'));
+
+        $this->getJson('/api/admin/classes?scope=active&search=Fisika%20Monitoring')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.subject', 'Fisika Monitoring')
+            ->assertJsonPath('data.0.chapter', 'Gerak Lurus');
     }
 
     public function test_dashboard_prioritizes_real_admin_work_queues(): void
@@ -275,7 +363,6 @@ class StageSixCAdminOperationsTest extends TestCase
             'is_online' => true,
             'is_offline' => true,
             'is_private_active' => true,
-            'is_group_active' => true,
         ]);
         TeacherAvailability::create([
             'user_id' => $teacher->id,
@@ -287,6 +374,82 @@ class StageSixCAdminOperationsTest extends TestCase
         ]);
 
         return $teacher->fresh('teacherProfile.subjects');
+    }
+
+    private function makePackageSearch(User $student, array $overrides = []): BookingRequest
+    {
+        $request = $this->makeSearch($student, $overrides);
+        $amount = (float) ($request->total_amount ?: $request->hourly_rate ?: 100000);
+        $unitPrice = (float) ($request->hourly_rate ?: $amount);
+        $packageStatus = match ($request->status) {
+            'teacher_pending' => 'teacher_pending',
+            'no_teacher' => 'no_teacher',
+            default => 'matching',
+        };
+
+        $plan = PackagePlan::create([
+            'name' => 'Paket Admin Matching '.$request->id,
+            'slug' => 'admin-matching-'.$request->id,
+            'description' => 'Fixture Paket Belajar untuk regresi admin matching.',
+            'session_count' => 1,
+            'validity_days' => 30,
+            'maximum_subjects' => 1,
+            'sort_order' => 9999,
+            'is_active' => false,
+        ]);
+        $package = LearningPackage::create([
+            'student_id' => $student->id,
+            'package_plan_id' => $plan->id,
+            'package_code' => 'PKG-ADMIN-MATCH-'.$request->id,
+            'education_level' => $request->education_level,
+            'grade' => $request->grade,
+            'learning_mode' => $request->learning_mode,
+            'duration_hours' => (int) $request->duration_hours,
+            'status' => $packageStatus,
+            'total_sessions' => 1,
+            'used_sessions' => 0,
+            'subtotal_amount' => $amount,
+            'discount_amount' => 0,
+            'total_amount' => $amount,
+        ]);
+        $subject = PackageSubject::create([
+            'learning_package_id' => $package->id,
+            'assigned_teacher_id' => null,
+            'subject_name' => $request->subject_name,
+            'chapter' => $request->chapter,
+            'curriculum_chapter_ids' => [],
+            'allocated_sessions' => 1,
+            'unit_price' => $unitPrice,
+            'subtotal_amount' => $amount,
+            'status' => $packageStatus,
+        ]);
+
+        $start = Carbon::parse(
+            $request->scheduled_date->toDateString().' '.$request->start_time,
+            'Asia/Jakarta'
+        );
+        $end = Carbon::parse(
+            $request->scheduled_date->toDateString().' '.$request->end_time,
+            'Asia/Jakarta'
+        );
+        PackageSession::create([
+            'package_subject_id' => $subject->id,
+            'sequence' => 1,
+            'scheduled_start_at' => $start,
+            'scheduled_end_at' => $end,
+            'status' => 'scheduled',
+        ]);
+        Order::create([
+            'user_id' => $student->id,
+            'learning_package_id' => $package->id,
+            'order_id' => 'INV-ADMIN-MATCH-'.$request->id,
+            'amount' => $amount,
+            'status' => 'paid',
+        ]);
+
+        $request->update(['package_subject_id' => $subject->id]);
+
+        return $request->fresh();
     }
 
     private function makeSearch(User $student, array $overrides = []): BookingRequest

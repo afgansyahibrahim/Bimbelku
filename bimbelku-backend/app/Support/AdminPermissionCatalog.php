@@ -104,7 +104,7 @@ class AdminPermissionCatalog
             '#^(?:cases|teacher-appeals|disputes|session-reports|bookings/.+/completion-review)(?:/|$)#' => self::CASES_MANAGE,
             '#^(?:classes|ratings)(?:/|$)#' => self::CLASSES_MANAGE,
             '#^(?:notifications/send|tickets)(?:/|$)#' => self::SUPPORT_MANAGE,
-            '#^(?:hourly-rates|learning-topics|subjects|chapters|stage-five|cheap-class-templates|cheap-classes)(?:/|$)#' => self::CONTENT_MANAGE,
+            '#^(?:hourly-rates|subjects|chapters|stage-five|cheap-class-templates|cheap-classes)(?:/|$)#' => self::CONTENT_MANAGE,
             '#^(?:settings/footer|socials|settings/teacher-cover|notes)(?:/|$)#' => self::SETTINGS_MANAGE,
             '#^audit-log(?:/|$)#' => self::AUDIT_VIEW,
         ];

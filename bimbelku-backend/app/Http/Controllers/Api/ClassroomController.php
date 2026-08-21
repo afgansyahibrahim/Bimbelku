@@ -4,9 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
-use App\Models\PackageLearningTopic;
-use App\Models\PackageSessionTopicLog;
+use App\Models\PackageChapter;
+use App\Models\PackageSessionChapterLog;
 use App\Models\PackageSubject;
+use App\Support\PackageChapterProgress;
 use Illuminate\Http\Request;
 
 class ClassroomController extends Controller
@@ -26,10 +27,10 @@ class ClassroomController extends Controller
                 'reports' => fn ($query) => $query->latest(),
                 'disputes' => fn ($query) => $query->latest(),
                 'sessionAttendances',
-                'learningProgressReports.topicLogs.topic',
+                'learningProgressReports.chapterLogs.chapter',
                 'packageSession.subject.package.plan',
                 'packageSession.subject.package.student:id,name',
-                'packageSession.subject.learningTopics',
+                'packageSession.subject.chapters',
                 'participantAttendances',
                 'latestClassroomMessage.sender:id,name',
                 'scheduleChangeRequests' => fn ($query) => $query
@@ -63,10 +64,8 @@ class ClassroomController extends Controller
             $endAt = $booking->end_at;
             $packageSession = $booking->packageSession;
             $packageSubject = $packageSession?->subject;
-            $packageTopics = $packageSubject?->learningTopics ?? collect();
-            $topicTotal = $packageTopics->count();
-            $topicCompleted = $packageTopics->where('status', 'completed')->count();
-            $topicInProgress = $packageTopics->filter(fn ($topic) => in_array($topic->status, ['in_progress', 'review_needed'], true))->count();
+            $packageChapters = $packageSubject?->chapters ?? collect();
+            $chapterProgress = PackageChapterProgress::summary($packageChapters);
             $teacherAttendance = $booking->sessionAttendances->firstWhere('user_id', $booking->teacher_id);
             $paidParticipants = $booking->participants->filter(fn ($participant) => $participant->order?->status === 'paid');
             $attendanceComplete = $paidParticipants->every(fn ($participant) => $booking->participantAttendances
@@ -94,13 +93,14 @@ class ClassroomController extends Controller
                 'education_level' => $bookingRequest?->education_level,
                 'grade' => $bookingRequest?->grade,
                 'chapter' => $bookingRequest?->chapter,
-                'subtopic' => $bookingRequest?->subtopic,
-                'topic' => $bookingRequest?->topic,
                 'learning_goal' => $bookingRequest?->learning_goal,
-                'attachment_url' => $bookingRequest?->attachment ? "learning-attachments/{$bookingRequest->id}" : null,
                 'method' => $booking->learning_mode ?: 'online',
-                'type' => $booking->class_type ?: 'private',
+                'type' => 'private',
                 'status' => $booking->status ?: 'confirmed',
+                'session_flow_version' => 'presence_confirmation_v2',
+                'tutor_ready_at' => $booking->tutor_ready_at,
+                'student_confirmed_at' => $booking->student_confirmed_at,
+                'session_focus_note' => $booking->session_focus_note,
                 'start_at' => $booking->start_at,
                 'end_at' => $booking->end_at,
                 'duration_hours' => (int) ($booking->duration_hours ?: 1),
@@ -111,12 +111,7 @@ class ClassroomController extends Controller
                 'teacher_net_amount' => $booking->teacher_net_amount,
                 'commission_percent' => (float) ($booking->commission_percent ?: 0),
                 'payout_status' => $booking->payout_status ?: 'pending',
-                'completion_evidence_url' => $booking->completion_evidence
-                    ? "bookings/{$booking->id}/completion-evidence"
-                    : null,
                 'completion_notes' => $booking->completion_notes,
-                'completion_capture_source' => $booking->completion_capture_source,
-                'completion_captured_at' => $booking->completion_captured_at,
                 'objection_deadline' => $booking->objection_deadline,
                 'participants' => $booking->participants->map(function ($participant) use ($booking) {
                     $hasSessionAccess = $participant->order?->status === 'paid';
@@ -147,14 +142,9 @@ class ClassroomController extends Controller
                 'pending_schedule_change' => $booking->scheduleChangeRequests->first(),
                 'latest_report' => $booking->reports->first(),
                 'latest_dispute' => $booking->disputes->first(),
-                'package_progress' => $packageSubject ? [
-                    'total_topics' => $topicTotal,
-                    'completed_topics' => $topicCompleted,
-                    'in_progress_topics' => $topicInProgress,
-                    'progress_percent' => $topicTotal > 0 ? (int) round($topicCompleted / $topicTotal * 100) : 0,
-                ] : null,
+                'package_progress' => $packageSubject ? $chapterProgress : null,
                 'completion_steps' => [
-                    'check_in' => (bool) $teacherAttendance?->pin_verified_at,
+                    'check_in' => (bool) $booking->student_confirmed_at,
                     'attendance' => $attendanceComplete,
                     'check_out' => (bool) $teacherAttendance?->check_out_at,
                     'progress' => $progressComplete,
@@ -169,35 +159,12 @@ class ClassroomController extends Controller
                     'material_covered' => $latestProgressReport->material_covered,
                     'progress_percent' => $latestProgressReport->progress_percent,
                     'published_at' => $latestProgressReport->published_at,
-                    'topics' => $latestProgressReport->topicLogs->map(fn (PackageSessionTopicLog $log) => [
-                        'topic_id' => $log->package_learning_topic_id,
-                        'chapter' => $log->topic?->chapter,
-                        'title' => $log->topic?->title,
-                        'status_before' => $log->status_before,
-                        'status_after' => $log->status_after,
-                        'needs_review' => (bool) $log->needs_review_after,
-                    ])->values(),
+                    'chapters' => PackageChapterProgress::chapterLogs($latestProgressReport->chapterLogs),
                 ] : null,
-                'can_complete' => $endAt !== null
-                    && in_array($booking->status, ['confirmed', 'in_progress'], true)
-                    && now()->gte($endAt->copy()->subMinutes(15))
-                    && $booking->sessionAttendances
-                        ->contains(fn ($attendance) => $attendance->pin_verified_at && $attendance->check_out_at)
-                    && $booking->participants
-                        ->filter(fn ($participant) => $participant->order?->status === 'paid')
-                        ->every(fn ($participant) => $booking->participantAttendances
-                            ->contains('booking_participant_id', $participant->id))
-                    && $booking->participants
-                        ->filter(fn ($participant) => $participant->order?->status === 'paid')
-                        ->filter(function ($participant) use ($booking) {
-                            $status = $booking->participantAttendances
-                                ->firstWhere('booking_participant_id', $participant->id)?->status;
-                            return in_array($status, ['present', 'late', 'partial'], true);
-                        })
-                        ->every(fn ($participant) => $booking->learningProgressReports
-                            ->contains('student_id', $participant->student_id)),
+                'can_complete' => false,
                 'can_report_absence' => $startAt !== null
                     && in_array($booking->status, ['confirmed', 'in_progress'], true)
+                    && !$booking->student_confirmed_at
                     && now()->gte($startAt->copy()->addMinutes(15)),
                 'can_report_emergency' => !in_array($booking->status, [
                     'completed', 'cancelled', 'refunded', 'emergency_refund_pending',
@@ -214,18 +181,18 @@ class ClassroomController extends Controller
         $packageSubject->load([
             'package.plan',
             'package.student:id,name',
-            'learningTopics' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'),
+            'chapters' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'),
             'sessions' => fn ($query) => $query->orderBy('sequence'),
             'sessions.booking.learningProgressReports' => fn ($query) => $query
                 ->where('teacher_id', $teacherId)
-                ->with(['topicLogs.topic'])
+                ->with(['chapterLogs.chapter'])
                 ->orderByDesc('published_at')
                 ->orderByDesc('id'),
         ]);
 
-        $topics = $packageSubject->learningTopics;
-        $completed = $topics->where('status', 'completed')->count();
-        $inProgress = $topics->filter(fn (PackageLearningTopic $topic) => in_array($topic->status, ['in_progress', 'review_needed'], true))->count();
+        $packageChapters = $packageSubject->chapters;
+        $chapterSummary = PackageChapterProgress::summary($packageChapters);
+        $chapters = PackageChapterProgress::chapters($packageChapters);
 
         return response()->json([
             'id' => $packageSubject->id,
@@ -241,21 +208,8 @@ class ClassroomController extends Controller
                 'name' => $packageSubject->package?->student?->name ?? 'Murid BimbelKu',
             ],
             'allocated_sessions' => (int) $packageSubject->allocated_sessions,
-            'progress_summary' => [
-                'total_topics' => $topics->count(),
-                'completed_topics' => $completed,
-                'in_progress_topics' => $inProgress,
-                'progress_percent' => $topics->isNotEmpty() ? (int) round($completed / $topics->count() * 100) : 0,
-            ],
-            'learning_topics' => $topics->map(fn (PackageLearningTopic $topic) => [
-                'id' => $topic->id,
-                'chapter' => $topic->chapter,
-                'title' => $topic->title,
-                'status' => $topic->status,
-                'needs_review' => (bool) $topic->needs_review,
-                'started_at' => $topic->started_at,
-                'completed_at' => $topic->completed_at,
-            ])->values(),
+            'progress_summary' => $chapterSummary,
+            'learning_chapters' => $chapters,
             'sessions' => $packageSubject->sessions->map(function ($session) use ($teacherId) {
                 $booking = $session->booking;
                 $report = $booking?->learningProgressReports
@@ -282,16 +236,7 @@ class ClassroomController extends Controller
                         'no_material_change' => (bool) $report->no_material_change,
                         'no_change_reason' => $report->no_change_reason,
                         'published_at' => $report->published_at,
-                        'topics' => $report->topicLogs->map(fn (PackageSessionTopicLog $log) => [
-                            'topic_id' => $log->package_learning_topic_id,
-                            'chapter' => $log->topic?->chapter,
-                            'title' => $log->topic?->title,
-                            'activity_type' => $log->activity_type,
-                            'status_before' => $log->status_before,
-                            'status_after' => $log->status_after,
-                            'needs_review' => (bool) $log->needs_review_after,
-                            'notes' => $log->notes,
-                        ])->values(),
+                        'chapters' => PackageChapterProgress::chapterLogs($report->chapterLogs),
                     ] : null,
                 ];
             })->values(),

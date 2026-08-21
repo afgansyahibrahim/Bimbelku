@@ -32,7 +32,7 @@ import DateOfBirthInput from "@/components/DateOfBirthInput";
 const CameraCapture = lazy(() => import("@/components/CameraCapture"));
 const SubjectCombobox = lazy(() => import("@/components/SubjectCombobox"));
 import type { SubjectOption } from "@/components/SubjectCombobox";
-import { EDUCATION_LEVELS } from "@/lib/educationCatalog";
+import { EDUCATION_LEVELS, GRADES_BY_EDUCATION_LEVEL } from "@/lib/educationCatalog";
 import http, { getApiError, getCached } from "@/lib/http";
 import {
   isValidHttpUrl,
@@ -58,6 +58,7 @@ const initialForm = {
   password: "",
   password_confirmation: "",
   school_name: "",
+  student_education_level: "",
   grade: "",
   date_of_birth: "",
   guardian_name: "",
@@ -141,8 +142,9 @@ export default function Register() {
     if (!isValidPersonName(form.name)) return notify.error("Nama lengkap harus berisi huruf dan tidak boleh memuat angka.");
     if (!isValidPhone(form.phone)) return notify.error("Nomor WhatsApp/telepon harus berisi 8–15 angka.");
     if (form.password !== form.password_confirmation) return notify.error("Konfirmasi kata sandi belum sama.");
-    if (!isValidHttpUrl(form.maps_link)) return notify.error("Tautan Google Maps harus diawali http:// atau https://.");
     if (!isValidHttpUrl(form.linkedin)) return notify.error("Tautan LinkedIn atau portofolio belum valid.");
+    if (role === "student" && !form.student_education_level) return notify.error("Pilih jenjang pendidikan murid.");
+    if (role === "student" && !form.grade) return notify.error("Pilih kelas atau tingkat murid.");
     if (role === "student" && !form.date_of_birth) return notify.error("Tanggal lahir murid wajib diisi.");
     if (isMinorStudent && !isValidPersonName(form.guardian_name)) return notify.error("Nama orang tua atau wali harus berisi huruf dan tidak boleh memuat angka.");
     if (isMinorStudent && !isValidPhone(form.guardian_phone)) return notify.error("Nomor orang tua atau wali harus berisi 8–15 angka.");
@@ -185,15 +187,15 @@ export default function Register() {
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-indigo-50 px-4 py-10">
-      <div className="mx-auto grid max-w-6xl overflow-hidden rounded-[2.5rem] border border-white bg-white shadow-2xl shadow-slate-200/60 lg:grid-cols-[.82fr_1.18fr]">
-        <aside className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-8 text-white lg:p-12">
+    <main className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-indigo-50 px-3 py-4 sm:px-4 sm:py-10">
+      <div className="mx-auto grid max-w-6xl overflow-hidden rounded-[1.75rem] border border-white bg-white shadow-2xl sm:rounded-[2.5rem] shadow-slate-200/60 lg:grid-cols-[.82fr_1.18fr]">
+        <aside className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-6 text-white sm:p-8 lg:p-12">
           <div className="absolute -right-20 -top-16 h-64 w-64 rounded-full bg-orange-400/20 blur-3xl" />
           <div className="relative">
             <Link to="/" className="inline-flex items-center gap-2 text-xl font-black"><span className="grid h-10 w-10 place-items-center rounded-xl bg-orange-500">B</span>BimbelKu</Link>
-            <h1 className="mt-14 text-4xl font-black leading-tight">Belajar tepat waktu, bersama tutor yang tepat.</h1>
+            <h1 className="mt-8 text-3xl font-black leading-tight sm:mt-14 sm:text-4xl">Belajar tepat waktu, bersama tutor yang tepat.</h1>
             <p className="mt-4 leading-7 text-indigo-100/75">Satu akun untuk pencocokan otomatis, jadwal pasti, pembayaran yang tercatat, dan penyelesaian yang dapat diperiksa.</p>
-            <div className="mt-10 space-y-4">
+            <div className="mt-7 hidden space-y-4 sm:block sm:mt-10">
               {[
                 "Tutor melewati verifikasi identitas dan kualifikasi",
                 "Harga ditentukan sistem, bukan profil tutor",
@@ -203,9 +205,9 @@ export default function Register() {
           </div>
         </aside>
 
-        <section className="p-6 sm:p-10 lg:p-12">
+        <section className="p-5 sm:p-10 lg:p-12">
           <div className="flex items-start justify-between gap-4">
-            <div><p className="text-xs font-black uppercase tracking-[.2em] text-orange-500">Buat akun</p><h2 className="mt-2 text-3xl font-black text-slate-900">Mulai bersama BimbelKu</h2><p className="mt-2 text-sm text-slate-500">Sudah terdaftar? <Link to={loginHref} className="font-bold text-indigo-600">Masuk</Link></p></div>
+            <div><p className="text-xs font-black uppercase tracking-[.2em] text-orange-500">Buat akun</p><h2 className="mt-2 text-2xl font-black text-slate-900 sm:text-3xl">Mulai bersama BimbelKu</h2><p className="mt-2 text-sm text-slate-500">Sudah terdaftar? <Link to={loginHref} className="font-bold text-indigo-600">Masuk</Link></p></div>
           </div>
 
           <div className="mt-7 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1.5">
@@ -234,7 +236,25 @@ export default function Register() {
               <div className="space-y-5 rounded-2xl border border-orange-100 bg-orange-50/40 p-5">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <FormField label="Sekolah" icon={GraduationCap}><Input className="h-12 rounded-xl bg-white" value={form.school_name} onChange={(event) => setValue("school_name", event.target.value)} placeholder="Opsional" /></FormField>
-                  <FormField label="Jenjang" icon={BookOpen}><Select value={form.grade} onValueChange={(value) => setValue("grade", value)}><SelectTrigger className="h-12 rounded-xl bg-white"><SelectValue placeholder="Pilih jenjang" /></SelectTrigger><SelectContent>{EDUCATION_LEVELS.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></FormField>
+                  <FormField label="Jenjang" icon={BookOpen}>
+                    <Select
+                      value={form.student_education_level}
+                      onValueChange={(value) => setForm((current) => ({
+                        ...current,
+                        student_education_level: value,
+                        grade: GRADES_BY_EDUCATION_LEVEL[value]?.[0] || "",
+                      }))}
+                    >
+                      <SelectTrigger className="h-12 rounded-xl bg-white"><SelectValue placeholder="Pilih jenjang" /></SelectTrigger>
+                      <SelectContent>{EDUCATION_LEVELS.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </FormField>
+                  <FormField label={form.student_education_level === "Umum" ? "Tingkat" : "Kelas"} icon={GraduationCap}>
+                    <Select value={form.grade} onValueChange={(value) => setValue("grade", value)} disabled={!form.student_education_level}>
+                      <SelectTrigger className="h-12 rounded-xl bg-white"><SelectValue placeholder={form.student_education_level ? "Pilih kelas/tingkat" : "Pilih jenjang dulu"} /></SelectTrigger>
+                      <SelectContent>{(GRADES_BY_EDUCATION_LEVEL[form.student_education_level] || []).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </FormField>
                 </div>
                 <FormField label="Tanggal lahir murid" icon={CalendarDays}>
                   <DateOfBirthInput
@@ -274,7 +294,6 @@ export default function Register() {
                   </div>
                 )}
                 <FormField label="Alamat rumah" icon={MapPin}><Textarea className="min-h-20 rounded-xl bg-white" value={form.address} onChange={(event) => setValue("address", event.target.value)} placeholder="Opsional saat daftar, wajib ketika memilih kelas offline" /></FormField>
-                <Input type="url" className="h-12 rounded-xl bg-white" value={form.maps_link} onChange={(event) => setValue("maps_link", event.target.value)} placeholder="Tautan Google Maps, opsional" />
               </div>
             ) : (
               <div className="space-y-5 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-5">

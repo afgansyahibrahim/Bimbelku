@@ -1,7 +1,7 @@
 import fs from "node:fs";
 
 const checks = [
-  ["src/components/ui/alert-dialog.tsx", /z-\[600\]/, "confirm dialog must render above custom z-[60]/z-[70] payment modals"],
+  ["src/components/ui/alert-dialog.tsx", /z-\[var\(--layer-alert\)\]/, "confirm dialog must use the global critical-alert layer"],
   ["src/pages/admin/PaymentVerification.tsx", /getApiErrorDetails/, "admin verification must inspect stale-state errors"],
   ["src/pages/admin/PaymentVerification.tsx", /details\.status === 409 \|\| details\.status === 422/, "admin verification must refresh stale payment rows"],
   ["src/pages/admin/PaymentVerification.tsx", /value: "cancelled", label: "Dibatalkan"/, "cancelled payment history filter must exist"],

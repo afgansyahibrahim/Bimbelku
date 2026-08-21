@@ -316,7 +316,6 @@ class ScheduleChangeController extends Controller
         $booking->update(['start_at' => $startAt, 'end_at' => $endAt]);
         $booking->bookingRequest?->update(['scheduled_date' => $startAt->toDateString(), 'start_time' => $startAt->format('H:i:s'), 'end_time' => $endAt->format('H:i:s')]);
         PackageSession::query()->where('booking_id', $booking->id)->update(['scheduled_start_at' => $startAt, 'scheduled_end_at' => $endAt]);
-        if ($booking->groupPool) $booking->groupPool->update(['scheduled_date' => $startAt->toDateString(), 'start_time' => $startAt->format('H:i:s'), 'end_time' => $endAt->format('H:i:s')]);
     }
 
     private function noticeHours(): int

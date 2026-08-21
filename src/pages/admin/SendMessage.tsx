@@ -160,7 +160,7 @@ export default function SendMessage() {
 
         {/* MODAL KIRIM PESAN */}
         {isModalOpen && selectedUser && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="fixed inset-0 z-[var(--layer-modal)] flex items-center justify-center p-3 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 sm:p-4">
                 <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl p-8 relative animate-in zoom-in-95 duration-200">
                     <button onClick={() => setIsModalOpen(false)} className="absolute top-6 right-6 p-2 bg-slate-50 rounded-full hover:bg-slate-100 transition"><X size={20}/></button>
                     

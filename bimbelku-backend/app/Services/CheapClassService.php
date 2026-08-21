@@ -127,7 +127,6 @@ class CheapClassService
             'education_level' => $template->education_level,
             'grade' => $template->grade,
             'chapter' => $template->chapter,
-            'subtopic' => $template->subtopic,
             'topic' => $template->topic,
             'starts_at' => $startsAt,
             'ends_at' => $startsAt->copy()->addMinutes((int) $template->duration_minutes),
@@ -601,7 +600,7 @@ class CheapClassService
                     && $class->registration_opens_at->lte(now())
                     && $class->registration_deadline->isFuture(),
                 422,
-                'Pendaftaran Kelas Murah sudah ditutup atau belum dibuka.'
+                'Pendaftaran Kelas Kelompok sudah ditutup atau belum dibuka.'
             );
             abort_if(
                 !$this->teacherCanTeach($class->teacher_id, $class),
@@ -611,7 +610,7 @@ class CheapClassService
             abort_if(
                 $this->studentHasScheduleConflict($student->id, $class),
                 422,
-                'Jadwal Kelas Murah bertabrakan dengan kelas aktif Anda.'
+                'Jadwal Kelas Kelompok bertabrakan dengan kelas aktif Anda.'
             );
 
             $existing = CheapClassEnrollment::query()
@@ -621,7 +620,7 @@ class CheapClassService
                 ->lockForUpdate()
                 ->first();
             if ($existing && in_array($existing->status, self::ACTIVE_SEAT_STATUSES, true)) {
-                abort(422, 'Anda sudah memiliki kursi pada Kelas Murah ini.');
+                abort(422, 'Anda sudah memiliki kursi pada Kelas Kelompok ini.');
             }
             if (
                 $existing
@@ -635,7 +634,7 @@ class CheapClassService
             abort_if(
                 $class->enrollments()->whereIn('status', self::ACTIVE_SEAT_STATUSES)->count() >= $class->maximum_participants,
                 422,
-                'Kuota Kelas Murah sudah penuh.'
+                'Kuota Kelas Kelompok sudah penuh.'
             );
 
             $seatExpiresAt = now()->addMinutes((int) $class->payment_window_minutes)
@@ -685,7 +684,7 @@ class CheapClassService
 
             Notification::create([
                 'user_id' => $student->id,
-                'title' => 'Kursi Kelas Murah ditahan',
+                'title' => 'Kursi Kelas Kelompok ditahan',
                 'message' => 'Selesaikan pembayaran sebelum '. $seatExpiresAt->translatedFormat('d M Y, H:i').' WIB agar kursi tetap aman.',
                 'type' => 'info',
                 'target_url' => '/payment',
@@ -706,10 +705,10 @@ class CheapClassService
     {
         $enrollmentId = (int) $order->cheap_class_enrollment_id;
         $classId = (int) CheapClassEnrollment::query()->whereKey($enrollmentId)->value('cheap_class_id');
-        abort_if(!$enrollmentId || !$classId, 422, 'Tagihan Kelas Murah tidak memiliki data peserta yang valid.');
+        abort_if(!$enrollmentId || !$classId, 422, 'Tagihan Kelas Kelompok tidak memiliki data peserta yang valid.');
 
         DB::transaction(function () use ($order, $details, $path, $useWallet, $walletExpectedAmount, $enrollmentId, $classId) {
-            // Urutan lock seluruh mutasi Kelas Murah: class -> enrollment -> order.
+            // Urutan lock seluruh mutasi Kelas Kelompok: class -> enrollment -> order.
             $class = CheapClass::query()->lockForUpdate()->findOrFail($classId);
             $enrollment = CheapClassEnrollment::query()
                 ->whereKey($enrollmentId)
@@ -769,7 +768,7 @@ class CheapClassService
         if ($path) {
             User::query()->where('role', 'admin')->pluck('id')->each(fn (int $adminId) => Notification::create([
                 'user_id' => $adminId,
-                'title' => 'Bukti Kelas Murah masuk',
+                'title' => 'Bukti Kelas Kelompok masuk',
                 'message' => "Tagihan {$order->order_id} menunggu verifikasi.",
                 'type' => 'info',
                 'target_url' => '/admin/pembayaran',
@@ -781,7 +780,7 @@ class CheapClassService
     {
         $enrollmentId = (int) $order->cheap_class_enrollment_id;
         $classId = (int) CheapClassEnrollment::query()->whereKey($enrollmentId)->value('cheap_class_id');
-        abort_if(!$enrollmentId || !$classId, 422, 'Tagihan Kelas Murah tidak memiliki data peserta yang valid.');
+        abort_if(!$enrollmentId || !$classId, 422, 'Tagihan Kelas Kelompok tidak memiliki data peserta yang valid.');
 
         $result = DB::transaction(function () use ($order, $status, $reason, $admin, $enrollmentId, $classId) {
             // Samakan urutan lock dengan join/cancel agar verifikasi paralel aman.
@@ -811,7 +810,7 @@ class CheapClassService
                     $enrollment->update(['status' => 'cancelled']);
                     Notification::create([
                         'user_id' => $lockedOrder->user_id,
-                        'title' => 'Pembatalan Kelas Murah selesai',
+                        'title' => 'Pembatalan Kelas Kelompok selesai',
                         'message' => 'Bukti transfer tidak disetujui admin sehingga pembatalan selesai tanpa proses refund.',
                         'type' => 'info',
                         'target_url' => '/student/history',
@@ -866,7 +865,7 @@ class CheapClassService
                 $this->queueRefund(
                     $lockedOrder,
                     $class,
-                    'Pembayaran Kelas Murah belum selesai diverifikasi sebelum sesi pertama dimulai'
+                    'Pembayaran Kelas Kelompok belum selesai diverifikasi sebelum sesi pertama dimulai'
                 );
                 $enrollment->update(['status' => 'refund_pending']);
                 Notification::create([
@@ -888,7 +887,7 @@ class CheapClassService
                 $this->queueRefund(
                     $lockedOrder,
                     $class,
-                    'Kelas Murah dibatalkan sistem sebelum bukti pembayaran selesai diperiksa'
+                    'Kelas Kelompok dibatalkan sistem sebelum bukti pembayaran selesai diperiksa'
                 );
                 $enrollment->update(['status' => 'refund_pending']);
                 Notification::create([
@@ -914,7 +913,7 @@ class CheapClassService
                 $this->queueRefund(
                     $lockedOrder,
                     $class,
-                    'Pembayaran Kelas Murah melebihi kapasitas maksimum kelas'
+                    'Pembayaran Kelas Kelompok melebihi kapasitas maksimum kelas'
                 );
                 $enrollment->update(['status' => 'refund_pending']);
                 Notification::create([
@@ -934,7 +933,7 @@ class CheapClassService
 
             Notification::create([
                 'user_id' => $lockedOrder->user_id,
-                'title' => 'Pembayaran Kelas Murah diterima',
+                'title' => 'Pembayaran Kelas Kelompok diterima',
                 'message' => 'Pembayaran diterima. Kelas akan dikonfirmasi setelah pendaftaran ditutup dan kuota minimum terpenuhi.',
                 'type' => 'success',
                 'target_url' => '/student/kelas-murah',
@@ -949,7 +948,7 @@ class CheapClassService
                     ->exists();
 
             return [
-                'message' => 'Pembayaran Kelas Murah diverifikasi.',
+                'message' => 'Pembayaran Kelas Kelompok diverifikasi.',
                 'class_id' => $class->id,
                 'finalize_now' => $finalizeNow,
             ];
@@ -971,7 +970,7 @@ class CheapClassService
 
         if (
             $order->fresh()?->status === 'refund_pending'
-            && ($result['message'] ?? '') === 'Pembayaran Kelas Murah diverifikasi.'
+            && ($result['message'] ?? '') === 'Pembayaran Kelas Kelompok diverifikasi.'
         ) {
             $result['message'] = 'Pembayaran tercatat, tetapi kelas dibatalkan. Refund penuh masuk antrean admin.';
         }
@@ -1081,15 +1080,15 @@ class CheapClassService
                 foreach ($paid as $enrollment) {
                     Notification::create([
                         'user_id' => $enrollment->student_id,
-                        'title' => 'Kelas Murah dikonfirmasi',
-                        'message' => 'Kuota minimum terpenuhi. Tutor dan tautan Zoom kini dapat dibuka pada Kelas Murah.',
+                        'title' => 'Kelas Kelompok dikonfirmasi',
+                        'message' => 'Kuota minimum terpenuhi. Tutor dan tautan Zoom kini dapat dibuka pada Kelas Kelompok.',
                         'type' => 'success',
                         'target_url' => '/student/kelas-murah',
                     ]);
                 }
                 Notification::create([
                     'user_id' => $class->teacher_id,
-                    'title' => 'Kelas Murah dikonfirmasi',
+                    'title' => 'Kelas Kelompok dikonfirmasi',
                     'message' => "Kelas {$this->subjectSummary($class)} sudah dikonfirmasi. Lengkapi tautan Zoom sebelum sesi dimulai.",
                     'type' => 'success',
                     'target_url' => '/guru/kelas-murah',
@@ -1141,7 +1140,7 @@ class CheapClassService
                 }
                 Notification::create([
                     'user_id' => $enrollment->student_id,
-                    'title' => 'Kelas Murah dibatalkan',
+                    'title' => 'Kelas Kelompok dibatalkan',
                     'message' => $reason,
                     'type' => 'warning',
                     'target_url' => '/student/history',
@@ -1182,7 +1181,7 @@ class CheapClassService
                     ['unique_key' => "cheap-class-teacher-assigned:{$class->id}:{$candidate->id}"],
                     [
                         'user_id' => $candidate->id,
-                        'title' => 'Paket Kelas Murah ditemukan',
+                        'title' => 'Paket Kelas Kelompok ditemukan',
                         'message' => "Jadwal {$this->subjectSummary($class)} cocok dengan seluruh sesi yang tersedia.",
                         'type' => 'success',
                         'target_url' => '/guru/kelas-murah',
@@ -1350,7 +1349,6 @@ class CheapClassService
             'education_level' => $class->education_level,
             'grade' => $class->grade,
             'chapter' => $this->chapterSummary($class),
-            'subtopic' => $class->subtopic,
             'topic' => $class->topic,
             'starts_at' => $class->starts_at,
             'ends_at' => $class->ends_at,
@@ -1453,7 +1451,7 @@ class CheapClassService
                         }
                         Notification::create([
                             'user_id' => $locked->student_id,
-                            'title' => 'Kursi Kelas Murah dilepas',
+                            'title' => 'Kursi Kelas Kelompok dilepas',
                             'message' => 'Bukti pembayaran belum masuk sebelum batas satu jam berakhir.',
                             'type' => 'warning',
                             'target_url' => '/student/kelas-murah',
@@ -1490,7 +1488,6 @@ class CheapClassService
             'education_level' => $template->education_level,
             'grade' => $template->grade,
             'chapter' => $template->chapter,
-            'subtopic' => $template->subtopic,
             'topic' => $template->topic,
             'start_time' => $template->start_time,
             'duration_minutes' => (int) $template->duration_minutes,
@@ -1732,7 +1729,7 @@ class CheapClassService
     }
 
     /**
-     * Kelas Murah memakai progres bersama per bab. Field progres disimpan di
+     * Kelas Kelompok memakai progres bersama per bab. Field progres disimpan di
      * snapshot subjects milik occurrence agar tidak menambah tabel baru dan
      * tidak mengubah katalog/template yang dipakai occurrence lain.
      *
@@ -1819,8 +1816,7 @@ class CheapClassService
                 'chapter' => $item['chapter'],
             ])->values()->all(),
             'chapter' => $this->chapterSummary($class),
-            'subtopic' => $class->subtopic,
-            'type' => 'Kelas Murah',
+            'type' => 'Kelas Kelompok',
             'method' => 'online',
             'teacher_name' => 'Tutor diumumkan setelah kelas dikonfirmasi',
             'start_at' => $class->starts_at->toIso8601String(),

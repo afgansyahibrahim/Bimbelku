@@ -5,7 +5,11 @@ namespace Tests\Feature;
 use App\Models\Booking;
 use App\Models\BookingRequest;
 use App\Models\CurriculumSubject;
+use App\Models\LearningPackage;
 use App\Models\Order;
+use App\Models\PackagePlan;
+use App\Models\PackageSession;
+use App\Models\PackageSubject;
 use App\Models\PaymentSetting;
 use App\Models\TeacherAvailability;
 use App\Models\TeacherOffer;
@@ -201,7 +205,7 @@ class StageFiveWorkflowTest extends TestCase
         $this->assertSame(['Kelas 10', 'Kelas 11', 'Kelas 12'], $subject->grades);
     }
 
-    public function test_student_cannot_create_a_legacy_booking_request_directly(): void
+    public function test_retired_legacy_booking_request_endpoint_is_not_exposed(): void
     {
         $student = User::factory()->create([
             'role' => 'student',
@@ -219,15 +223,12 @@ class StageFiveWorkflowTest extends TestCase
             'scheduled_date' => now()->addDay()->toDateString(),
             'start_time' => '11:00',
             'duration_hours' => 1,
-        ])
-            ->assertStatus(410)
-            ->assertJsonPath('code', 'legacy_booking_creation_retired')
-            ->assertJsonPath('redirect_to', '/student/packages/new');
+        ])->assertNotFound();
 
         $this->assertDatabaseCount('booking_requests', 0);
     }
 
-    public function test_legacy_booking_creation_is_retired_before_old_payload_validation(): void
+    public function test_retired_legacy_booking_endpoint_does_not_validate_old_payloads(): void
     {
         $student = User::factory()->create([
             'role' => 'student',
@@ -238,15 +239,12 @@ class StageFiveWorkflowTest extends TestCase
         $this->postJson('/api/student/booking-requests', [
             'education_level' => 'Perguruan Tinggi',
             'grade' => 'Semester 1',
-        ])
-            ->assertStatus(410)
-            ->assertJsonPath('code', 'legacy_booking_creation_retired')
-            ->assertJsonPath('redirect_to', '/student/packages/new');
+        ])->assertNotFound();
 
         $this->assertDatabaseCount('booking_requests', 0);
     }
 
-    public function test_teacher_acceptance_opens_the_invoice_without_a_second_student_decision(): void
+    public function test_teacher_acceptance_activates_a_paid_package_without_a_second_student_decision(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-28 10:03:00', 'Asia/Jakarta'));
         $this->seed(CurriculumCatalogSeeder::class);
@@ -272,7 +270,6 @@ class StageFiveWorkflowTest extends TestCase
             'is_online' => true,
             'is_offline' => false,
             'is_private_active' => true,
-            'is_group_active' => true,
         ]);
         TeacherAvailability::create([
             'user_id' => $teacher->id,
@@ -295,8 +292,53 @@ class StageFiveWorkflowTest extends TestCase
             'status' => 'active',
             'phone' => '081200000002',
         ]);
-        $legacyRequest = BookingRequest::create([
+        $plan = PackagePlan::create([
+            'name' => 'Paket Uji Acceptance',
+            'slug' => 'stage-five-acceptance',
+            'description' => 'Fixture Paket Belajar modern untuk acceptance tutor.',
+            'session_count' => 1,
+            'validity_days' => 30,
+            'maximum_subjects' => 1,
+            'sort_order' => 9999,
+            'is_active' => false,
+        ]);
+        $package = LearningPackage::create([
             'student_id' => $student->id,
+            'package_plan_id' => $plan->id,
+            'package_code' => 'PKG-STAGE5-ACCEPT',
+            'education_level' => 'SMP',
+            'grade' => 'Kelas 7',
+            'learning_mode' => 'online',
+            'duration_hours' => 1,
+            'status' => 'teacher_pending',
+            'total_sessions' => 1,
+            'used_sessions' => 0,
+            'subtotal_amount' => 50000,
+            'discount_amount' => 0,
+            'total_amount' => 50000,
+        ]);
+        $packageSubject = PackageSubject::create([
+            'learning_package_id' => $package->id,
+            'curriculum_subject_id' => $subject->id,
+            'assigned_teacher_id' => null,
+            'subject_name' => 'Matematika',
+            'chapter' => 'Seluruh materi mapel',
+            'curriculum_chapter_ids' => [],
+            'allocated_sessions' => 1,
+            'unit_price' => 50000,
+            'subtotal_amount' => 50000,
+            'status' => 'teacher_pending',
+        ]);
+        PackageSession::create([
+            'package_subject_id' => $packageSubject->id,
+            'sequence' => 1,
+            'scheduled_start_at' => Carbon::parse('2026-07-28 11:00:00', 'Asia/Jakarta'),
+            'scheduled_end_at' => Carbon::parse('2026-07-28 12:00:00', 'Asia/Jakarta'),
+            'status' => 'scheduled',
+        ]);
+        $bookingRequest = BookingRequest::create([
+            'student_id' => $student->id,
+            'package_subject_id' => $packageSubject->id,
             'matched_teacher_id' => $teacher->id,
             'subject_name' => 'Matematika',
             'curriculum_subject_id' => $subject->id,
@@ -319,31 +361,45 @@ class StageFiveWorkflowTest extends TestCase
             'teacher_response_deadline' => now()->addMinutes(10),
         ]);
         $offer = TeacherOffer::create([
-            'booking_request_id' => $legacyRequest->id,
+            'booking_request_id' => $bookingRequest->id,
             'teacher_id' => $teacher->id,
             'status' => 'pending',
             'offered_at' => now(),
             'expires_at' => now()->addMinutes(10),
         ]);
+        $order = Order::create([
+            'user_id' => $student->id,
+            'learning_package_id' => $package->id,
+            'order_id' => 'INV-STAGE5-ACCEPT',
+            'subtotal_amount' => 50000,
+            'discount_amount' => 0,
+            'amount' => 50000,
+            'status' => 'paid',
+            'class_details_snapshot' => [
+                'type' => 'Paket Belajar',
+                'subject' => 'Matematika',
+            ],
+        ]);
 
         Sanctum::actingAs($teacher);
         $this->postJson("/api/teacher/offers/{$offer->id}/accept")
             ->assertOk()
-            ->assertJsonPath('message', 'Permintaan diterima. Tagihan murid sudah dibuka.');
+            ->assertJsonPath('message', 'Seluruh tutor menerima paket. Jadwal belajar sudah aktif.')
+            ->assertJsonPath('data.package_activated', true);
 
         $booking = Booking::query()->firstOrFail();
-        $order = Order::query()->firstOrFail();
-        $this->assertSame('awaiting_payment', $booking->status);
+        $this->assertSame('confirmed', $booking->status);
         $this->assertSame('private', $booking->class_type);
-        $this->assertNull($booking->group_pool_id);
-        $this->assertSame('pending', $order->status);
-        $this->assertSame($student->id, $order->user_id);
-        $this->assertSame('Privat', $order->class_details_snapshot['type']);
+        $this->assertSame('presence_confirmation_v2', $booking->session_flow_version);
+        $this->assertSame('paid', $order->fresh()->status);
+        $this->assertSame('active', $package->fresh()->status);
+        $this->assertSame('active', $packageSubject->fresh()->status);
         $this->assertDatabaseHas('booking_requests', [
+            'id' => $bookingRequest->id,
             'student_id' => $student->id,
-            'status' => 'awaiting_payment',
+            'status' => 'confirmed',
             'class_type' => 'private',
-            'group_pool_id' => null,
+            'package_subject_id' => $packageSubject->id,
         ]);
     }
 }

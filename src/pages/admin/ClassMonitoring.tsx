@@ -1,177 +1,266 @@
-import { notify } from "@/lib/notify";
-import { useState, useEffect } from "react";
-import AdminLayout from "../../components/AdminLayout";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import http, { getApiError } from "@/lib/http";
-import { 
-  Search, BookOpen, User, CheckCircle2,
-  BarChart3, Loader2, ArrowRight
+import {
+  AlertTriangle,
+  ArrowRight,
+  BookOpen,
+  CalendarClock,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  History,
+  Loader2,
+  Search,
+  User,
+  X,
 } from "lucide-react";
+import AdminLayout from "../../components/AdminLayout";
+import http, { getApiError } from "@/lib/http";
+import { notify } from "@/lib/notify";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+const SCOPES = [
+  { key: "attention", label: "Perlu Tindakan", icon: AlertTriangle, tone: "amber" },
+  { key: "active", label: "Aktif", icon: BookOpen, tone: "indigo" },
+  { key: "upcoming", label: "Akan Datang", icon: CalendarClock, tone: "blue" },
+  { key: "history", label: "Riwayat", icon: History, tone: "slate" },
+] as const;
+
+type Scope = (typeof SCOPES)[number]["key"];
+type Row = {
+  id: number;
+  title: string;
+  subject: string;
+  chapter?: string | null;
+  type: string;
+  class_type: "private";
+  method: "online" | "offline";
+  status: string;
+  status_label: string;
+  teacher_name: string;
+  student_count: number;
+  progress: number;
+  needs_admin_attention: boolean;
+  attention_reason?: string | null;
+  start_at?: string | null;
+  end_at?: string | null;
+};
+type Response = {
+  data: Row[];
+  meta: { current_page: number; last_page: number; per_page: number; total: number; from?: number | null; to?: number | null; scope: Scope };
+  summary: { attention: number; active: number; upcoming: number; history: number };
+};
+
+const STATUS_OPTIONS = [
+  ["", "Semua status"],
+  ["confirmed", "Dikonfirmasi"],
+  ["in_progress", "Sedang berlangsung"],
+  ["awaiting_student_approval", "Menunggu persetujuan murid"],
+  ["disputed", "Dalam keberatan"],
+  ["absence_review", "Kehadiran diperiksa"],
+  ["admin_review_required", "Menunggu tinjauan admin"],
+  ["completed", "Selesai"],
+  ["emergency_refund_pending", "Refund keadaan darurat"],
+  ["refund_pending", "Refund diproses"],
+  ["partially_refunded", "Sebagian direfund"],
+  ["refunded", "Direfund"],
+] as const;
+
+const dateTime = (value?: string | null) => value
+  ? new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
+  : "Jadwal belum tersedia";
 
 export default function ClassMonitoring() {
-  const [classes, setClasses] = useState<any[]>([]);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [summary, setSummary] = useState<Response["summary"]>({ attention: 0, active: 0, upcoming: 0, history: 0 });
+  const [meta, setMeta] = useState<Response["meta"]>({ current_page: 1, last_page: 1, per_page: 20, total: 0, scope: "attention" });
+  const [scope, setScope] = useState<Scope>("attention");
   const [search, setSearch] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [status, setStatus] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchClasses();
-  }, []);
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
-  const fetchClasses = async () => {
-    try {
-      const res = await http.get("/admin/classes");
-      setClasses(res.data);
-    } catch (error) {
-      notify.error(getApiError(error, "Data pemantauan kelas gagal dimuat."));
-    } finally {
-      setIsLoading(false);
-    }
+  useEffect(() => { setPage(1); }, [scope, debouncedSearch, status, dateFrom, dateTo]);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const response = await http.get<Response>("/admin/classes", {
+          params: {
+            scope,
+            search: debouncedSearch || undefined,
+            status: status || undefined,
+            date_from: dateFrom || undefined,
+            date_to: dateTo || undefined,
+            page,
+            per_page: 20,
+          },
+        });
+        if (!active) return;
+        setRows(response.data.data || []);
+        setSummary(response.data.summary || { attention: 0, active: 0, upcoming: 0, history: 0 });
+        setMeta(response.data.meta || { current_page: 1, last_page: 1, per_page: 20, total: 0, scope });
+      } catch (error) {
+        if (active) notify.error(getApiError(error, "Data pemantauan kelas gagal dimuat."));
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void load();
+    return () => { active = false; };
+  }, [dateFrom, dateTo, debouncedSearch, page, scope, status]);
+
+  const hasFilters = Boolean(search || status || dateFrom || dateTo);
+  const pageNumbers = useMemo(() => {
+    const start = Math.max(1, Math.min(meta.current_page - 2, Math.max(1, meta.last_page - 4)));
+    return Array.from({ length: Math.min(5, meta.last_page) }, (_, index) => start + index);
+  }, [meta.current_page, meta.last_page]);
+
+  const resetFilters = () => {
+    setSearch("");
+    setDebouncedSearch("");
+    setStatus("");
+    setDateFrom("");
+    setDateTo("");
   };
 
-  const filteredClasses = classes.filter(c => 
-    c.title.toLowerCase().includes(search.toLowerCase()) || 
-    c.teacher_name.toLowerCase().includes(search.toLowerCase()) ||
-    c.subject.toLowerCase().includes(search.toLowerCase())
-  );
-  const activeStatuses = [
-    "confirmed",
-    "in_progress",
-    "awaiting_student_approval",
-    "disputed",
-    "absence_review",
-    "admin_review_required",
-  ];
-
   return (
-    <AdminLayout title="Pemantauan Kelas">
-      <div className="space-y-6 animate-in fade-in duration-500">
-        
-        {/* STATS HEADER */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-gradient-to-br from-indigo-500 to-blue-600 rounded-[2rem] p-6 text-white shadow-lg shadow-indigo-200">
-                <div className="flex justify-between items-start">
-                    <div>
-                        <p className="text-indigo-100 font-medium text-sm">Total Kelas Aktif</p>
-                        <h3 className="text-3xl font-black mt-2">{classes.filter(c => activeStatuses.includes(c.status)).length}</h3>
-                    </div>
-                    <div className="p-3 bg-white/20 rounded-2xl backdrop-blur-sm"><BookOpen size={24}/></div>
-                </div>
-            </div>
-            <div className="bg-white border border-slate-100 rounded-[2rem] p-6 shadow-sm">
-                <div className="flex justify-between items-start">
-                    <div>
-                        <p className="text-slate-400 font-bold text-xs uppercase tracking-wider">Kelas Selesai</p>
-                        <h3 className="text-3xl font-black text-slate-800 mt-2">{classes.filter(c => c.status === "completed").length}</h3>
-                    </div>
-                    <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><CheckCircle2 size={24}/></div>
-                </div>
-            </div>
-            <div className="bg-white border border-slate-100 rounded-[2rem] p-6 shadow-sm">
-                <div className="flex justify-between items-start">
-                    <div>
-                        <p className="text-slate-400 font-bold text-xs uppercase tracking-wider">Sesi Tercatat</p>
-                        <h3 className="text-3xl font-black text-slate-800 mt-2">{classes.length} <span className="text-sm font-medium text-slate-400">Sesi</span></h3>
-                    </div>
-                    <div className="p-3 bg-orange-50 text-orange-600 rounded-2xl"><BarChart3 size={24}/></div>
-                </div>
-            </div>
-        </div>
+    <AdminLayout title="Monitoring Kelas">
+      <div className="mx-auto max-w-[1500px] space-y-5 pb-12 sm:space-y-6">
+        <section className="rounded-[1.75rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-blue-900 p-5 text-white shadow-xl sm:p-7">
+          <div className="max-w-3xl">
+            <p className="text-[11px] font-black uppercase tracking-[.18em] text-blue-200">Operasional kelas</p>
+            <h1 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">Fokus pada data yang perlu dilihat sekarang</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-300">Monitoring tidak lagi memuat seluruh data ke browser. Daftar dibatasi 20 kelas per halaman, difilter di server, dan detail lengkap baru dimuat saat dibuka.</p>
+          </div>
+        </section>
 
-        {/* SEARCH & FILTER */}
-        <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
-            <div className="relative flex-1">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20}/>
-                <input 
-                    type="text" 
-                    placeholder="Cari kelas, mata pelajaran, atau tutor..." 
-                    className="w-full pl-12 pr-4 py-3 bg-transparent outline-none text-sm font-medium text-slate-700"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                />
-            </div>
-        </div>
+        <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          {SCOPES.map(({ key, label, icon: Icon, tone }) => {
+            const active = scope === key;
+            const count = summary[key];
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => { setScope(key); setStatus(""); }}
+                className={`min-w-0 rounded-2xl border p-4 text-left transition sm:p-5 ${active ? key === "attention" ? "border-rose-300 bg-rose-50 shadow-sm ring-2 ring-rose-100" : "border-indigo-300 bg-indigo-50 shadow-sm ring-2 ring-indigo-100" : "border-slate-100 bg-white hover:border-indigo-200 hover:shadow-sm"}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className={`grid h-10 w-10 place-items-center rounded-xl ${tone === "amber" ? "bg-amber-50 text-amber-600" : tone === "indigo" ? "bg-indigo-50 text-indigo-600" : tone === "blue" ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-600"}`}><Icon size={19} /></div>
+                  {active && <CheckCircle2 size={17} className="text-indigo-600" />}
+                </div>
+                <p className="mt-4 text-2xl font-black text-slate-900">{count}</p>
+                <p className="mt-1 text-xs font-black uppercase tracking-wider text-slate-500">{label}</p>
+              </button>
+            );
+          })}
+        </section>
 
-        {/* CLASS LIST */}
-        <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden">
-            <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                    <thead className="bg-slate-50/50 border-b border-slate-100">
-                        <tr>
-                            <th className="px-8 py-5 text-xs font-extrabold text-slate-400 uppercase tracking-wider">Nama Kelas</th>
-                            <th className="px-6 py-5 text-xs font-extrabold text-slate-400 uppercase tracking-wider">Pengajar</th>
-                            <th className="px-6 py-5 text-xs font-extrabold text-slate-400 uppercase tracking-wider">Progress</th>
-                            <th className="px-6 py-5 text-xs font-extrabold text-slate-400 uppercase tracking-wider">Murid</th>
-                            <th className="px-6 py-5 text-xs font-extrabold text-slate-400 uppercase tracking-wider text-right">Aksi</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                        {isLoading ? (
-                            <tr><td colSpan={5} className="px-8 py-10 text-center"><Loader2 className="animate-spin mx-auto text-indigo-500"/></td></tr>
-                        ) : filteredClasses.length > 0 ? (
-                            filteredClasses.map((item) => (
-                                <tr key={item.id} className="hover:bg-slate-50/80 transition-colors group">
-                                    <td className="px-8 py-5">
-                                        <div className="font-bold text-slate-800">{item.title}</div>
-                                        <div className="text-xs text-slate-500 mt-1 flex items-center gap-2">
-                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${item.method === 'online' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}`}>{item.method}</span>
-                                            <span>• {item.type}</span>
-                                        </div>
-                                        <div className="mt-2 text-[11px] font-bold text-slate-400">{item.status_label}</div>
-                                    </td>
-                                    <td className="px-6 py-5">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xs">
-                                                {item.teacher_name.charAt(0)}
-                                            </div>
-                                            <span className="text-sm font-medium text-slate-600">{item.teacher_name}</span>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-5">
-                                        <div className="w-full max-w-[140px]">
-                                            <div className="flex justify-between text-xs font-bold mb-1 text-slate-500">
-                                                <span>{item.completed_sessions}/{item.total_sessions} Sesi</span>
-                                                <span className={item.status === "completed" ? "text-emerald-500" : "text-indigo-500"}>{item.progress}%</span>
-                                            </div>
-                                            <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                                                <div 
-                                                    className={`h-full rounded-full transition-all duration-500 ${item.status === "completed" ? 'bg-emerald-500' : 'bg-indigo-500'}`}
-                                                    style={{width: `${item.progress}%`}}
-                                                ></div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-5">
-                                        <div className="flex -space-x-2">
-                                            {[...Array(Math.min(item.student_count, 3))].map((_, i) => (
-                                                <div key={i} className="w-8 h-8 rounded-full border-2 border-white bg-slate-200 flex items-center justify-center text-[10px] text-slate-500">
-                                                    <User size={12}/>
-                                                </div>
-                                            ))}
-                                            {item.student_count > 3 && (
-                                                <div className="w-8 h-8 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500">
-                                                    +{item.student_count - 3}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-5 text-right">
-                                        <Link 
-                                            to={`/admin/classes/${item.id}`} 
-                                            className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-white border border-slate-200 text-slate-400 hover:border-indigo-200 hover:text-indigo-600 hover-shadow-md transition-all"
-                                        >
-                                            <ArrowRight size={18}/>
-                                        </Link>
-                                    </td>
-                                </tr>
-                            ))
-                        ) : (
-                            <tr><td colSpan={5} className="px-8 py-10 text-center text-slate-400 italic">Tidak ada data kelas.</td></tr>
-                        )}
-                    </tbody>
+        <section className="rounded-[1.5rem] border border-slate-100 bg-white p-3 shadow-sm sm:p-4">
+          <div className="grid gap-3 xl:grid-cols-[minmax(300px,1fr)_220px_160px_160px]">
+            <label className="relative min-w-0">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari mapel, Bab, atau tutor…" className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-11 pr-10 text-sm font-semibold text-slate-700 outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100" />
+              {search && <button type="button" aria-label="Hapus pencarian" onClick={() => setSearch("")} className="absolute right-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-lg text-slate-400 hover:bg-white hover:text-slate-700"><X size={16} /></button>}
+            </label>
+            <Select value={status || "all"} onValueChange={(value) => setStatus(value === "all" ? "" : value)}>
+              <SelectTrigger aria-label="Filter status kelas" className="h-12 min-w-0 rounded-xl border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 focus:ring-indigo-100">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start" className="w-[var(--radix-select-trigger-width)] max-w-[calc(100dvw-1.5rem)] rounded-xl">
+                <SelectItem value="all">Semua status</SelectItem>
+                {STATUS_OPTIONS.slice(1).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <label className="min-w-0"><span className="sr-only">Dari tanggal</span><input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" /></label>
+            <label className="min-w-0"><span className="sr-only">Sampai tanggal</span><input type="date" value={dateTo} min={dateFrom || undefined} onChange={(event) => setDateTo(event.target.value)} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" /></label>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-slate-500">
+            <span className="inline-flex items-center gap-2"><Filter size={14} />{meta.total} data pada filter ini · maksimum 20 data dimuat sekaligus</span>
+            {hasFilters && <button type="button" onClick={resetFilters} className="inline-flex min-h-10 items-center gap-2 rounded-xl px-3 font-black text-indigo-600 hover:bg-indigo-50"><X size={14} />Reset filter</button>}
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-[1.75rem] border border-slate-100 bg-white shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+          {loading ? (
+            <div className="grid min-h-72 place-items-center"><div className="text-center"><Loader2 className="mx-auto animate-spin text-indigo-600" size={30} /><p className="mt-3 text-sm font-bold text-slate-500">Memuat halaman {page}…</p></div></div>
+          ) : rows.length === 0 ? (
+            <div className="px-5 py-16 text-center sm:py-20"><BookOpen className="mx-auto text-slate-300" size={38} /><h2 className="mt-4 font-black text-slate-800">Tidak ada data pada tampilan ini</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">{scope === "attention" ? "Bagus, saat ini tidak ada kelas yang membutuhkan tindakan admin." : "Coba ubah filter atau rentang tanggal."}</p>{hasFilters && <button type="button" onClick={resetFilters} className="mt-5 min-h-11 rounded-xl bg-indigo-600 px-5 text-sm font-black text-white">Reset filter</button>}</div>
+          ) : (
+            <>
+              <div className="divide-y divide-slate-100 md:hidden">
+                {rows.map((item) => <MobileClassCard key={item.id} item={item} />)}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full min-w-[900px] text-left">
+                  <thead className="border-b border-slate-100 bg-slate-50/80"><tr><th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-400">Kelas</th><th className="px-5 py-4 text-[11px] font-black uppercase tracking-wider text-slate-400">Tutor</th><th className="px-5 py-4 text-[11px] font-black uppercase tracking-wider text-slate-400">Jadwal</th><th className="px-5 py-4 text-[11px] font-black uppercase tracking-wider text-slate-400">Peserta</th><th className="px-5 py-4 text-[11px] font-black uppercase tracking-wider text-slate-400">Status</th><th className="px-5 py-4 text-right text-[11px] font-black uppercase tracking-wider text-slate-400">Aksi</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100">{rows.map((item) => <DesktopClassRow key={item.id} item={item} />)}</tbody>
                 </table>
+              </div>
+            </>
+          )}
+
+          {!loading && meta.last_page > 1 && (
+            <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <p className="text-xs font-semibold text-slate-500">Menampilkan {meta.from ?? 0}–{meta.to ?? 0} dari {meta.total}</p>
+              <div className="flex items-center justify-center gap-1">
+                <PageButton disabled={meta.current_page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} label="Sebelumnya"><ChevronLeft size={16} /></PageButton>
+                <div className="hidden items-center gap-1 sm:flex">{pageNumbers.map((number) => <button key={number} type="button" onClick={() => setPage(number)} className={`grid h-10 min-w-10 place-items-center rounded-xl px-2 text-xs font-black ${number === meta.current_page ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-white"}`}>{number}</button>)}</div>
+                <span className="px-2 text-xs font-black text-slate-500 sm:hidden">{meta.current_page}/{meta.last_page}</span>
+                <PageButton disabled={meta.current_page >= meta.last_page} onClick={() => setPage((value) => Math.min(meta.last_page, value + 1))} label="Berikutnya"><ChevronRight size={16} /></PageButton>
+              </div>
             </div>
-        </div>
+          )}
+        </section>
       </div>
     </AdminLayout>
   );
+}
+
+function MobileClassCard({ item }: { item: Row }) {
+  return (
+    <article className="p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap gap-1.5"><Badge>{item.type}</Badge><Badge>{item.method === "online" ? "Online" : "Offline"}</Badge>{item.needs_admin_attention && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black text-amber-800">Perlu tindakan</span>}</div><h3 className="mt-3 break-words text-base font-black text-slate-900">{item.title}</h3><p className="mt-1 text-xs font-semibold text-slate-500">{dateTime(item.start_at)}</p></div><Link to={`/admin/classes/${item.id}`} aria-label={`Buka ${item.title}`} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 text-slate-500 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"><ArrowRight size={18} /></Link></div>
+      <div className="mt-4 grid grid-cols-2 gap-2"><MiniInfo label="Tutor" value={item.teacher_name} /><MiniInfo label="Peserta" value={`${item.student_count} murid`} /></div>
+      <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5"><span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Status</span><span className={`text-right text-xs font-black ${item.needs_admin_attention ? "text-amber-700" : "text-indigo-700"}`}>{item.status_label}</span></div>
+      {item.attention_reason && <p className="mt-2 break-words rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold leading-5 text-rose-700">{item.attention_reason}</p>}
+    </article>
+  );
+}
+
+function DesktopClassRow({ item }: { item: Row }) {
+  return (
+    <tr className="transition hover:bg-slate-50/70">
+      <td className="px-6 py-5"><div className="max-w-md font-black text-slate-900">{item.title}</div><div className="mt-2 flex flex-wrap gap-1.5"><Badge>{item.type}</Badge><Badge>{item.method === "online" ? "Online" : "Offline"}</Badge>{item.needs_admin_attention && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-800">Perlu tindakan</span>}</div></td>
+      <td className="px-5 py-5"><div className="flex items-center gap-2"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-50 text-xs font-black text-indigo-700">{item.teacher_name.charAt(0).toUpperCase()}</span><span className="text-sm font-semibold text-slate-600">{item.teacher_name}</span></div></td>
+      <td className="px-5 py-5 text-sm font-semibold text-slate-600">{dateTime(item.start_at)}</td>
+      <td className="px-5 py-5"><span className="inline-flex items-center gap-2 text-sm font-bold text-slate-600"><User size={15} className="text-slate-400" />{item.student_count}</span></td>
+      <td className="px-5 py-5"><span className={`text-xs font-black ${item.needs_admin_attention ? "text-amber-700" : "text-slate-600"}`}>{item.status_label}</span>{item.attention_reason && <p className="mt-1 max-w-64 text-[11px] font-semibold leading-4 text-rose-600">{item.attention_reason}</p>}</td>
+      <td className="px-5 py-5 text-right"><Link to={`/admin/classes/${item.id}`} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700">Detail <ArrowRight size={15} /></Link></td>
+    </tr>
+  );
+}
+
+function Badge({ children }: { children: ReactNode }) {
+  return <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-indigo-700">{children}</span>;
+}
+
+function MiniInfo({ label, value }: { label: string; value: string }) {
+  return <div className="min-w-0 rounded-xl border border-slate-100 bg-white p-3"><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 break-words text-xs font-black leading-5 text-slate-700">{value}</p></div>;
+}
+
+function PageButton({ disabled, onClick, label, children }: { disabled: boolean; onClick: () => void; label: string; children: ReactNode }) {
+  return <button type="button" disabled={disabled} onClick={onClick} aria-label={label} className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:text-slate-600">{children}</button>;
 }

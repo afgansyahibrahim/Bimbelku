@@ -9,12 +9,11 @@ use App\Models\BookingRequest;
 use App\Models\ClassroomMessage;
 use App\Models\CurriculumChapter;
 use App\Models\CurriculumSubject;
-use App\Models\LearningTopic;
 use App\Models\LearningPackage;
 use App\Models\LearningTimeSlot;
 use App\Models\MatchingOperationLog;
 use App\Models\Notification;
-use App\Models\PackageLearningTopic;
+use App\Models\PackageChapter;
 use App\Models\PackagePlan;
 use App\Models\PackageRenewal;
 use App\Models\PackageSession;
@@ -26,6 +25,7 @@ use App\Services\HourlyRateService;
 use App\Services\PackageCheckoutService;
 use App\Services\TeacherMatchingService;
 use App\Support\EducationCatalog;
+use App\Support\PackageChapterProgress;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -90,7 +90,7 @@ class StudentPackageController extends Controller
                 'plan',
                 'promotion',
                 'subjects.assignedTeacher.teacherProfile',
-                'subjects.learningTopics',
+                'subjects.chapters',
                 'subjects.sessions.booking',
                 'subjects.bookingRequest.matchingOperationLogs',
                 'subjects.bookingRequest.latestMatchingExhaustion',
@@ -113,7 +113,7 @@ class StudentPackageController extends Controller
             'plan',
             'promotion',
             'subjects.assignedTeacher.teacherProfile',
-            'subjects.learningTopics',
+            'subjects.chapters',
             'subjects.sessions.booking',
                 'subjects.bookingRequest.matchingOperationLogs',
                 'subjects.bookingRequest.latestMatchingExhaustion',
@@ -134,7 +134,7 @@ class StudentPackageController extends Controller
                 'promotion',
                 'orders' => fn ($query) => $query->latest(),
                 'subjects.assignedTeacher.teacherProfile',
-                'subjects.learningTopics',
+                'subjects.chapters',
                 'subjects.sessions.booking',
                 'subjects.bookingRequest.matchingOperationLogs',
                 'subjects.bookingRequest.latestMatchingExhaustion',
@@ -228,7 +228,7 @@ class StudentPackageController extends Controller
                     return $item;
                 }
 
-                foreach (['curriculum_chapter_ids', 'learning_topic_ids', 'weekdays'] as $field) {
+                foreach (['curriculum_chapter_ids', 'weekdays'] as $field) {
                     if (!is_array($item[$field] ?? null)) {
                         continue;
                     }
@@ -259,8 +259,6 @@ class StudentPackageController extends Controller
             'subjects.*.curriculum_subject_id' => ['required', 'integer', 'distinct', 'exists:curriculum_subjects,id'],
             'subjects.*.curriculum_chapter_ids' => ['nullable', 'array', 'min:1', 'max:8'],
             'subjects.*.curriculum_chapter_ids.*' => ['integer', 'distinct', 'exists:curriculum_chapters,id'],
-            'subjects.*.learning_topic_ids' => ['nullable', 'array', 'min:1', 'max:40'],
-            'subjects.*.learning_topic_ids.*' => ['integer', 'distinct', 'exists:learning_topics,id'],
             'subjects.*.learning_goal' => ['nullable', 'string', 'max:1500'],
             'subjects.*.preferred_teacher_id' => ['nullable', 'integer', 'exists:users,id'],
             'subjects.*.weekdays' => ['required', 'array', 'min:1', 'max:4'],
@@ -270,7 +268,6 @@ class StudentPackageController extends Controller
         ], [
             'subjects.*.curriculum_subject_id.distinct' => 'Satu mata pelajaran tidak boleh dipilih lebih dari sekali.',
             'subjects.*.curriculum_chapter_ids.*.distinct' => 'Bab yang sama tidak boleh dipilih lebih dari sekali.',
-            'subjects.*.learning_topic_ids.*.distinct' => 'Subbab yang sama tidak boleh dipilih lebih dari sekali.',
             'subjects.*.weekdays.max' => 'Setiap mata pelajaran hanya boleh memiliki maksimal 4 hari belajar.',
         ]);
         abort_if(
@@ -320,7 +317,7 @@ class StudentPackageController extends Controller
         if (!empty($validated['renewal_of_id'])) {
             $renewalOf = LearningPackage::query()
                 ->where('student_id', $student->id)
-                ->with('subjects.learningTopics')
+                ->with('subjects.chapters')
                 ->findOrFail($validated['renewal_of_id']);
             abort_if(
                 $this->hasBlockingRenewal($renewalOf),
@@ -396,9 +393,9 @@ class StudentPackageController extends Controller
                 422,
                 'Semua hari pada satu mata pelajaran harus memakai jam yang sama.'
             );
-            if (empty($item['curriculum_chapter_ids']) || empty($item['learning_topic_ids'])) {
+            if (empty($item['curriculum_chapter_ids'])) {
                 throw ValidationException::withMessages([
-                    'subjects' => "Pilih sedikitnya satu bab dan satu subbab untuk {$subject->name}.",
+                    'subjects' => "Pilih sedikitnya satu bab untuk {$subject->name}.",
                 ]);
             }
             $chapterIds = collect($item['curriculum_chapter_ids'])->map(fn ($id) => (int) $id)->unique()->values();
@@ -411,18 +408,6 @@ class StudentPackageController extends Controller
                 ->orderBy('sort_order')
                 ->get();
             abort_unless($chapters->count() === $chapterIds->count(), 422, "Salah satu bab {$subject->name} tidak sesuai kelas atau sudah tidak aktif.");
-
-            $topicIds = collect($item['learning_topic_ids'])->map(fn ($id) => (int) $id)->unique()->values();
-            $topics = LearningTopic::query()
-                ->where('subject_name', $subject->name)
-                ->where('education_level', $validated['education_level'])
-                ->where('grade', $validated['grade'])
-                ->where('is_active', true)
-                ->whereIn('chapter', $chapters->pluck('title'))
-                ->whereIn('id', $topicIds)
-                ->orderBy('sort_order')
-                ->get();
-            abort_unless($topics->count() === $topicIds->count(), 422, "Salah satu subbab {$subject->name} tidak sesuai bab atau sudah tidak aktif.");
             $allStarts = $allStarts->merge($starts);
 
             $unitPrice = $rateService->resolve(
@@ -436,7 +421,6 @@ class StudentPackageController extends Controller
                 'subject' => $subject,
                 'starts' => $starts,
                 'chapters' => $chapters,
-                'topics' => $topics,
                 'unit_price' => $unitPrice,
                 'subtotal' => $unitPrice * $durationHours * $starts->count(),
             ];
@@ -527,17 +511,14 @@ class StudentPackageController extends Controller
 
             foreach ($normalizedSubjects as $item) {
                 $chapterLabel = $this->compactLabel($item['chapters']->pluck('title'));
-                $topicLabel = $this->compactLabel($item['topics']->pluck('name'));
                 $packageSubject = PackageSubject::create([
                     'learning_package_id' => $package->id,
                     'curriculum_subject_id' => $item['subject']->id,
                     'curriculum_chapter_id' => $item['chapters']->first()?->id,
                     'curriculum_chapter_ids' => $item['chapters']->pluck('id')->map(fn ($id) => (int) $id)->all(),
-                    'learning_topic_ids' => $item['topics']->pluck('id')->map(fn ($id) => (int) $id)->all(),
                     'preferred_teacher_id' => $item['preferred_teacher_id'] ?? null,
                     'subject_name' => $item['subject']->name,
                     'chapter' => $chapterLabel,
-                    'subtopic' => $topicLabel,
                     'learning_goal' => $item['learning_goal'] ?? null,
                     'allocated_sessions' => $item['starts']->count(),
                     'unit_price' => $item['unit_price'],
@@ -546,20 +527,17 @@ class StudentPackageController extends Controller
                 ]);
 
                 $previousSubject = $renewalOf?->subjects->firstWhere('subject_name', $item['subject']->name);
-                foreach ($item['topics']->values() as $index => $topic) {
-                    $previousTopic = $previousSubject?->learningTopics
-                        ?->firstWhere('learning_topic_id', $topic->id);
-                    $wasCompletedBefore = $renewalOf && $previousTopic?->status === 'completed';
-                    PackageLearningTopic::create([
+                $previousChapters = PackageChapterProgress::chapters($previousSubject?->chapters ?? collect())
+                    ->keyBy('chapter');
+                foreach ($item['chapters']->values() as $index => $chapter) {
+                    $wasCompletedBefore = $renewalOf
+                        && (($previousChapters->get($chapter->title)['status'] ?? null) === 'completed');
+                    PackageChapter::create([
                         'package_subject_id' => $packageSubject->id,
-                        'curriculum_chapter_id' => $item['chapters']->firstWhere('title', $topic->chapter)?->id,
-                        'learning_topic_id' => $topic->id,
-                        'chapter' => $topic->chapter,
-                        'title' => $topic->name,
-                        'normalized_title' => mb_strtolower(preg_replace('/\s+/u', ' ', trim($topic->name))),
-                        // Perpanjangan adalah siklus belajar baru. Riwayat paket lama tetap
-                        // menjadi baseline, tetapi progress paket baru tidak boleh langsung
-                        // 100% hanya karena subbab yang sama pernah selesai sebelumnya.
+                        'curriculum_chapter_id' => $chapter->id,
+                        'title' => $chapter->title,
+                        // Paket baru selalu memulai siklus Bab dari awal. Jika Bab yang sama
+                        // pernah selesai, tandai sebagai penguatan tanpa mengubah histori lama.
                         'status' => 'not_started',
                         'needs_review' => $wasCompletedBefore,
                         'sort_order' => $index + 1,
@@ -587,8 +565,6 @@ class StudentPackageController extends Controller
                     'education_level' => $validated['education_level'],
                     'grade' => $validated['grade'],
                     'chapter' => $chapterLabel,
-                    'subtopic' => $topicLabel,
-                    'topic' => $item['learning_goal'] ?? null,
                     'learning_goal' => $item['learning_goal'] ?? null,
                     'learning_mode' => $validated['learning_mode'],
                     'class_type' => 'private',
@@ -634,7 +610,7 @@ class StudentPackageController extends Controller
         return response()->json([
             'message' => 'Paket dibuat. Selesaikan pembayaran agar pencarian tutor dapat dimulai.',
             'data' => $this->formatPackage($package->fresh([
-                'plan', 'promotion', 'subjects.assignedTeacher', 'subjects.learningTopics', 'subjects.sessions.booking', 'orders',
+                'plan', 'promotion', 'subjects.assignedTeacher', 'subjects.chapters', 'subjects.sessions.booking', 'orders',
             ])),
             'order' => [
                 'order_id' => $order->id,
@@ -1267,19 +1243,8 @@ class StudentPackageController extends Controller
                 'curriculum_subject_id' => $subject->curriculum_subject_id,
                 'name' => $subject->subject_name,
                 'chapter' => $subject->chapter,
-                'subtopic' => $subject->subtopic,
                 'curriculum_chapter_ids' => $subject->curriculum_chapter_ids ?? [],
-                'learning_topic_ids' => $subject->learning_topic_ids ?? [],
-                'learning_topics' => $subject->learningTopics->map(fn (PackageLearningTopic $topic) => [
-                    'id' => $topic->id,
-                    'catalog_topic_id' => $topic->learning_topic_id,
-                    'chapter' => $topic->chapter,
-                    'title' => $topic->title,
-                    'status' => $topic->status,
-                    'needs_review' => (bool) $topic->needs_review,
-                    'started_at' => $topic->started_at,
-                    'completed_at' => $topic->completed_at,
-                ])->values(),
+                'learning_chapters' => PackageChapterProgress::chapters($subject->chapters),
                 'learning_goal' => $subject->learning_goal,
                 'allocated_sessions' => $subject->allocated_sessions,
                 'unit_price' => (float) $subject->unit_price,

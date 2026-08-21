@@ -39,7 +39,6 @@ type PackageItem = {
   price_per_student: number;
   price_per_session: number;
   custom_price_per_student?: number | null;
-  subtopic?: string | null;
   topic?: string | null;
   registration_opens_at: string;
   registration_deadline: string;
@@ -148,7 +147,7 @@ export default function CheapClassSchedule() {
       setMeta(response.data?.meta || { ...initialMeta, view, scope, sort, page });
       setSubjects(Array.isArray(response.data?.filters?.subjects) ? response.data.filters.subjects : []);
     } catch (error) {
-      notify.error(getApiError(error, "Jadwal Kelas Murah belum dapat dimuat."));
+      notify.error(getApiError(error, "Jadwal Kelas Kelompok belum dapat dimuat."));
       setPackages([]);
       setSessions([]);
     } finally {
@@ -178,7 +177,7 @@ export default function CheapClassSchedule() {
         ? ` ${item.pending_payment_count} pembayaran/kursi yang masih menunggu akan diselesaikan sesuai statusnya; bukti yang sudah dikirim tetap diperiksa.`
         : "";
     const approved = await confirm({
-      title: "Batalkan paket Kelas Murah?",
+      title: "Batalkan paket Kelas Kelompok?",
       description: `${item.subject_name} · ${item.grade} beserta seluruh sesinya akan dibatalkan.${paymentNote} Paket yang memiliki riwayat peserta tetap disimpan sebagai arsip.`,
       confirmText: "Batalkan paket",
       tone: "danger",
@@ -200,7 +199,7 @@ export default function CheapClassSchedule() {
 
   const deletePackage = async (item: PackageItem) => {
     const approved = await confirm({
-      title: "Hapus paket Kelas Murah?",
+      title: "Hapus paket Kelas Kelompok?",
       description: `${item.subject_name} · ${item.grade} beserta seluruh ${item.session_count} sesinya akan dihapus. Tindakan ini tidak dapat dibatalkan.`,
       confirmText: "Hapus paket",
       tone: "danger",
@@ -225,14 +224,14 @@ export default function CheapClassSchedule() {
     }
   };
 
-  return <AdminLayout title="Jadwal Kelas Murah">
+  return <AdminLayout title="Jadwal Kelas Kelompok">
     <div className="mx-auto max-w-7xl space-y-6 pb-12">
       <section className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3"><Link to="/admin/kelas-murah" className="inline-flex items-center gap-2 text-sm font-black text-indigo-600 hover:text-indigo-800"><ArrowLeft size={16} /> Kembali ke pengaturan</Link><Link to="/admin/kelas-murah/berulang" className="inline-flex h-10 items-center gap-2 rounded-xl bg-violet-50 px-4 text-xs font-black text-violet-700 hover:bg-violet-100"><Repeat2 size={15} /> Kelola Paket Berulang</Link></div>
         <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs font-black uppercase tracking-[.18em] text-indigo-600">Kalender operasional</p>
-            <h1 className="mt-2 text-2xl font-black text-slate-950 sm:text-3xl">Jadwal Kelas Murah</h1>
+            <h1 className="mt-2 text-2xl font-black text-slate-950 sm:text-3xl">Jadwal Kelas Kelompok</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Jadwal aktif hanya memuat paket yang masih berjalan. Paket batal dan selesai disimpan terpisah dalam Riwayat.</p>
           </div>
           <div className="grid grid-cols-2 rounded-xl bg-slate-100 p-1">
@@ -290,7 +289,7 @@ function PackageList({ scope, items, expandedId, deletingId, cancellingId, onTog
           {item.status === "cancelled" && !item.can_delete && item.delete_block_reason && <p className="max-w-48 text-[10px] font-bold leading-4 text-slate-400">{item.delete_block_reason}</p>}
         </div>
       </div>
-      {expanded && <div className="space-y-4 border-t border-slate-100 bg-slate-50/80 p-4"><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><Detail label="Materi" value={`${item.chapter}${item.subtopic ? ` · ${item.subtopic}` : ""}`} /><Detail label="Harga paket" value={`${money(item.price_per_student)} sekali bayar`} /><Detail label="Pendaftaran" value={`${dateTime(item.registration_opens_at)} – ${dateTime(item.registration_deadline)}`} /><Detail label="Kuota" value={`${item.occupied_seat_count}/${item.maximum_participants} kursi terisi · ${item.confirmed_participant_count} pembayaran terverifikasi · minimum ${item.minimum_participants}`} /></div>{item.status === "cancelled" && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold leading-5 text-rose-700"><b>Alasan pembatalan:</b> {item.cancellation_reason || "Paket dibatalkan."}{item.cancelled_at ? ` · ${dateTime(item.cancelled_at)}` : ""}</div>}{item.package_kind === "recurring" && <div className={`rounded-xl p-3 text-xs font-bold leading-5 ${item.recurrence_active ? "bg-violet-50 text-violet-800" : "bg-slate-200 text-slate-700"}`}>{item.recurrence_active ? <>Pengulangan mingguan aktif.{item.next_publish_at ? ` Paket berikutnya dijadwalkan terbit ${dateTime(item.next_publish_at)}.` : ""}</> : "Pengulangan mingguan nonaktif. Paket yang sudah terbit tetap berjalan."}</div>}{item.topic && <div className="rounded-xl bg-white p-3 text-xs leading-5 text-slate-600"><b className="text-slate-900">Catatan materi:</b> {item.topic}</div>}{item.status !== "cancelled" && <div className={`rounded-xl p-3 text-xs font-bold leading-5 ${item.teacher ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>{item.teacher_status_message}</div>}<div><p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">Seluruh jadwal sesi</p><div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">{item.sessions.map((session) => <div key={session.id} className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-indigo-50 text-xs font-black text-indigo-700">{session.session_number}</span><div><p className="text-xs font-black text-slate-900">Sesi {session.session_number} · {fullDate(session.starts_at)}</p><p className="mt-1 text-[11px] text-slate-500">{timeRange(session.starts_at, session.ends_at)} · {statusText[session.status] || session.status}</p></div></div>)}</div></div></div>}
+      {expanded && <div className="space-y-4 border-t border-slate-100 bg-slate-50/80 p-4"><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><Detail label="Materi" value={item.chapter} /><Detail label="Harga paket" value={`${money(item.price_per_student)} sekali bayar`} /><Detail label="Pendaftaran" value={`${dateTime(item.registration_opens_at)} – ${dateTime(item.registration_deadline)}`} /><Detail label="Kuota" value={`${item.occupied_seat_count}/${item.maximum_participants} kursi terisi · ${item.confirmed_participant_count} pembayaran terverifikasi · minimum ${item.minimum_participants}`} /></div>{item.status === "cancelled" && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold leading-5 text-rose-700"><b>Alasan pembatalan:</b> {item.cancellation_reason || "Paket dibatalkan."}{item.cancelled_at ? ` · ${dateTime(item.cancelled_at)}` : ""}</div>}{item.package_kind === "recurring" && <div className={`rounded-xl p-3 text-xs font-bold leading-5 ${item.recurrence_active ? "bg-violet-50 text-violet-800" : "bg-slate-200 text-slate-700"}`}>{item.recurrence_active ? <>Pengulangan mingguan aktif.{item.next_publish_at ? ` Paket berikutnya dijadwalkan terbit ${dateTime(item.next_publish_at)}.` : ""}</> : "Pengulangan mingguan nonaktif. Paket yang sudah terbit tetap berjalan."}</div>}{item.topic && <div className="rounded-xl bg-white p-3 text-xs leading-5 text-slate-600"><b className="text-slate-900">Catatan materi:</b> {item.topic}</div>}{item.status !== "cancelled" && <div className={`rounded-xl p-3 text-xs font-bold leading-5 ${item.teacher ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>{item.teacher_status_message}</div>}<div><p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">Seluruh jadwal sesi</p><div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">{item.sessions.map((session) => <div key={session.id} className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-indigo-50 text-xs font-black text-indigo-700">{session.session_number}</span><div><p className="text-xs font-black text-slate-900">Sesi {session.session_number} · {fullDate(session.starts_at)}</p><p className="mt-1 text-[11px] text-slate-500">{timeRange(session.starts_at, session.ends_at)} · {statusText[session.status] || session.status}</p></div></div>)}</div></div></div>}
     </article>;
   })}</div>;
 }
@@ -303,7 +302,7 @@ function SessionList({ scope, items, onChanged }: { scope: ScheduleScope; items:
   if (!items.length) return <Empty text={scope === "history" ? "Belum ada sesi dalam riwayat." : "Belum ada sesi aktif yang cocok dengan filter."} />;
 
   const verify = async (item: SessionItem) => {
-    const approved = await confirm({ title: "Konfirmasi sesi Kelas Murah?", description: `Sesi ${item.session_number} ${item.subject_name} akan dinyatakan selesai dan progress tutor menjadi progress resmi murid.`, confirmText: "Konfirmasi sesi", tone: "default" });
+    const approved = await confirm({ title: "Konfirmasi sesi Kelas Kelompok?", description: `Sesi ${item.session_number} ${item.subject_name} akan dinyatakan selesai dan progress tutor menjadi progress resmi murid.`, confirmText: "Konfirmasi sesi", tone: "default" });
     if (!approved) return;
     setWorkingId(item.id);
     try {

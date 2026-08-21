@@ -7,10 +7,8 @@ use App\Models\BookingRequest;
 use App\Models\Notification;
 use App\Models\Order;
 use App\Models\PackageRenewal;
-use App\Models\Refund;
 use App\Models\Setting;
 use App\Models\TeacherOffer;
-use App\Services\GroupClassService;
 use App\Services\CheapClassService;
 use App\Services\TeacherMatchingService;
 use App\Support\CheapClassSchema;
@@ -21,23 +19,20 @@ class ExpireBookingWorkflow extends Command
 {
     protected $signature = 'bookings:expire';
 
-    protected $description = 'Menjaga tenggat pencarian, pembayaran, grup, sesi, dan keberatan BimbelKu';
+    protected $description = 'Menjaga tenggat pencarian tutor, pembayaran paket, sesi, dan keberatan BimbelKu';
 
     public function handle(
         TeacherMatchingService $matchingService,
-        GroupClassService $groupService,
         CheapClassService $cheapClassService
     ): int {
         $stats = [
-            'groups' => $groupService->markExpiredPools(),
             'cheap_classes' => CheapClassSchema::status()['ready']
                 ? collect($cheapClassService->maintain())->sum()
                 : 0,
             'offers' => $this->expireOffers($matchingService),
             'matching' => $this->resumeMatching($matchingService),
-            'profile_decisions' => $this->expireProfileDecisions($groupService),
+            'matching_history' => $this->archivePastMatching(),
             'package_payments' => $this->expirePackagePayments(),
-            'payments' => $this->expirePayments($groupService),
             'started' => $this->startDueBookings(),
             'reviews' => $this->queueCompletionReviews(),
         ];
@@ -87,58 +82,6 @@ class ExpireBookingWorkflow extends Command
         return $count;
     }
 
-    private function expireProfileDecisions(GroupClassService $groupService): int
-    {
-        $count = 0;
-        BookingRequest::query()
-            ->where('status', 'teacher_selected')
-            ->whereNotNull('teacher_decision_deadline')
-            ->where('teacher_decision_deadline', '<=', now())
-            ->with(['booking.participants.order', 'matchedTeacher'])
-            ->chunkById(100, function ($requests) use (&$count, $groupService) {
-                foreach ($requests as $request) {
-                    DB::transaction(function () use ($request, &$count, $groupService) {
-                        $locked = BookingRequest::query()->lockForUpdate()->find($request->id);
-                        if (!$locked || $locked->status !== 'teacher_selected') {
-                            return;
-                        }
-
-                        $participant = $locked->participant;
-                        $participant?->order?->update(['status' => 'expired']);
-                        $participant?->update(['status' => 'expired']);
-                        $locked->update(['status' => 'expired']);
-
-                        $booking = $locked->booking;
-                        if ($booking && $booking->class_type === 'private') {
-                            $locked->offers()
-                                ->where('status', 'accepted')
-                                ->update(['status' => 'expired']);
-                            $booking->update(['status' => 'expired']);
-                        } elseif ($booking) {
-                            $groupService->leave($locked);
-                            $groupService->settleAfterProfileDecision(
-                                $booking,
-                                'Peserta tidak memberikan keputusan profil dalam batas waktu'
-                            );
-                        }
-
-                        if ($locked->matched_teacher_id) {
-                            Notification::create([
-                                'user_id' => $locked->matched_teacher_id,
-                                'title' => 'Pencocokan berakhir',
-                                'message' => 'Murid tidak memberikan keputusan profil dalam batas waktu.',
-                                'type' => 'info',
-                                'target_url' => '/guru/permintaan',
-                            ]);
-                        }
-                        $count++;
-                    });
-                }
-            });
-
-        return $count;
-    }
-
     private function expirePackagePayments(): int
     {
         $count = 0;
@@ -148,7 +91,7 @@ class ExpireBookingWorkflow extends Command
             ->whereHas('learningPackage', fn ($query) => $query
                 ->whereNotNull('payment_due_at')
                 ->where('payment_due_at', '<=', now()))
-            ->with(['learningPackage.subjects.sessions.booking.bookingRequest', 'learningPackage.promotionClaims'])
+            ->with(['learningPackage.subjects.bookingRequest.offers', 'learningPackage.subjects.sessions.booking.bookingRequest', 'learningPackage.promotionClaims'])
             ->chunkById(100, function ($orders) use (&$count) {
                 foreach ($orders as $order) {
                     DB::transaction(function () use ($order, &$count) {
@@ -157,7 +100,7 @@ class ExpireBookingWorkflow extends Command
                             return;
                         }
                         $package = $lockedOrder->learningPackage()
-                            ->with(['subjects.sessions.booking.bookingRequest', 'promotionClaims'])
+                            ->with(['subjects.bookingRequest.offers', 'subjects.sessions.booking.bookingRequest', 'promotionClaims'])
                             ->lockForUpdate()
                             ->first();
                         if (!$package || !$package->payment_due_at?->lte(now())) {
@@ -168,6 +111,17 @@ class ExpireBookingWorkflow extends Command
                         $package->update(['status' => 'payment_expired', 'payment_due_at' => null]);
                         foreach ($package->subjects as $subject) {
                             $subject->update(['status' => 'payment_expired']);
+                            $subjectBookingRequest = $subject->bookingRequest;
+                            $subjectBookingRequest?->update([
+                                'status' => 'payment_expired',
+                                'matched_teacher_id' => null,
+                                'teacher_response_deadline' => null,
+                                'search_started_at' => null,
+                                'search_expires_at' => null,
+                            ]);
+                            $subjectBookingRequest?->offers()
+                                ->whereIn('status', ['pending', 'accepted'])
+                                ->update(['status' => 'cancelled', 'responded_at' => now()]);
                             foreach ($subject->sessions as $session) {
                                 $session->update(['status' => 'payment_expired']);
                                 $booking = $session->booking;
@@ -197,7 +151,7 @@ class ExpireBookingWorkflow extends Command
                         Notification::create([
                             'user_id' => $lockedOrder->user_id,
                             'title' => 'Batas pembayaran paket berakhir',
-                            'message' => 'Slot tutor dilepas karena pembayaran paket tidak diselesaikan dalam 48 jam.',
+                            'message' => 'Tagihan paket kedaluwarsa karena pembayaran belum diselesaikan. Pencarian tutor belum dimulai.',
                             'type' => 'warning',
                             'target_url' => '/student/history',
                         ]);
@@ -209,134 +163,18 @@ class ExpireBookingWorkflow extends Command
         return $count;
     }
 
-    private function expirePayments(GroupClassService $groupService): int
+    private function archivePastMatching(): int
     {
         $count = 0;
-        Order::query()
-            ->whereNull('learning_package_id')
-            ->whereIn('status', ['pending', 'rejected'])
-            ->whereHas('booking', fn ($query) => $query
-                ->whereNotNull('payment_due_at')
-                ->where('payment_due_at', '<=', now()))
-            ->with(['booking.groupPool', 'participant.bookingRequest'])
-            ->chunkById(100, function ($orders) use (&$count, $groupService) {
-                foreach ($orders as $order) {
-                    DB::transaction(function () use ($order, &$count, $groupService) {
-                        $locked = Order::query()->lockForUpdate()->find($order->id);
-                        if (!$locked || !in_array($locked->status, ['pending', 'rejected'], true)) {
-                            return;
-                        }
-
-                        $participant = $locked->participant()->lockForUpdate()->first();
-                        $bookingRequest = $participant?->bookingRequest()->lockForUpdate()->first();
-                        $booking = $locked->booking()->lockForUpdate()->first();
-
-                        $locked->update(['status' => 'expired']);
-                        $participant?->update(['status' => 'payment_expired']);
-                        $bookingRequest?->update(['status' => 'payment_expired']);
-                        if ($booking?->class_type === 'private') {
-                            $bookingRequest?->offers()
-                                ->where('status', 'accepted')
-                                ->update(['status' => 'cancelled']);
-                            $booking->update([
-                                'status' => 'payment_expired',
-                                'payout_status' => 'cancelled',
-                            ]);
-                        } elseif ($booking && $bookingRequest) {
-                            $groupService->leave($bookingRequest);
-                            $groupService->settleAfterProfileDecision(
-                                $booking,
-                                'Peserta tidak menyelesaikan pembayaran kelas kelompok'
-                            );
-                        }
-                        Notification::create([
-                            'user_id' => $locked->user_id,
-                            'title' => 'Batas pembayaran berakhir',
-                            'message' => 'Tagihan dibatalkan karena bukti transfer belum diterima.',
-                            'type' => 'warning',
-                            'target_url' => '/student/history',
-                        ]);
-                        $count++;
-                    });
-                }
-            });
-
-        Booking::query()
-            ->where('class_type', 'group')
-            ->whereIn('status', ['awaiting_payment', 'payment_collecting', 'payment_submitted'])
-            ->whereNotNull('payment_due_at')
-            ->where('payment_due_at', '<=', now())
-            ->with(['participants.order', 'groupPool'])
-            ->chunkById(100, function ($bookings) {
-                foreach ($bookings as $booking) {
-                    DB::transaction(function () use ($booking) {
-                        $locked = Booking::query()->lockForUpdate()->find($booking->id);
-                        if (!$locked) {
-                            return;
-                        }
-
-                        $paid = $locked->participants()
-                            ->where('status', 'paid')
-                            ->with('order')
-                            ->lockForUpdate()
-                            ->get();
-                        $submittedCount = $locked->participants()
-                            ->whereHas('order', fn ($query) => $query->where('status', 'submitted'))
-                            ->count();
-                        $minimum = (int) ($locked->groupPool?->minimum_participants ?? 2);
-                        if ($paid->count() >= $minimum) {
-                            $locked->update(['status' => 'confirmed']);
-                            return;
-                        }
-                        if ($submittedCount > 0 && now()->lt($locked->start_at)) {
-                            $locked->update(['status' => 'payment_submitted']);
-                            return;
-                        }
-
-                        foreach ($paid as $participant) {
-                            if (!$participant->order) {
-                                continue;
-                            }
-                            Refund::firstOrCreate(
-                                ['order_id' => $participant->order->id],
-                                [
-                                    'user_id' => $participant->student_id,
-                                    'booking_id' => $locked->id,
-                                    'amount' => $participant->order->amount,
-                                    'reason' => 'Pembayaran anggota kelompok tidak memenuhi jumlah minimum',
-                                    'status' => 'pending',
-                                ]
-                            );
-                            $participant->order->update(['status' => 'refund_pending']);
-                            $participant->update(['status' => 'refund_pending']);
-                            $participant->bookingRequest?->update(['status' => 'refund_pending']);
-                            Notification::create([
-                                'user_id' => $participant->student_id,
-                                'title' => 'Kelompok tidak terpenuhi',
-                                'message' => 'Jumlah pembayaran minimum tidak terpenuhi. Refund penuh masuk antrean admin.',
-                                'type' => 'warning',
-                                'target_url' => '/student/history',
-                            ]);
-                        }
-
-                        $locked->update([
-                            'status' => $paid->isNotEmpty() ? 'refund_pending' : 'payment_expired',
-                            'gross_amount' => 0,
-                            'teacher_net_amount' => 0,
-                            'payout_status' => 'cancelled',
-                        ]);
-                        $requestIds = $locked->participants()
-                            ->whereNotNull('booking_request_id')
-                            ->pluck('booking_request_id');
-                        TeacherOffer::query()
-                            ->whereIn('booking_request_id', $requestIds)
-                            ->whereIn('status', ['pending', 'accepted'])
-                            ->update([
-                                'status' => 'cancelled',
-                                'responded_at' => now(),
-                            ]);
-                        $locked->groupPool?->update(['status' => 'cancelled']);
-                    });
+        BookingRequest::query()
+            ->where('status', 'no_teacher')
+            // Tetap beri admin/murid waktu bertindak pada hari jadwal. Data baru
+            // dipindahkan ke riwayat setelah tanggal sesi benar-benar berlalu.
+            ->whereDate('scheduled_date', '<', today())
+            ->chunkById(100, function ($requests) use (&$count) {
+                foreach ($requests as $bookingRequest) {
+                    $bookingRequest->update(['status' => 'expired']);
+                    $count++;
                 }
             });
 
@@ -369,38 +207,40 @@ class ExpireBookingWorkflow extends Command
 
     private function startDueBookings(): int
     {
-        $completionGraceMinutes = max(
-            15,
-            (int) (Setting::where('key', 'completion_upload_grace_minutes')->value('value') ?? 120)
+        // Session Flow V2 tidak pernah dimulai oleh scheduler. Status in_progress
+        // hanya boleh terjadi setelah tutor siap dan murid menekan "Saya Sudah Hadir".
+        $graceMinutes = max(
+            30,
+            (int) (Setting::where('key', 'session_checkin_after_minutes')->value('value') ?? 60)
         );
-        $completionCutoff = now()->subMinutes($completionGraceMinutes);
-        $count = Booking::query()
-            ->where('status', 'confirmed')
-            ->where('start_at', '<=', now())
-            ->where('end_at', '>', now())
-            ->update(['status' => 'in_progress']);
+        $cutoff = now()->subMinutes($graceMinutes);
+        $count = 0;
 
         Booking::query()
-            ->where('status', 'in_progress')
-            ->where('end_at', '<=', $completionCutoff)
-            ->whereNull('completion_submitted_at')
+            ->where('session_flow_version', 'presence_confirmation_v2')
+            ->where('status', 'confirmed')
+            ->whereNull('student_confirmed_at')
+            ->where('end_at', '<=', $cutoff)
             ->with(['participants.bookingRequest'])
-            ->chunkById(100, function ($bookings) {
+            ->chunkById(100, function ($bookings) use (&$count) {
                 foreach ($bookings as $booking) {
-                    $this->markForAdminReview($booking, ['in_progress']);
+                    if ($this->markForAdminReview($booking, ['confirmed'])) {
+                        $count++;
+                    }
                 }
             });
 
-        // Jika scheduler sempat mati sepanjang durasi sesi, booking dapat tetap
-        // berstatus confirmed meski waktu selesai sudah lewat.
         Booking::query()
-            ->where('status', 'confirmed')
-            ->where('end_at', '<=', $completionCutoff)
-            ->whereNull('completion_submitted_at')
+            ->where('session_flow_version', 'presence_confirmation_v2')
+            ->where('status', 'in_progress')
+            ->whereNull('session_ended_at')
+            ->where('end_at', '<=', $cutoff)
             ->with(['participants.bookingRequest'])
-            ->chunkById(100, function ($bookings) {
+            ->chunkById(100, function ($bookings) use (&$count) {
                 foreach ($bookings as $booking) {
-                    $this->markForAdminReview($booking, ['confirmed']);
+                    if ($this->markForAdminReview($booking, ['in_progress'])) {
+                        $count++;
+                    }
                 }
             });
 

@@ -13,7 +13,6 @@ class SessionAttendance extends Model
     protected $casts = [
         'check_in_at' => 'datetime',
         'check_out_at' => 'datetime',
-        'pin_verified_at' => 'datetime',
         'latitude' => 'float',
         'longitude' => 'float',
         'accuracy_meters' => 'integer',

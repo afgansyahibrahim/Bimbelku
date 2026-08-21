@@ -16,7 +16,7 @@ const requirements = [
   [guard, 'return "/admin"', "dashboard admin belum diarahkan dengan benar"],
   [guard, 'return "/guru"', "dashboard tutor belum diarahkan dengan benar"],
   [guard, 'return "/student/dashboard"', "dashboard siswa belum diarahkan dengan benar"],
-  [cta, '<RegistrationGuardLink to="/register?role=student">', "card daftar belum memakai penjaga login"],
+  [cta, '<StudentPackageLink to="/student/packages/new"', "CTA utama belum memakai penjaga alur paket untuk pengunjung/login"],
   [footer, '<FooterLink to="/register" protectRegistration>', "link daftar footer belum memakai penjaga login"],
 ];
 
@@ -30,4 +30,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("Card dan link pendaftaran landing aman untuk pengguna yang sudah login.");
+console.log("CTA paket dan link pendaftaran landing aman untuk pengunjung maupun pengguna yang sudah login.");

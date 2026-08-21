@@ -51,7 +51,6 @@ type DraftSubject = {
   schedule_time: string;
   weekdays: number[];
   curriculum_chapter_ids: number[];
-  learning_topic_ids: number[];
   chapter: string;
   learning_goal: string;
   preferred_teacher_id?: number;
@@ -75,13 +74,12 @@ type StudentProfile = {
   location_consent_at?: string | null;
 };
 type CurriculumChapterOption = { id: number; subject_id: number; subject_name: string; education_level: string; grade: string; title: string; sort_order: number };
-type LearningTopicOption = { id: number; subject_name: string; education_level: string; grade: string; chapter: string; name: string };
-type MaterialCatalog = { chapters: CurriculumChapterOption[]; topics: LearningTopicOption[] };
+type MaterialCatalog = { chapters: CurriculumChapterOption[] };
 type RenewalMaterialBaseline = {
   allCompleted: boolean;
-  topicStatusById: Record<number, string>;
-  totalTopics: number;
-  completedTopics: number;
+  chapterStatusById: Record<number, string>;
+  totalChapters: number;
+  completedChapters: number;
 };
 type SavedDraft = {
   saved_at: string;
@@ -206,7 +204,6 @@ const createSubject = (sessionCount = 1, time = "", offsetDays = 0, withSchedule
     weekdays,
     schedules: withSchedule ? nextSlots(sessionCount, time, scheduleStartDate, weekdays) : [],
     curriculum_chapter_ids: [],
-    learning_topic_ids: [],
     chapter: "",
     learning_goal: "",
   };
@@ -360,7 +357,6 @@ export default function PackageBuilder() {
     && subjects.every((item) => item.curriculum_subject_id
       && item.subject_name
       && item.curriculum_chapter_ids.length > 0
-      && item.learning_topic_ids.length > 0
       && item.weekdays.length > 0
       && item.weekdays.length <= MAX_WEEKDAYS_PER_SUBJECT
       && item.schedules.length === item.session_count
@@ -443,22 +439,22 @@ export default function PackageBuilder() {
               const count = index === selectedOld.length - 1
                 ? renewalPlan.session_count - allocation * index
                 : allocation;
-              const previousTopics = Array.isArray(item.learning_topics) ? item.learning_topics : [];
-              const topicStatusById = previousTopics.reduce((acc: Record<number, string>, topic: any) => {
-                const catalogId = Number(topic.catalog_topic_id || topic.learning_topic_id || 0);
-                if (catalogId > 0) acc[catalogId] = String(topic.status || "not_started");
+              const previousChapters = Array.isArray(item.learning_chapters) ? item.learning_chapters : [];
+              const chapterStatusById = previousChapters.reduce((acc: Record<number, string>, chapter: any) => {
+                const chapterId = Number(chapter.curriculum_chapter_id || 0);
+                if (chapterId > 0) acc[chapterId] = String(chapter.status || "not_started");
                 return acc;
               }, {});
-              const previousTopicIds = Object.keys(topicStatusById).map(Number).filter((id) => id > 0);
-              const incompleteTopicIds = previousTopicIds.filter((id) => topicStatusById[id] !== "completed");
-              const allCompleted = previousTopicIds.length > 0 && incompleteTopicIds.length === 0;
+              const previousChapterIds = Object.keys(chapterStatusById).map(Number).filter((id) => id > 0);
+              const incompleteChapterIds = previousChapterIds.filter((id) => chapterStatusById[id] !== "completed");
+              const allCompleted = previousChapterIds.length > 0 && incompleteChapterIds.length === 0;
               const subjectId = Number(item.curriculum_subject_id || 0);
               if (subjectId > 0) {
                 nextBaselines[subjectId] = {
                   allCompleted,
-                  topicStatusById,
-                  totalTopics: previousTopicIds.length,
-                  completedTopics: previousTopicIds.filter((id) => topicStatusById[id] === "completed").length,
+                  chapterStatusById,
+                  totalChapters: previousChapterIds.length,
+                  completedChapters: previousChapterIds.filter((id) => chapterStatusById[id] === "completed").length,
                 };
               }
               return {
@@ -466,16 +462,15 @@ export default function PackageBuilder() {
                 curriculum_subject_id: item.curriculum_subject_id,
                 subject_name: item.subject_name || item.name || "",
                 preferred_teacher_id: item.teacher?.id,
-                curriculum_chapter_ids: Array.isArray(item.curriculum_chapter_ids) ? item.curriculum_chapter_ids : [],
-                // Materi yang belum selesai dipilih otomatis. Jika seluruh materi lama
-                // sudah selesai, sengaja mulai tanpa subbab terpilih agar murid memilih
-                // materi lanjutan (atau memilih ulang materi lama untuk penguatan).
-                learning_topic_ids: allCompleted
+                // Bab yang belum selesai dipilih otomatis. Jika seluruh Bab lama
+                // sudah selesai, paket lanjutan dimulai tanpa Bab terpilih agar murid
+                // memilih Bab berikutnya atau mengulang Bab lama sebagai penguatan.
+                curriculum_chapter_ids: allCompleted
                   ? []
-                  : incompleteTopicIds.length
-                    ? incompleteTopicIds
-                    : (Array.isArray(item.learning_topic_ids) ? item.learning_topic_ids : []),
-                chapter: item.chapter || "",
+                  : incompleteChapterIds.length
+                    ? incompleteChapterIds
+                    : (Array.isArray(item.curriculum_chapter_ids) ? item.curriculum_chapter_ids : []),
+                            chapter: item.chapter || "",
                 learning_goal: allCompleted ? "" : (item.learning_goal || ""),
               };
             }));
@@ -538,7 +533,7 @@ export default function PackageBuilder() {
       const eligible = option
         && (!level || !option.education_levels?.length || option.education_levels.includes(level))
         && (!grade || !option.grades?.length || option.grades.includes(grade));
-      return eligible ? item : { ...item, curriculum_subject_id: "", subject_name: "", curriculum_chapter_ids: [], learning_topic_ids: [], chapter: "" };
+      return eligible ? item : { ...item, curriculum_subject_id: "", subject_name: "", curriculum_chapter_ids: [], chapter: "" };
     }));
   }, [catalog, grade, level]);
 
@@ -550,16 +545,15 @@ export default function PackageBuilder() {
       if (materialCatalogs[id] || materialsLoading[id]) return;
       setMaterialsLoading((current) => ({ ...current, [id]: true }));
       void import("@/lib/http").then(({ getCached, getApiError }) =>
-        getCached<{ chapters: CurriculumChapterOption[]; topics: LearningTopicOption[] }>("/learning-catalog", {
-          params: { subject_name: name, education_level: level, grade },
+        getCached<{ chapters: CurriculumChapterOption[] }>("/learning-catalog", {
+          params: { subject_name: name, education_level: level, grade, chapters_only: 1 },
           maxAgeMs: 60_000,
         }).then((response) => {
           setMaterialCatalogs((current) => ({ ...current, [id]: {
             chapters: response.data.chapters || [],
-            topics: response.data.topics || [],
           } }));
         }).catch((error) => {
-          notify.error(getApiError(error, `Bab dan subbab ${name} gagal dimuat.`));
+          notify.error(getApiError(error, `Bab ${name} gagal dimuat.`));
         }).finally(() => {
           setMaterialsLoading((current) => ({ ...current, [id]: false }));
         })
@@ -805,7 +799,6 @@ export default function PackageBuilder() {
         schedule_time: restoredTime,
         weekdays: restoredDays.length ? restoredDays : [1, 3, 5],
         curriculum_chapter_ids: Array.isArray(item.curriculum_chapter_ids) ? item.curriculum_chapter_ids : [],
-        learning_topic_ids: Array.isArray(item.learning_topic_ids) ? item.learning_topic_ids : [],
         schedules: Array.isArray(item.schedules) ? item.schedules : [],
       };
       const savedSchedulesAreValid = restored.schedules.length === restored.session_count
@@ -846,7 +839,6 @@ export default function PackageBuilder() {
         subjects: subjects.map((item) => ({
           curriculum_subject_id: item.curriculum_subject_id,
           curriculum_chapter_ids: item.curriculum_chapter_ids,
-          learning_topic_ids: item.learning_topic_ids,
           learning_goal: item.learning_goal || undefined,
           preferred_teacher_id: item.preferred_teacher_id,
           weekdays: item.weekdays,
@@ -888,7 +880,7 @@ export default function PackageBuilder() {
 
   const completedSteps = [
     Boolean(plan),
-    subjects.every((item) => item.curriculum_subject_id && item.curriculum_chapter_ids.length > 0 && item.learning_topic_ids.length > 0),
+    subjects.every((item) => item.curriculum_subject_id && item.curriculum_chapter_ids.length > 0),
     Boolean(plan && selectedSessions === plan.session_count),
     subjects.every((item) => item.weekdays.length > 0 && item.weekdays.length <= MAX_WEEKDAYS_PER_SUBJECT && item.schedules.length === item.session_count && item.schedules.every(Boolean)) && schedulesDoNotOverlap,
     Boolean(draftValid && quote),
@@ -1033,7 +1025,7 @@ export default function PackageBuilder() {
                 tone="emerald"
                 options={EDUCATION_LEVELS.map((item) => ({ value: item, label: item }))}
                 className={level ? "border-emerald-300 bg-emerald-50 text-emerald-800" : ""}
-                onValueChange={(next) => { setLevel(next); setGrade(""); setMaterialCatalogs({}); setSubjects((current) => current.map((item) => ({ ...item, curriculum_chapter_ids: [], learning_topic_ids: [], chapter: "" }))); }}
+                onValueChange={(next) => { setLevel(next); setGrade(""); setMaterialCatalogs({}); setSubjects((current) => current.map((item) => ({ ...item, curriculum_chapter_ids: [], chapter: "" }))); }}
               />
             </Field>
             <Field label={level === "Umum" ? "Tingkat" : "Kelas"}>
@@ -1045,7 +1037,7 @@ export default function PackageBuilder() {
                 disabled={!level}
                 options={(GRADES_BY_EDUCATION_LEVEL[level] || []).map((item) => ({ value: item, label: item }))}
                 className={grade ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "disabled:bg-slate-100"}
-                onValueChange={(next) => { setGrade(next); setMaterialCatalogs({}); setSubjects((current) => current.map((item) => ({ ...item, curriculum_chapter_ids: [], learning_topic_ids: [], chapter: "" }))); }}
+                onValueChange={(next) => { setGrade(next); setMaterialCatalogs({}); setSubjects((current) => current.map((item) => ({ ...item, curriculum_chapter_ids: [], chapter: "" }))); }}
               />
             </Field>
             <Field label="Metode belajar">
@@ -1133,8 +1125,7 @@ export default function PackageBuilder() {
                           curriculum_subject_id: option?.id ?? "",
                           preferred_teacher_id: undefined,
                           curriculum_chapter_ids: [],
-                          learning_topic_ids: [],
-                          chapter: "",
+                                                chapter: "",
                         })
                       }
                     />
@@ -1154,19 +1145,12 @@ export default function PackageBuilder() {
                     catalog={typeof item.curriculum_subject_id === "number" ? materialCatalogs[item.curriculum_subject_id] : undefined}
                     loading={typeof item.curriculum_subject_id === "number" && Boolean(materialsLoading[item.curriculum_subject_id])}
                     chapterIds={item.curriculum_chapter_ids}
-                    topicIds={item.learning_topic_ids}
                     disabled={!item.curriculum_subject_id}
                     renewalBaseline={typeof item.curriculum_subject_id === "number" ? renewalBaselines[item.curriculum_subject_id] : undefined}
-                    onChange={(chapterIds, topicIds, chapterLabel) => updateSubject(item.key, {
+                    onChange={(chapterIds, chapterLabel) => updateSubject(item.key, {
                       curriculum_chapter_ids: chapterIds,
-                      learning_topic_ids: topicIds,
-                      chapter: chapterLabel,
+                                        chapter: chapterLabel,
                     })}
-                  />
-                  <MaterialCapacityWarning
-                    topicCount={item.learning_topic_ids.length}
-                    sessionCount={item.session_count}
-                    durationHours={effectiveDurationHours}
                   />
                   <Field label="Target belajar atau kesulitan murid">
                     <input value={item.learning_goal} onChange={(event) => updateSubject(item.key, { learning_goal: event.target.value })} className="form-field" placeholder="Contoh: Mampu mengerjakan soal cerita pecahan" />
@@ -1331,7 +1315,7 @@ export default function PackageBuilder() {
         </section>
 
         {summaryOpen && quote && plan && (
-          <div className="fixed inset-0 z-[230] flex items-end justify-center bg-slate-950/70 p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !submitting) setSummaryOpen(false); }}>
+          <div className="fixed inset-0 z-[var(--layer-modal)] flex items-end justify-center bg-slate-950/70 p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !submitting) setSummaryOpen(false); }}>
             <section role="dialog" aria-modal="true" aria-labelledby="order-summary-title" className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl sm:max-h-[94dvh]">
               <header className="flex min-w-0 shrink-0 items-start justify-between gap-4 border-b border-slate-100 p-5 sm:p-7">
                 <div className="min-w-0">
@@ -1356,12 +1340,6 @@ export default function PackageBuilder() {
                     {subjects.map((item) => (
                       <div key={item.key} className="rounded-2xl border border-slate-200 p-4">
                         <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-black text-slate-900">{item.subject_name}</p>{item.chapter && <p className="mt-1 text-xs font-medium text-slate-500">{item.chapter}{item.learning_goal ? ` · ${item.learning_goal}` : ""}</p>}</div><span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">{item.session_count} sesi</span></div>
-                        <MaterialCapacityWarning
-                          topicCount={item.learning_topic_ids.length}
-                          sessionCount={item.session_count}
-                          durationHours={effectiveDurationHours}
-                          compact
-                        />
                         <ol className="mt-3 grid gap-1.5 sm:grid-cols-2">
                           {item.schedules.map((schedule, index) => <li key={`${item.key}-summary-${schedule}-${index}`} className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">{index + 1}. {fullSchedule(schedule, effectiveDurationHours)}</li>)}
                         </ol>
@@ -1399,203 +1377,192 @@ function timeSlotLabel(slot: TimeSlot) {
   return `${slot.start_time.slice(0, 5).replace(":", ".")} WIB`;
 }
 
+function timePeriodLabel(time: string) {
+  const hour = Number(time.slice(0, 2));
+  if (hour < 11) return "Pagi";
+  if (hour < 16) return "Siang";
+  return "Sore & malam";
+}
+
 function ScheduleTimePicker({ value, options, disabled = false, onChange }: { value: string; options: TimeSlot[]; disabled?: boolean; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((slot) => slot.start_time.slice(0, 5) === value);
 
   useEffect(() => {
     if (!open) return;
-    const previousOverflow = document.body.style.overflow;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
     };
-    document.body.style.overflow = "hidden";
+    const isMobile = !window.matchMedia("(min-width: 1024px)").matches;
+    const previousOverflow = document.body.style.overflow;
+    if (isMobile) document.body.style.overflow = "hidden";
     window.addEventListener("keydown", closeOnEscape);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      if (isMobile) document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeOnEscape);
     };
   }, [open]);
 
+  const choose = (slotValue: string) => {
+    onChange(slotValue);
+    setOpen(false);
+  };
+
   return (
-    <>
+    <div className="relative min-w-0">
       <button
         type="button"
         onClick={() => setOpen(true)}
         disabled={disabled || !options.length}
-        aria-haspopup="dialog"
+        aria-haspopup="listbox"
         aria-expanded={open}
         aria-label="Pilih jam mulai pertemuan"
-        className="form-field flex min-w-0 items-center justify-between gap-3 text-left disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+        className={`form-field flex min-w-0 items-center justify-between gap-3 text-left transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 ${open ? "border-indigo-400 ring-2 ring-indigo-100" : ""}`}
       >
         <span className="min-w-0 truncate">{selected ? timeSlotLabel(selected) : disabled ? "Pilih durasi dulu" : "Pilih jam"}</span>
-        <ChevronDown className="shrink-0 text-slate-500" size={18} />
+        <ChevronDown className={`shrink-0 text-slate-500 transition ${open ? "rotate-180" : ""}`} size={18} />
       </button>
 
       {open && (
-        <div
-          className="fixed inset-0 z-[250] flex items-end justify-center overflow-hidden bg-slate-950/60 p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] backdrop-blur-[2px] sm:items-center sm:p-4"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setOpen(false);
-          }}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="schedule-time-title"
-            className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-md flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl sm:max-h-[72dvh]"
-          >
-            <header className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-[.16em] text-indigo-600">Jadwal pertemuan</p>
-                <h3 id="schedule-time-title" className="mt-1 text-lg font-black text-slate-900">Pilih jam mulai</h3>
-              </div>
-              <button type="button" onClick={() => setOpen(false)} aria-label="Tutup pilihan jam" className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500">
-                <X size={19} />
-              </button>
-            </header>
-
-            <div className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-4">
-              <div className="grid grid-cols-3 gap-2">
-                {options.map((slot) => {
-                  const slotValue = slot.start_time.slice(0, 5);
-                  const active = slotValue === value;
-                  return (
-                    <button
-                      key={slot.id}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => {
-                        onChange(slotValue);
-                        setOpen(false);
-                      }}
-                      className={`relative min-h-12 min-w-0 rounded-xl border px-2 py-2 text-center text-xs font-black transition ${active ? "border-indigo-600 bg-indigo-600 text-white shadow-md shadow-indigo-100" : "border-slate-200 bg-slate-50 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50"}`}
-                    >
-                      <span className="block truncate">{timeSlotLabel(slot)}</span>
-                      {active && <Check className="absolute right-1.5 top-1.5" size={12} aria-hidden="true" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
-    </>
-  );
-}
-
-function MaterialSelector({ catalog, loading, chapterIds, topicIds, disabled, renewalBaseline, onChange }: {
-  catalog?: MaterialCatalog;
-  loading: boolean;
-  chapterIds: number[];
-  topicIds: number[];
-  disabled: boolean;
-  renewalBaseline?: RenewalMaterialBaseline;
-  onChange: (chapterIds: number[], topicIds: number[], chapterLabel: string) => void;
-}) {
-  const chapters = catalog?.chapters || [];
-  const availableTopics = (catalog?.topics || []).filter((topic) => {
-    const chapter = chapters.find((item) => item.title === topic.chapter);
-    return Boolean(chapter && chapterIds.includes(chapter.id));
-  });
-  const toggleChapter = (chapter: CurriculumChapterOption) => {
-    const nextChapterIds = chapterIds.includes(chapter.id)
-      ? chapterIds.filter((id) => id !== chapter.id)
-      : [...chapterIds, chapter.id];
-    const allowedChapterTitles = chapters.filter((item) => nextChapterIds.includes(item.id)).map((item) => item.title);
-    const nextTopicIds = topicIds.filter((id) => (catalog?.topics || []).some((topic) => topic.id === id && allowedChapterTitles.includes(topic.chapter)));
-    onChange(nextChapterIds, nextTopicIds, allowedChapterTitles.join(", "));
-  };
-  const toggleTopic = (topicId: number) => {
-    const next = topicIds.includes(topicId) ? topicIds.filter((id) => id !== topicId) : [...topicIds, topicId];
-    const labels = chapters.filter((item) => chapterIds.includes(item.id)).map((item) => item.title);
-    onChange(chapterIds, next, labels.join(", "));
-  };
-  const selectAllTopics = () => {
-    const ids = availableTopics.map((topic) => topic.id);
-    const allSelected = ids.length > 0 && ids.every((id) => topicIds.includes(id));
-    const next = allSelected ? topicIds.filter((id) => !ids.includes(id)) : [...new Set([...topicIds, ...ids])];
-    const labels = chapters.filter((item) => chapterIds.includes(item.id)).map((item) => item.title);
-    onChange(chapterIds, next, labels.join(", "));
-  };
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div><p className="text-xs font-black uppercase tracking-wider text-slate-500">Bab dan subbab</p><p className="mt-1 text-xs leading-5 text-slate-500">Pilih target materi. Progres akan dihitung dari subbab unik yang selesai.</p></div>
-        {loading && <Loader2 className="animate-spin text-indigo-600" size={18} />}
-      </div>
-      {renewalBaseline && (
-        <div className={`mt-3 rounded-xl border p-3 text-xs font-semibold leading-5 ${renewalBaseline.allCompleted ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-indigo-200 bg-indigo-50 text-indigo-900"}`}>
-          {renewalBaseline.allCompleted ? (
-            <><span className="font-black">Materi paket sebelumnya sudah selesai.</span> Pilih bab/subbab lanjutan untuk paket baru. Kalau ingin mengulang materi lama, centang lagi subbabnya; progress paket baru tetap dimulai dari 0% dan tercatat sebagai penguatan.</>
-          ) : (
-            <><span className="font-black">Lanjut dari progress sebelumnya.</span> Subbab yang belum selesai sudah dipilih otomatis. Kamu tetap boleh menambah materi baru.</>
-          )}
-        </div>
-      )}
-      {disabled ? <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs font-semibold text-slate-500">Pilih mata pelajaran terlebih dahulu.</p> : !loading && !chapters.length ? <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">Bab belum tersedia untuk kelas ini. Admin perlu menjalankan seeder katalog.</p> : (
         <>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {chapters.map((chapter) => {
-              const active = chapterIds.includes(chapter.id);
-              return <button key={chapter.id} type="button" onClick={() => toggleChapter(chapter)} className={`min-h-10 rounded-xl border px-3 py-2 text-xs font-black ${active ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-200 bg-slate-50 text-slate-700"}`}>{chapter.title}</button>;
-            })}
-          </div>
-          {chapterIds.length > 0 && (
-            <div className="mt-4 border-t border-slate-100 pt-4">
-              <div className="flex items-center justify-between gap-3"><p className="text-xs font-black text-slate-700">Subbab target</p><button type="button" onClick={selectAllTopics} className="text-xs font-black text-indigo-600">{availableTopics.length > 0 && availableTopics.every((topic) => topicIds.includes(topic.id)) ? "Kosongkan" : "Pilih semua"}</button></div>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {availableTopics.map((topic) => {
-                  const previousStatus = renewalBaseline?.topicStatusById[topic.id];
-                  const previousLabel = previousStatus === "completed"
-                    ? "Selesai sebelumnya"
-                    : previousStatus === "in_progress"
-                      ? "Lanjutkan"
-                      : previousStatus
-                        ? "Belum selesai"
-                        : null;
-                  return (
-                    <label key={topic.id} className={`flex min-h-11 cursor-pointer items-start gap-2 rounded-xl border p-3 text-xs font-bold ${topicIds.includes(topic.id) ? "border-indigo-300 bg-indigo-50 text-indigo-900" : "border-slate-200 text-slate-600"}`}>
-                      <input type="checkbox" checked={topicIds.includes(topic.id)} onChange={() => toggleTopic(topic.id)} className="mt-0.5 h-4 w-4" />
-                      <span className="min-w-0"><span className="block">{topic.name}</span>{previousLabel && <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-black ${previousStatus === "completed" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{previousLabel}</span>}</span>
-                    </label>
-                  );
-                })}
-              </div>
-              {!availableTopics.length && <p className="mt-2 rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">Subbab untuk bab ini belum tersedia.</p>}
+          {/* Desktop: picker terasa sebagai bagian dari field, bukan modal/notifikasi. */}
+          <button type="button" aria-label="Tutup pilihan jam" onClick={() => setOpen(false)} className="fixed inset-0 z-[var(--layer-dropdown)] hidden cursor-default bg-transparent lg:block" />
+          <div className="absolute right-0 top-[calc(100%+0.55rem)] z-[var(--layer-dropdown)] hidden w-[min(30rem,calc(100dvw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.16)] lg:block">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3.5">
+              <div className="min-w-0"><p className="text-sm font-black text-slate-900">Pilih jam belajar</p><p className="mt-1 text-xs font-semibold text-slate-500">Pilih waktu yang paling sesuai dengan jadwalmu.</p></div>
+              <button type="button" onClick={() => setOpen(false)} aria-label="Tutup pilihan jam" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={17} /></button>
             </div>
-          )}
+            <div className="max-h-[min(28rem,calc(100dvh-9rem))] overflow-y-auto p-4">
+              <TimeSlotOptions value={value} options={options} onChoose={choose} desktop />
+            </div>
+          </div>
+
+          {/* Mobile: bottom sheet solid dengan dim ringan, tanpa blur gelap. */}
+          <div
+            className="fixed inset-0 z-[var(--layer-modal)] flex items-end justify-center bg-slate-950/25 p-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] lg:hidden"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setOpen(false);
+            }}
+          >
+            <section role="dialog" aria-modal="true" aria-label="Pilih jam belajar" className="flex max-h-[82dvh] w-full flex-col overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_-12px_40px_rgba(15,23,42,0.18)] animate-in slide-in-from-bottom-4 duration-200">
+              <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-slate-200" aria-hidden="true" />
+              <header className="flex shrink-0 items-start justify-between gap-3 px-4 pb-3 pt-2.5">
+                <div className="min-w-0"><p className="text-base font-black text-slate-900">Pilih jam belajar</p><p className="mt-1 text-xs font-semibold leading-5 text-slate-500">Pilih waktu yang paling sesuai. Setelah dipilih, kamu langsung kembali ke form.</p></div>
+                <button type="button" onClick={() => setOpen(false)} aria-label="Tutup pilihan jam" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500"><X size={18} /></button>
+              </header>
+              <div className="min-h-0 overflow-y-auto overscroll-contain border-t border-slate-100 px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-4">
+                <TimeSlotOptions value={value} options={options} onChoose={choose} />
+              </div>
+            </section>
+          </div>
         </>
       )}
     </div>
   );
 }
 
-function MaterialCapacityWarning({ topicCount, sessionCount, durationHours, compact = false }: {
-  topicCount: number;
-  sessionCount: number;
-  durationHours: DurationHours;
-  compact?: boolean;
+function TimeSlotOptions({ value, options, onChoose, desktop = false }: { value: string; options: TimeSlot[]; onChoose: (value: string) => void; desktop?: boolean }) {
+  return (
+    <div className="space-y-4" role="listbox" aria-label="Daftar jam belajar">
+      {["Pagi", "Siang", "Sore & malam"].map((period) => {
+        const periodOptions = options.filter((slot) => timePeriodLabel(slot.start_time.slice(0, 5)) === period);
+        if (!periodOptions.length) return null;
+        return (
+          <div key={period}>
+            <p className="mb-2 text-[10px] font-black uppercase tracking-[.16em] text-slate-400">{period}</p>
+            <div className={`grid grid-cols-3 gap-2 ${desktop ? "sm:grid-cols-4" : ""}`}>
+              {periodOptions.map((slot) => {
+                const slotValue = slot.start_time.slice(0, 5);
+                const active = slotValue === value;
+                return (
+                  <button
+                    key={slot.id}
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => onChoose(slotValue)}
+                    className={`relative min-h-11 min-w-0 rounded-xl border px-2 py-2 text-center text-xs font-black transition ${active ? "border-indigo-600 bg-indigo-600 text-white shadow-sm" : "border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50"}`}
+                  >
+                    <span className="block truncate">{timeSlotLabel(slot)}</span>
+                    {active && <Check className="absolute right-1.5 top-1.5" size={11} aria-hidden="true" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MaterialSelector({ catalog, loading, chapterIds, disabled, renewalBaseline, onChange }: {
+  catalog?: MaterialCatalog;
+  loading: boolean;
+  chapterIds: number[];
+  disabled: boolean;
+  renewalBaseline?: RenewalMaterialBaseline;
+  onChange: (chapterIds: number[], chapterLabel: string) => void;
 }) {
-  const estimatedCapacity = Math.max(1, sessionCount * durationHours);
-  if (topicCount <= estimatedCapacity) return null;
+  const chapters = catalog?.chapters || [];
+  const toggleChapter = (chapter: CurriculumChapterOption) => {
+    const nextChapterIds = chapterIds.includes(chapter.id)
+      ? chapterIds.filter((id) => id !== chapter.id)
+      : [...chapterIds, chapter.id];
+    const labels = chapters.filter((item) => nextChapterIds.includes(item.id)).map((item) => item.title);
+    onChange(nextChapterIds, labels.join(", "));
+  };
 
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className={`${compact ? "mt-3" : "-mt-1"} flex min-w-0 items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900`}
-    >
-      <AlertCircle className="mt-0.5 shrink-0 text-amber-700" size={18} aria-hidden="true" />
-      <div className="min-w-0">
-        <p className="text-sm font-black">Target materi mungkin terlalu banyak</p>
-        <p className="mt-1 break-words text-xs font-medium leading-5 text-amber-800">
-          Kamu memilih {topicCount} subbab untuk {sessionCount} sesi ({estimatedCapacity} jam belajar).
-          Perkiraan awal sistem memakai sekitar satu subbab per jam. Tambah sesi atau kurangi subbab agar target lebih realistis.
-        </p>
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-xs font-black uppercase tracking-wider text-slate-500">Bab yang ingin dipelajari</p>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">Pilih satu atau beberapa Bab sebagai target belajar. Progress nantinya dicatat per Bab agar lebih sederhana dan mudah dipahami.</p>
+        </div>
+        {loading && <Loader2 className="animate-spin text-indigo-600" size={18} />}
       </div>
+      {renewalBaseline && (
+        <div className={`mt-3 rounded-xl border p-3 text-xs font-semibold leading-5 ${renewalBaseline.allCompleted ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-indigo-200 bg-indigo-50 text-indigo-900"}`}>
+          {renewalBaseline.allCompleted ? (
+            <><span className="font-black">Semua Bab pada paket sebelumnya sudah selesai.</span> Pilih Bab lanjutan atau pilih kembali Bab lama jika ingin melakukan penguatan. Progress paket baru tetap dimulai dari awal.</>
+          ) : (
+            <><span className="font-black">Lanjut dari progress sebelumnya.</span> Bab yang belum selesai sudah dipilih otomatis. Kamu masih boleh menambah Bab lain.</>
+          )}
+        </div>
+      )}
+      {disabled ? (
+        <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs font-semibold text-slate-500">Pilih mata pelajaran terlebih dahulu.</p>
+      ) : !loading && !chapters.length ? (
+        <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">Bab belum tersedia untuk kelas ini. Admin perlu menambahkan katalog Bab.</p>
+      ) : (
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {chapters.map((chapter) => {
+            const active = chapterIds.includes(chapter.id);
+            const previousStatus = renewalBaseline?.chapterStatusById[chapter.id];
+            const previousLabel = previousStatus === "completed"
+              ? "Selesai sebelumnya"
+              : previousStatus === "in_progress" || previousStatus === "review_needed"
+                ? "Lanjutkan"
+                : previousStatus
+                  ? "Belum dimulai"
+                  : null;
+            return (
+              <button
+                key={chapter.id}
+                type="button"
+                onClick={() => toggleChapter(chapter)}
+                className={`min-h-14 rounded-2xl border p-3 text-left transition sm:min-h-16 ${active ? "border-indigo-300 bg-indigo-50/80 shadow-sm" : "border-slate-200 bg-slate-50/60 hover:border-indigo-200 hover:bg-white"}`}
+                aria-pressed={active}
+              >
+                <span className={`block text-sm font-black ${active ? "text-indigo-950" : "text-slate-800"}`}>{chapter.title}</span>
+                {previousLabel && <span className={`mt-1.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-black ${previousStatus === "completed" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{previousLabel}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {chapterIds.length > 0 && <p className="mt-3 text-xs font-bold text-indigo-700">{chapterIds.length} Bab dipilih</p>}
     </div>
   );
 }

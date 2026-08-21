@@ -28,7 +28,6 @@ import {
 } from "lucide-react";
 import axios from "axios";
 import StudentLayout from "@/components/StudentLayout";
-import ProtectedImage from "@/components/ProtectedImage";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -48,13 +47,18 @@ interface ClassItem {
   education_level?: string;
   grade?: string;
   chapter?: string;
-  subtopic?: string;
-  topic?: string;
   mentor: string;
   mentor_avatar?: string;
   type: "Kelompok" | "Privat";
   method: "online" | "offline";
   status: string;
+  tutor_ready_at?: string | null;
+  student_confirmed_at?: string | null;
+  session_started_at?: string | null;
+  session_ended_at?: string | null;
+  actual_duration_minutes?: number | null;
+  scheduled_duration_minutes?: number | null;
+  session_focus_note?: string | null;
   participant_status: string;
   start_at: string;
   end_at: string;
@@ -63,7 +67,6 @@ interface ClassItem {
   meeting_link?: string;
   amount: number;
   payment_due_at?: string;
-  completion_evidence_url?: string;
   completion_notes?: string;
   objection_deadline?: string;
   approved_at?: string;
@@ -72,7 +75,7 @@ interface ClassItem {
   can_dispute: boolean;
   can_report_teacher_absence: boolean;
   attention?: {
-    kind: "review" | "plan";
+    kind: "review" | "presence";
     title: string;
     message: string;
     button_label: string;
@@ -101,6 +104,15 @@ const labels: Record<string, { label: string; className: string }> = {
 
 type ClassListResponse = ClassItem[] | { data?: ClassItem[] };
 type ScheduleSort = "nearest" | "farthest";
+
+const presenceProblemOptions = [
+  "Tutor tidak mengajar selama durasi yang seharusnya.",
+  "Tutor tidak hadir penuh selama sesi berlangsung.",
+  "Materi yang diajarkan tidak sesuai dengan sesi.",
+  "Ada masalah dengan sikap atau perilaku tutor.",
+  "Ada masalah teknis yang mengganggu pembelajaran.",
+  "Ada masalah lain yang perlu diperiksa oleh admin.",
+] as const;
 
 const rupiah = (value: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
 
@@ -140,6 +152,7 @@ export default function MyClasses() {
   const [selected, setSelected] = useState<ClassItem | null>(null);
   const [dispute, setDispute] = useState<ClassItem | null>(null);
   const [disputeReason, setDisputeReason] = useState("");
+  const [disputeCategory, setDisputeCategory] = useState("");
   const [disputeEvidence, setDisputeEvidence] = useState<File | null>(null);
   const [absenceReport, setAbsenceReport] = useState<ClassItem | null>(null);
   const [absenceReason, setAbsenceReason] = useState("");
@@ -148,7 +161,7 @@ export default function MyClasses() {
   const [rating, setRating] = useState(5);
   const [review, setReview] = useState("");
   const [hubBookingId, setHubBookingId] = useState<number | null>(null);
-  const [hubInitialTab, setHubInitialTab] = useState<"session" | "plan">("session");
+  const [hubInitialTab, setHubInitialTab] = useState<"session">("session");
   const [hubReturnClass, setHubReturnClass] = useState<ClassItem | null>(null);
   const [subjectFilter, setSubjectFilter] = useState("all");
   const [scheduleSort, setScheduleSort] = useState<ScheduleSort>("nearest");
@@ -214,9 +227,9 @@ export default function MyClasses() {
     const item = classes.find((row) => row.id === sessionId);
     if (!item) return;
 
-    if (action === "pin" || action === "plan") {
+    if (action === "presence") {
       setHubReturnClass(item);
-      setHubInitialTab(action === "plan" ? "plan" : "session");
+      setHubInitialTab("session");
       setHubBookingId(item.id);
       setSelected(null);
       return;
@@ -308,7 +321,12 @@ export default function MyClasses() {
     event.preventDefault();
     if (!dispute) return;
     const payload = new FormData();
-    payload.append("reason", disputeReason);
+    if (!disputeCategory) {
+      notify.error("Pilih dulu masalah yang terjadi pada sesi.");
+      return;
+    }
+    const reason = `${disputeCategory}${disputeReason.trim() ? ` Detail: ${disputeReason.trim()}` : ""}`;
+    payload.append("reason", reason);
     if (disputeEvidence) payload.append("evidence", disputeEvidence);
     setProcessing(dispute.id);
     try {
@@ -318,6 +336,7 @@ export default function MyClasses() {
       setSelected(null);
       clearSessionActionQuery();
       setDisputeReason("");
+      setDisputeCategory("");
       setDisputeEvidence(null);
       await loadClasses();
     } catch (error) {
@@ -510,10 +529,10 @@ export default function MyClasses() {
             {visibleClasses.map((item) => {
               const status = labels[item.status] || { label: item.status, className: "bg-slate-100 text-slate-600" };
               return (
-                <article key={item.id} className="render-auto flex flex-col rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm transition hover-rise hover-shadow-xl">
+                <article key={item.id} className="render-auto flex min-w-0 max-w-full flex-col overflow-hidden rounded-[1.6rem] border border-slate-100 bg-white p-4 shadow-sm transition hover-rise hover-shadow-xl sm:rounded-[2rem] sm:p-5">
                   <div className="flex items-start justify-between gap-3"><div className="grid h-12 w-12 place-items-center rounded-2xl bg-indigo-50 text-indigo-600">{item.method === "online" ? <Monitor /> : <MapPin />}</div><span className={`rounded-full px-3 py-1.5 text-[11px] font-bold ${status.className}`}>{status.label}</span></div>
-                  <p className="mt-5 text-xs font-bold uppercase tracking-widest text-indigo-500">{item.subject} · {item.type}</p><h2 className="mt-1 line-clamp-2 text-xl font-black text-slate-900">{item.title}</h2>
-                  <div className="mt-4 flex items-center gap-3"><div className="grid h-10 w-10 place-items-center overflow-hidden rounded-xl bg-slate-100 text-slate-500">{item.mentor_avatar ? <img src={item.mentor_avatar} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <UserRound size={18} />}</div><div><p className="text-xs text-slate-400">Tutor</p><p className="text-sm font-bold text-slate-800">{item.mentor}</p></div></div>
+                  <p className="mt-5 min-w-0 break-words text-xs font-bold uppercase tracking-[.14em] text-indigo-500 sm:tracking-widest">{item.subject} · {item.type}</p><h2 className="mt-1 min-w-0 break-words text-lg font-black leading-snug text-slate-900 sm:line-clamp-2 sm:text-xl">{item.title}</h2>
+                  <div className="mt-4 flex min-w-0 items-center gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-slate-100 text-slate-500">{item.mentor_avatar ? <img src={item.mentor_avatar} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <UserRound size={18} />}</div><div className="min-w-0"><p className="text-xs text-slate-400">Tutor</p><p className="break-words text-sm font-bold text-slate-800">{item.mentor}</p></div></div>
                   <div className="mt-4 space-y-2 text-xs text-slate-600"><Info icon={CalendarDays} text={dateTime(item.start_at)} /><Info icon={Clock3} text={`${timeOnly(item.start_at)}–${timeOnly(item.end_at)}`} /><Info icon={Users} text={rupiah(item.amount)} /></div>
                   {item.attention && (
                     <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
@@ -559,16 +578,40 @@ export default function MyClasses() {
             {(selected.meeting_link || selected.maps_link) && <Button asChild className="rounded-xl bg-indigo-600"><a href={selected.meeting_link || selected.maps_link} target="_blank" rel="noreferrer"><ExternalLink size={16} className="mr-2" />{selected.method === "online" ? "Buka ruang kelas" : "Buka lokasi"}</a></Button>}
             {selected.order?.status === "paid" && <Button variant="outline" className="rounded-xl border-indigo-200 text-indigo-700" onClick={() => { setHubReturnClass(selected); setHubBookingId(selected.id); setSelected(null); }}><MessageCircle size={16} className="mr-2" />Buka ruang belajar</Button>}
             {selected.can_report_teacher_absence && <Button variant="outline" className="rounded-xl border-rose-200 text-rose-700" onClick={() => setAbsenceReport(selected)}><ShieldAlert size={16} className="mr-2" />Tutor belum hadir setelah 15 menit</Button>}
-            {selected.completion_evidence_url && <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4"><div className="flex items-center gap-2 font-black text-emerald-900"><FileCheck2 size={18} />Bukti pelaksanaan tutor</div><ProtectedImage source={selected.completion_evidence_url} alt="Bukti pelaksanaan" className="mt-3 max-h-72 w-full rounded-xl object-contain bg-white" /><p className="mt-3 text-sm leading-6 text-emerald-800">{selected.completion_notes}</p>{selected.objection_deadline && <p className="mt-2 text-xs font-bold text-emerald-700">Batas keputusan: {dateTime(selected.objection_deadline)}</p>}</div>}
+            {selected.completion_notes && <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4"><div className="flex items-center gap-2 font-black text-emerald-900"><FileCheck2 size={18} />Hasil belajar dari tutor</div><div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-emerald-800">Durasi aktual {selected.actual_duration_minutes ?? "-"} menit</span>{selected.scheduled_duration_minutes ? <span className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-slate-600">Jadwal {selected.scheduled_duration_minutes} menit</span> : null}</div><p className="mt-3 text-sm leading-6 text-emerald-800">{selected.completion_notes}</p>{selected.objection_deadline && <p className="mt-2 text-xs font-bold text-emerald-700">Batas keputusan: {dateTime(selected.objection_deadline)}</p>}</div>}
             {selected.dispute && <div className="flex gap-3 rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm text-rose-800"><MessageSquareWarning className="shrink-0" /><div><p className="font-black">Keberatan {selected.dispute.status}</p><p className="mt-1 leading-6">{selected.dispute.reason}</p></div></div>}
             {selected.refund && <div className="flex gap-3 rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800"><ShieldAlert className="shrink-0" /><div><p className="font-black">Refund {selected.refund.status} · {rupiah(selected.refund.amount)}</p><p className="mt-1">{selected.refund.reason}</p></div></div>}
-            {(selected.can_approve || selected.can_dispute) && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><div className="flex gap-3 text-sm text-amber-900"><AlertCircle className="shrink-0" /><p>Periksa dulu apakah sesi benar-benar berlangsung sesuai. Setelah kamu menyatakan sesi sesuai, keputusan ini tidak dapat dibatalkan dari halaman ini.</p></div><div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">{selected.can_dispute && <Button variant="outline" className="rounded-xl border-rose-200 text-rose-700" onClick={() => setDispute(selected)}>Ajukan keberatan</Button>}{selected.can_approve && <Button className="rounded-xl bg-emerald-600 hover:bg-emerald-700" onClick={() => approve(selected)} disabled={processing === selected.id}><CheckCircle2 size={16} className="mr-2" />Ya, sesi sesuai</Button>}</div></div>}
+            {(selected.can_approve || selected.can_dispute) && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><div className="flex gap-3 text-sm text-amber-900"><AlertCircle className="shrink-0" /><p>Cek singkat hasil belajar dan durasi sesi. Pilih Sesi Sesuai jika semuanya wajar, atau Ada masalah jika ada hal yang perlu diperiksa admin.</p></div><div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">{selected.can_dispute && <Button variant="outline" className="rounded-xl border-rose-200 text-rose-700" onClick={() => setDispute(selected)}>Ada masalah</Button>}{selected.can_approve && <Button className="rounded-xl bg-emerald-600 hover:bg-emerald-700" onClick={() => approve(selected)} disabled={processing === selected.id}><CheckCircle2 size={16} className="mr-2" />Sesi Sesuai</Button>}</div></div>}
           </>}
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(dispute)} onOpenChange={(open) => !open && setDispute(null)}>
-        <DialogContent className="rounded-[2rem] sm:max-w-lg"><DialogHeader><DialogTitle>Ajukan keberatan</DialogTitle><DialogDescription>Jelaskan hal yang tidak sesuai. Pencairan tutor akan ditahan sampai admin memutuskan.</DialogDescription></DialogHeader><form onSubmit={submitDispute} className="space-y-4"><Textarea required minLength={30} maxLength={3000} className="min-h-36 rounded-xl" value={disputeReason} onChange={(event) => setDisputeReason(event.target.value)} placeholder="Kronologi dan bagian yang dipermasalahkan (minimal 30 karakter)" /><div><Label>Bukti tambahan (opsional)</Label><Input className="mt-2" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(event) => selectDisputeEvidence(event.target.files?.[0])} /></div><Button className="w-full rounded-xl bg-rose-600 hover:bg-rose-700" disabled={processing === dispute?.id}>Kirim keberatan</Button></form></DialogContent>
+      <Dialog open={Boolean(dispute)} onOpenChange={(open) => {
+        if (!open) {
+          setDispute(null);
+          setDisputeCategory("");
+          setDisputeReason("");
+          setDisputeEvidence(null);
+        }
+      }}>
+        <DialogContent className="rounded-[2rem] sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Ada masalah dengan sesi?</DialogTitle>
+            <DialogDescription>Pilih masalah yang paling sesuai. Admin akan memeriksa sesi dan hak tutor ditahan sementara.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submitDispute} className="space-y-4">
+            <>
+              <div className="grid gap-2">
+                {presenceProblemOptions.map((option) => (
+                  <button type="button" key={option} onClick={() => setDisputeCategory(option)} className={`rounded-xl border px-4 py-3 text-left text-sm font-bold transition ${disputeCategory === option ? "border-rose-300 bg-rose-50 text-rose-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}>{option}</button>
+                ))}
+              </div>
+              <div><Label>Ceritakan sedikit lagi <span className="font-normal text-slate-400">(opsional)</span></Label><Textarea maxLength={2500} className="mt-2 min-h-24 rounded-xl" value={disputeReason} onChange={(event) => setDisputeReason(event.target.value)} placeholder="Contoh: sesi berhenti setelah sekitar 20 menit." /></div>
+            </>
+            <div><Label>Bukti tambahan (opsional)</Label><Input className="mt-2" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(event) => selectDisputeEvidence(event.target.files?.[0])} /></div>
+            <Button className="w-full rounded-xl bg-rose-600 hover:bg-rose-700" disabled={processing === dispute?.id || !disputeCategory}>Kirim ke Admin</Button>
+          </form>
+        </DialogContent>
       </Dialog>
 
       <Dialog open={Boolean(ratingClass)} onOpenChange={(open) => !open && setRatingClass(null)}>
@@ -614,7 +657,7 @@ export default function MyClasses() {
 }
 
 function Info({ icon: Icon, text }: { icon: typeof Clock3; text: string }) {
-  return <div className="flex items-start gap-2 rounded-xl bg-white/70 px-3 py-2.5"><Icon size={15} className="mt-0.5 shrink-0 text-indigo-500" /><span className="leading-5">{text}</span></div>;
+  return <div className="flex min-w-0 items-start gap-2 rounded-xl bg-white/70 px-3 py-2.5"><Icon size={15} className="mt-0.5 shrink-0 text-indigo-500" /><span className="min-w-0 break-words leading-5">{text}</span></div>;
 }
 
 function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {

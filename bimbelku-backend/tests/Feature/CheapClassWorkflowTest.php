@@ -143,8 +143,8 @@ class CheapClassWorkflowTest extends TestCase
         } catch (\Symfony\Component\HttpKernel\Exception\HttpException $exception) {
             $this->assertSame(422, $exception->getStatusCode());
             $this->assertTrue(
-                str_contains($exception->getMessage(), 'Kuota Kelas Murah sudah penuh.')
-                    || str_contains($exception->getMessage(), 'Pendaftaran Kelas Murah sudah ditutup'),
+                str_contains($exception->getMessage(), 'Kuota Kelas Kelompok sudah penuh.')
+                    || str_contains($exception->getMessage(), 'Pendaftaran Kelas Kelompok sudah ditutup'),
                 'Murid ketujuh harus ditolak sebelum tagihan dibuat.'
             );
         }
@@ -826,7 +826,7 @@ class CheapClassWorkflowTest extends TestCase
         $this->postJson("/api/admin/cheap-classes/{$class->id}/cancel", [
             'reason' => 'Jadwal operasional dibatalkan admin.',
         ], ['Idempotency-Key' => 'cheap-class-admin-cancel-0001'])->assertOk()
-            ->assertJsonPath('message', 'Paket Kelas Murah berhasil dibatalkan.');
+            ->assertJsonPath('message', 'Paket Kelas Kelompok berhasil dibatalkan.');
 
         $this->assertSame('cancelled', $class->fresh()->status);
         $this->assertSame('Jadwal operasional dibatalkan admin.', $class->fresh()->cancellation_reason);
@@ -1502,7 +1502,6 @@ class CheapClassWorkflowTest extends TestCase
             'education_level' => 'SD',
             'grade' => 'Kelas 6',
             'curriculum_chapter_id' => $chapter->id,
-            'subtopic' => null,
             'topic' => null,
             'first_session_date' => now()->addDay()->toDateString(),
             'start_time' => '14:00',

@@ -93,7 +93,7 @@ class CheapClassController extends Controller
         abort_unless(
             $progressScope ? $hasProgressAccess : ($hasEnrollment || $isPublicOffer),
             404,
-            'Kelas Murah tidak ditemukan atau tidak lagi ditawarkan.'
+            'Kelas Kelompok tidak ditemukan atau tidak lagi ditawarkan.'
         );
 
         $class->load([
@@ -136,6 +136,6 @@ class CheapClassController extends Controller
     {
         CheapClassSchema::ensureReady();
         $cheapClasses->cancelEnrollment($cheapClassEnrollment, $request->user());
-        return response()->json(['message' => 'Keikutsertaan Kelas Murah dibatalkan.']);
+        return response()->json(['message' => 'Keikutsertaan Kelas Kelompok dibatalkan.']);
     }
 }

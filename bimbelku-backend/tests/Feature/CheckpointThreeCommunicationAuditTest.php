@@ -7,12 +7,8 @@ use App\Models\BookingParticipant;
 use App\Models\BookingRequest;
 use App\Models\ClassroomMessage;
 use App\Models\ClassroomMessageRead;
-use App\Models\LearningPlan;
-use App\Models\LearningProgressReport;
 use App\Models\Notification;
 use App\Models\Order;
-use App\Models\ParticipantAttendance;
-use App\Models\SessionAttendance;
 use App\Models\Ticket;
 use App\Models\User;
 use Carbon\Carbon;
@@ -23,37 +19,6 @@ use Tests\TestCase;
 class CheckpointThreeCommunicationAuditTest extends TestCase
 {
     use RefreshDatabase;
-
-    public function test_group_student_only_receives_own_progress_reports(): void
-    {
-        [$teacher, $students, $booking] = $this->makePaidBooking('group', 2);
-        foreach ($students as $index => $student) {
-            LearningProgressReport::create([
-                'booking_id' => $booking->id,
-                'student_id' => $student->id,
-                'teacher_id' => $teacher->id,
-                'session_number' => 1,
-                'material_covered' => 'Materi khusus murid '.($index + 1),
-                'mastered_skills' => 'Kemampuan yang telah dikuasai murid.',
-                'next_exercise' => 'Latihan lanjutan untuk pertemuan berikutnya.',
-                'attendance' => 'present',
-                'actual_duration_minutes' => 60,
-                'progress_percent' => 60 + $index,
-                'published_at' => now(),
-            ]);
-        }
-
-        Sanctum::actingAs($students[0]);
-        $this->getJson("/api/bookings/{$booking->id}/learning-session")
-            ->assertOk()
-            ->assertJsonCount(1, 'progress_reports')
-            ->assertJsonPath('progress_reports.0.student_id', $students[0]->id);
-
-        $this->getJson('/api/student/classes')
-            ->assertOk()
-            ->assertJsonPath('0.workspace.report_count', 1)
-            ->assertJsonPath('0.workspace.latest_report.material_covered', 'Materi khusus murid 1');
-    }
 
     public function test_opening_chat_marks_all_unread_messages_even_above_one_hundred(): void
     {
@@ -131,63 +96,7 @@ class CheckpointThreeCommunicationAuditTest extends TestCase
         ]);
     }
 
-    public function test_progress_report_cannot_be_published_twice_for_same_session_and_student(): void
-    {
-        [$teacher, $students, $booking] = $this->makePaidBooking();
-        $student = $students[0];
-        $participant = $booking->participants()->firstOrFail();
-        LearningPlan::create([
-            'booking_id' => $booking->id,
-            'student_id' => $student->id,
-            'teacher_id' => $teacher->id,
-            'initial_assessment' => 'Asesmen awal lengkap untuk kebutuhan pengujian.',
-            'learning_target' => 'Target belajar lengkap untuk kebutuhan pengujian.',
-            'success_indicator' => 'Indikator keberhasilan lengkap untuk pengujian.',
-            'student_acknowledged_at' => now(),
-            'status' => 'active',
-        ]);
-        SessionAttendance::create([
-            'booking_id' => $booking->id,
-            'user_id' => $teacher->id,
-            'role' => 'teacher',
-            'check_in_at' => now()->subHour(),
-            'check_out_at' => now(),
-            'pin_verified_at' => now()->subHour(),
-        ]);
-        ParticipantAttendance::create([
-            'booking_id' => $booking->id,
-            'booking_participant_id' => $participant->id,
-            'student_id' => $student->id,
-            'marked_by' => $teacher->id,
-            'status' => 'present',
-            'marked_at' => now(),
-        ]);
-        LearningProgressReport::create([
-            'booking_id' => $booking->id,
-            'student_id' => $student->id,
-            'teacher_id' => $teacher->id,
-            'session_number' => 1,
-            'material_covered' => 'Laporan yang sudah diterbitkan sebelumnya.',
-            'mastered_skills' => 'Kemampuan yang sudah dikuasai oleh murid.',
-            'next_exercise' => 'Latihan berikutnya untuk murid.',
-            'attendance' => 'present',
-            'actual_duration_minutes' => 60,
-            'progress_percent' => 70,
-            'published_at' => now(),
-        ]);
-
-        Sanctum::actingAs($teacher);
-        $this->postJson("/api/teacher/bookings/{$booking->id}/progress-reports", [
-            'material_covered' => 'Materi duplikat yang tidak boleh tersimpan.',
-            'mastered_skills' => 'Kemampuan duplikat yang tidak boleh tersimpan.',
-            'next_exercise' => 'Latihan duplikat yang tidak boleh tersimpan.',
-            'progress_percent' => 80,
-        ])->assertUnprocessable();
-
-        $this->assertSame(1, LearningProgressReport::query()->where('booking_id', $booking->id)->count());
-    }
-
-    private function makePaidBooking(string $classType = 'private', int $studentCount = 1): array
+    private function makePaidBooking(int $studentCount = 1): array
     {
         $teacher = User::factory()->create(['role' => 'teacher', 'status' => 'active']);
         $students = collect(range(1, $studentCount))
@@ -201,7 +110,7 @@ class CheckpointThreeCommunicationAuditTest extends TestCase
             'education_level' => 'SMP',
             'grade' => 'Kelas 7',
             'learning_mode' => 'online',
-            'class_type' => $classType,
+            'class_type' => 'private',
             'scheduled_date' => $scheduledStart->toDateString(),
             'start_time' => $scheduledStart->format('H:i:s'),
             'end_time' => $scheduledEnd->format('H:i:s'),
@@ -218,7 +127,7 @@ class CheckpointThreeCommunicationAuditTest extends TestCase
             'end_at' => $scheduledEnd,
             'duration_hours' => 1,
             'learning_mode' => 'online',
-            'class_type' => $classType,
+            'class_type' => 'private',
             'hourly_rate' => 50000,
             'total_amount' => 50000 * $studentCount,
             'status' => 'confirmed',

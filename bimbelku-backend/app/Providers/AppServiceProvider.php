@@ -11,6 +11,7 @@ use App\Observers\OrderObserver;
 use App\Observers\PayoutObserver;
 use App\Observers\RefundObserver;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Contracts\Routing\UrlRoutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -30,70 +31,141 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        $actorKey = static fn (Request $request): string => (string) ($request->user()?->getAuthIdentifier() ?? $request->ip());
+        $actorKey = static function (Request $request): string {
+            $userId = $request->user()?->getAuthIdentifier();
 
-        RateLimiter::for('student-package-quote', function (Request $request) use ($actorKey) {
-            return Limit::perMinute(20)
-                ->by('student-package-quote:'.$actorKey($request))
-                ->response(function (Request $request, array $headers) {
-                    $retryAfter = max(1, (int) ($headers['Retry-After'] ?? 60));
+            return $userId !== null
+                ? 'user:'.(string) $userId
+                : 'ip:'.(string) $request->ip();
+        };
 
-                    return response()->json([
-                        'message' => "Harga paket terlalu sering dihitung. Tunggu {$retryAfter} detik lalu coba lagi.",
-                        'error_code' => 'package_quote_rate_limited',
-                        'retry_after_seconds' => $retryAfter,
-                    ], 429, $headers);
-                });
-        });
+        $routeValue = static function (Request $request, string $parameter): string {
+            $value = $request->route($parameter);
 
-        RateLimiter::for('student-package-create', function (Request $request) use ($actorKey) {
-            return Limit::perMinute(5)
-                ->by('student-package-create:'.$actorKey($request))
-                ->response(function (Request $request, array $headers) {
-                    $retryAfter = max(1, (int) ($headers['Retry-After'] ?? 60));
+            if ($value instanceof UrlRoutable) {
+                return (string) $value->getRouteKey();
+            }
 
-                    return response()->json([
-                        'message' => "Pembuatan paket dilakukan terlalu sering. Tunggu {$retryAfter} detik lalu coba lagi.",
-                        'error_code' => 'package_create_rate_limited',
-                        'retry_after_seconds' => $retryAfter,
-                    ], 429, $headers);
-                });
-        });
+            if (is_scalar($value) && (string) $value !== '') {
+                return (string) $value;
+            }
 
-        RateLimiter::for('student-session-pin', function (Request $request) use ($actorKey) {
-            $routeBooking = $request->route('booking');
-            $bookingId = $routeBooking instanceof Booking
-                ? (string) $routeBooking->getKey()
-                : (string) ($routeBooking ?? 'unknown');
+            return 'global';
+        };
 
-            return Limit::perMinute(5)
-                ->by('student-session-pin:'.$actorKey($request).':'.$bookingId)
-                ->response(function (Request $request, array $headers) {
-                    $retryAfter = max(1, (int) ($headers['Retry-After'] ?? 60));
+        /**
+         * Register a named limiter whose counter is isolated from every other action.
+         *
+         * Generic middleware such as `throttle:5,1` derives its key primarily from the
+         * authenticated user / IP. When many routes use that same numeric definition,
+         * unrelated actions (including background polling) can consume the same bucket.
+         * Every mutable / polled action below therefore receives its own named namespace.
+         */
+        $registerIsolatedLimiter = static function (
+            string $name,
+            int $perMinute,
+            string $message,
+            array $routeParameters = [],
+            ?string $errorCode = null,
+        ) use ($actorKey, $routeValue): void {
+            RateLimiter::for($name, function (Request $request) use (
+                $name,
+                $perMinute,
+                $message,
+                $routeParameters,
+                $errorCode,
+                $actorKey,
+                $routeValue,
+            ) {
+                $keyParts = [$name, $actorKey($request)];
 
-                    return response()->json([
-                        'message' => "PIN untuk sesi ini dibuat terlalu sering. Tunggu {$retryAfter} detik lalu coba lagi.",
-                        'error_code' => 'session_pin_rate_limited',
-                        'retry_after_seconds' => $retryAfter,
-                    ], 429, $headers);
-                });
-        });
+                foreach ($routeParameters as $parameter) {
+                    $keyParts[] = $parameter.':'.$routeValue($request, $parameter);
+                }
 
-        RateLimiter::for('student-payment-submit', function (Request $request) use ($actorKey) {
-            $orderId = (string) ($request->route('id') ?? 'unknown');
+                return Limit::perMinute($perMinute)
+                    ->by(implode(':', $keyParts))
+                    ->response(function (Request $request, array $headers) use ($message, $name, $errorCode) {
+                        $retryAfter = max(1, (int) ($headers['Retry-After'] ?? 60));
+                        $resolvedMessage = str_replace(':seconds', (string) $retryAfter, $message);
 
-            return Limit::perMinute(5)
-                ->by('student-payment-submit:'.$actorKey($request).':'.$orderId)
-                ->response(function (Request $request, array $headers) {
-                    $retryAfter = max(1, (int) ($headers['Retry-After'] ?? 60));
+                        return response()->json([
+                            'message' => $resolvedMessage,
+                            'error_code' => $errorCode ?? str_replace('-', '_', $name).'_rate_limited',
+                            'retry_after_seconds' => $retryAfter,
+                        ], 429, $headers);
+                    });
+            });
+        };
 
-                    return response()->json([
-                        'message' => "Bukti pembayaran dikirim terlalu sering. Tunggu {$retryAfter} detik lalu coba lagi. Tagihanmu tetap aktif.",
-                        'error_code' => 'payment_rate_limited',
-                        'retry_after_seconds' => $retryAfter,
-                    ], 429, $headers);
-                });
-        });
+        // Public authentication. Each endpoint owns a separate IP bucket.
+        $registerIsolatedLimiter('auth-register', 5, 'Pendaftaran dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+        $registerIsolatedLimiter('auth-login', 10, 'Percobaan login terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+        $registerIsolatedLimiter('auth-forgot-password', 5, 'Permintaan reset kata sandi terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+        $registerIsolatedLimiter('auth-reset-password', 5, 'Reset kata sandi dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+
+        // Shared authenticated actions.
+        $registerIsolatedLimiter('account-password-change', 5, 'Perubahan kata sandi dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+        $registerIsolatedLimiter('support-ticket-create', 10, 'Pembuatan tiket dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+        $registerIsolatedLimiter('support-ticket-reply', 20, 'Balasan tiket dikirim terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['id']);
+        $registerIsolatedLimiter('session-action-poll', 60, 'Pemeriksaan status sesi terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+        $registerIsolatedLimiter('booking-message-send', 30, 'Pesan dikirim terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['booking']);
+        $registerIsolatedLimiter('booking-schedule-options', 30, 'Pilihan jadwal dimuat terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['booking']);
+        $registerIsolatedLimiter('booking-schedule-change-create', 5, 'Permintaan perubahan jadwal dibuat terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['booking']);
+        $registerIsolatedLimiter('booking-schedule-change-respond', 10, 'Respons perubahan jadwal dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['booking', 'scheduleChangeRequest']);
+
+        // Student actions.
+        $registerIsolatedLimiter('student-cheap-class-join', 10, 'Permintaan bergabung kelas dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['cheapClass']);
+        $registerIsolatedLimiter('student-cheap-class-cancel', 10, 'Pembatalan kelas dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['cheapClassEnrollment']);
+        $registerIsolatedLimiter('student-tutor-availability', 20, 'Pengecekan ketersediaan tutor terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+        $registerIsolatedLimiter('student-session-presence-confirm', 10, 'Konfirmasi kehadiran dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['booking']);
+        $registerIsolatedLimiter('student-refund-destination', 10, 'Pemilihan tujuan refund dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['refund']);
+        $registerIsolatedLimiter('student-package-retry', 5, 'Pencarian tutor diulang terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['learningPackage']);
+        $registerIsolatedLimiter('student-package-reschedule', 5, 'Penjadwalan ulang dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['learningPackage']);
+        $registerIsolatedLimiter('student-promotion-preview', 20, 'Pengecekan promo dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+        $registerIsolatedLimiter('student-promotion-claim', 10, 'Klaim promo dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['promotion']);
+
+        // Existing package/payment buckets retained with their established API error codes.
+        $registerIsolatedLimiter(
+            'student-package-quote',
+            20,
+            'Harga paket terlalu sering dihitung. Tunggu :seconds detik lalu coba lagi.',
+            [],
+            'package_quote_rate_limited',
+        );
+        $registerIsolatedLimiter(
+            'student-package-create',
+            5,
+            'Pembuatan paket dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.',
+            [],
+            'package_create_rate_limited',
+        );
+        $registerIsolatedLimiter(
+            'student-payment-submit',
+            5,
+            'Bukti pembayaran dikirim terlalu sering. Tunggu :seconds detik lalu coba lagi. Tagihanmu tetap aktif.',
+            ['id'],
+            'payment_rate_limited',
+        );
+
+        // Teacher actions. Financial actions intentionally use an actor-wide action bucket.
+        $registerIsolatedLimiter('teacher-cheap-class-meeting-link', 10, 'Tautan pertemuan diperbarui terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['cheapClass']);
+        $registerIsolatedLimiter('teacher-cheap-class-progress', 20, 'Progress kelas diperbarui terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['cheapClass']);
+        $registerIsolatedLimiter('teacher-offer-action', 10, 'Respons tawaran dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['teacherOffer']);
+        $registerIsolatedLimiter('teacher-bank-change', 5, 'Perubahan rekening dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+        $registerIsolatedLimiter('teacher-payout-request', 5, 'Permintaan pencairan dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+        $registerIsolatedLimiter('teacher-point-appeal', 3, 'Pengajuan banding dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['teacherPointLedger']);
+        $registerIsolatedLimiter('teacher-session-ready', 10, 'Konfirmasi kesiapan mengajar dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['booking']);
+        $registerIsolatedLimiter('teacher-session-checkout', 10, 'Penyelesaian sesi dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['booking']);
+
+        // Admin operational actions.
+        $registerIsolatedLimiter('admin-cheap-class-template-create', 10, 'Pembuatan template kelas dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+        $registerIsolatedLimiter('admin-cheap-class-template-recurrence', 10, 'Perubahan pengulangan kelas dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['cheapClassTemplate']);
+        $registerIsolatedLimiter('admin-cheap-class-retry-teacher', 10, 'Pencarian ulang tutor dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['cheapClass']);
+        $registerIsolatedLimiter('admin-cheap-class-session-review', 20, 'Review laporan sesi dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['cheapClass', 'session']);
+        $registerIsolatedLimiter('admin-matching-synchronize', 20, 'Sinkronisasi pencarian tutor dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['bookingRequest']);
+        $registerIsolatedLimiter('admin-matching-expand-radius', 10, 'Perluasan radius dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['bookingRequest']);
+        $registerIsolatedLimiter('admin-matching-assign-teacher', 10, 'Penetapan tutor dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['bookingRequest']);
 
         Order::observe(OrderObserver::class);
         Booking::observe(BookingObserver::class);

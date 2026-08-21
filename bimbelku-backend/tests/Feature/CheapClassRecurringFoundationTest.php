@@ -36,7 +36,6 @@ class CheapClassRecurringFoundationTest extends TestCase
             'education_level' => 'SD',
             'grade' => 'Kelas 6',
             'chapter' => $chapter->title,
-            'subtopic' => null,
             'topic' => null,
             'first_session_date' => '2026-08-24',
             'start_time' => '10:00',

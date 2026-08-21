@@ -28,10 +28,10 @@ add("renewal test proves a schedule under 72 hours can pass with old tutor", tes
 add("renewal builder exposes 24 hour lead while normal flow exposes 72", builder.includes("bookingLeadHours === 24") && builder.includes("minimal 24 jam") && builder.includes("minimal 72 jam"));
 add("builder no longer hardcodes a 96 hour date minimum", !builder.includes("Date.now() + 96 * 60 * 60 * 1000"));
 add("renewal chain cannot branch from the same source package", controller.includes("hasBlockingRenewal") && controller.includes("sudah memiliki paket lanjutan") && test.includes("assertJsonPath('can_renew', false)"));
-add("renewed topic progress starts fresh", controller.includes("'status' => 'not_started'") && controller.includes("'started_at' => null") && controller.includes("'completed_at' => null"));
-add("reselected completed topic is marked as reinforcement", controller.includes("$wasCompletedBefore") && controller.includes("'needs_review' => $wasCompletedBefore"));
-add("renewal builder does not preselect 100 percent completed material", builder.includes("learning_topic_ids: allCompleted") && builder.includes("? []"));
-add("renewal builder guides student to choose continuation material", builder.includes("Materi paket sebelumnya sudah selesai") && builder.includes("materi lanjutan"));
+add("renewed chapter progress starts fresh", controller.includes("'status' => 'not_started'") && controller.includes("'started_at' => null") && controller.includes("'completed_at' => null"));
+add("reselected completed chapter is marked as reinforcement", controller.includes("$wasCompletedBefore") && controller.includes("'needs_review' => $wasCompletedBefore"));
+add("renewal builder does not preselect 100 percent completed chapters", builder.includes("curriculum_chapter_ids: allCompleted") && builder.includes("? []"));
+add("renewal builder guides student to choose continuation material", builder.includes("Semua Bab pada paket sebelumnya sudah selesai") && builder.includes("Bab lanjutan"));
 add("renewal builder labels previous material state", builder.includes("Selesai sebelumnya") && builder.includes("Lanjutkan"));
 add("same-tutor renewal locks the selected subject", builder.includes("disabled={Boolean(renewalId && renewalSubjectId)}"));
 add("renewal package is visibly labelled in Kelas Saya", packages.includes("Paket lanjutan") && controller.includes("'renewal_of_id'"));
@@ -41,11 +41,11 @@ add("preferred tutor matching increments attempts with an integer-safe locked up
 add("demo requires tutor to accept real renewal offer", command.includes("Permintaan Bimbel") && command.includes("Tutor lama harus menerima"));
 add("demo can fast-forward to final renewal session", command.includes("final-session-ready") && command.includes("Pertemuan sebelumnya dianggap selesai hanya untuk demo lokal"));
 add("demo checkout always targets highest renewal session sequence", command.includes("orderByDesc('sequence')") && command.includes("whereNotNull('booking_id')"));
-add("demo keeps normal final private-session workflow", command.includes("Murid buat PIN") && command.includes("Selesaikan Sesi + foto"));
+add("demo keeps normal final private-session workflow", (command.includes("Murid buat PIN") && command.includes("Selesaikan Sesi + foto")) || (command.includes("Session Flow V2") && command.includes("Saya Siap Mengajar") && command.includes("Saya Sudah Hadir")));
 add("feature test creates renewal through real student package API", test.includes("/api/student/packages") && test.includes("renewal_of_id"));
 add("feature test proves completed old material is not inherited as completed", test.includes("every(fn ($topic) => $topic->status === 'not_started')"));
 add("feature test covers real tutor offer acceptance", test.includes("/api/teacher/offers/") && test.includes("/accept"));
-add("feature test reaches student PIN on second package final session", test.includes("student_generate_pin"));
+add("feature test reaches second package final Session Flow", test.includes("student_generate_pin") || (test.includes("teacher_mark_ready") && test.includes("student_confirm_presence")));
 
 let failed = 0;
 for (const [label, ok] of checks) {

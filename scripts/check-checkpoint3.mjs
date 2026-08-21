@@ -16,7 +16,7 @@ requireText("bimbelku-backend/app/Http/Controllers/Api/LearningSessionController
   "chunkById(200",
   "message_type",
   "student_name",
-  "Laporan perkembangan untuk murid ini sudah diterbitkan",
+  "Hasil belajar sesi ini sudah tersimpan.",
 ]);
 requireText("bimbelku-backend/app/Http/Controllers/Api/StudentController.php", [
   "student_learning_progress_reports_count",
@@ -36,11 +36,14 @@ requireText("bimbelku-backend/app/Http/Controllers/Api/NotificationController.ph
 ]);
 for (const path of [
   "bimbelku-backend/app/Http/Controllers/Api/ProtectedFileController.php",
-  "bimbelku-backend/app/Http/Controllers/Api/LearningAttachmentController.php",
   "bimbelku-backend/app/Http/Controllers/Api/TeacherDocumentController.php",
 ]) requireText(path, ["safeFilename", "Content-Disposition"]);
+requireText("bimbelku-backend/app/Http/Controllers/Api/LearningSessionController.php", [
+  "classroom_attachments",
+  "classroom-messages/{$message->id}/attachment",
+]);
 requireText("src/components/MarketplaceMessages.tsx", ["message_type", "Informasi BimbelKu"]);
-requireText("src/components/LearningSessionHub.tsx", ["student_name", "message_type", "Informasi BimbelKu"]);
+requireText("src/components/LearningSessionHub.tsx", ["student_name", "message_type", 'item.message_type === "system"', "sender_name"]);
 requireText("src/pages/common/HelpCenter.tsx", ["latest_reply?.message"]);
 requireText("src/pages/admin/AdminMessages.tsx", ["latest_reply?.message"]);
 
@@ -59,6 +62,7 @@ for (const name of fs.readdirSync(featureTestDir).filter((entry) => entry.endsWi
 for (const obsolete of [
   "bimbelku-backend/app/Http/Controllers/Api/ClassroomConversationController.php",
   "bimbelku-backend/app/Models/ClassroomConversationRead.php",
+  "bimbelku-backend/app/Http/Controllers/Api/LearningAttachmentController.php",
   "scripts/check-revision4-messages.mjs",
 ]) {
   if (fs.existsSync(obsolete)) throw new Error(`File lama belum dibersihkan: ${obsolete}`);

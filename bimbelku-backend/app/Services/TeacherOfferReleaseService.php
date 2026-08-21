@@ -125,15 +125,8 @@ class TeacherOfferReleaseService
                             return null;
                         }
 
-                        $activeRequestIds = collect([$bookingRequest->id]);
-                        if ($bookingRequest->group_pool_id) {
-                            $activeRequestIds = $bookingRequest->groupPool?->members()
-                                ->whereIn('status', ['waiting', 'joined'])
-                                ->pluck('booking_request_id') ?? $activeRequestIds;
-                        }
-
                         BookingRequest::query()
-                            ->whereIn('id', $activeRequestIds)
+                            ->whereKey($bookingRequest->id)
                             ->where('status', 'teacher_pending')
                             ->where('matched_teacher_id', $teacherId)
                             ->update([

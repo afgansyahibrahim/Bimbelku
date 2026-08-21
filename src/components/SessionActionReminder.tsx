@@ -7,7 +7,6 @@ import {
   ChevronRight,
   ClipboardCheck,
   Clock3,
-  KeyRound,
   Minimize2,
   PlayCircle,
   RefreshCcw,
@@ -20,18 +19,13 @@ import { Button } from "@/components/ui/button";
 import http, { getCached } from "@/lib/http";
 
 type SessionActionKind =
-  | "student_generate_pin"
-  | "student_pin_active"
+  | "student_confirm_presence"
   | "student_review_session"
-  | "student_acknowledge_learning_plan"
-  | "teacher_check_in"
-  | "teacher_mark_attendance"
-  | "teacher_prepare_learning_plan"
+  | "teacher_mark_ready"
+  | "teacher_waiting_student_presence"
   | "teacher_check_out"
   | "teacher_report_progress"
-  | "teacher_waiting_plan_acknowledgement"
   | "teacher_session_ready"
-  | "teacher_complete_session"
   | "cheap_teacher_report_required"
   | "cheap_teacher_revision_requested"
   | "cheap_admin_verify_report"
@@ -67,78 +61,47 @@ type SessionActionResponse = {
 
 const copyFor = (action: SessionAction) => {
   switch (action.kind) {
-    case "student_generate_pin":
+    case "student_confirm_presence":
       return {
-        eyebrow: action.secondary_kind === "student_teacher_late" ? "Sesi perlu perhatian" : "Sesi segera dimulai",
-        title: "Tutor sudah datang?",
-        description: action.secondary_kind === "student_teacher_late"
-          ? "Kalau tutor sudah hadir, buat PIN dan sebutkan langsung kepadanya. Kalau belum hadir, kamu bisa membuka detail sesi untuk melapor."
-          : "Kalau tutor sudah hadir dan siap mengajar, buat PIN lalu sebutkan langsung kepadanya.",
-        button: "Buat PIN untuk tutor",
-        Icon: KeyRound,
-        tone: "indigo" as const,
-      };
-    case "student_pin_active":
-      return {
-        eyebrow: action.secondary_kind === "student_teacher_late" ? "Sesi perlu perhatian" : "PIN tutor masih aktif",
-        title: "PIN sudah dibuat",
-        description: action.secondary_kind === "student_teacher_late"
-          ? "Berikan PIN yang tadi dibuat kepada tutor kalau tutor sudah hadir. Kalau PIN lupa, buka sesi untuk membuat PIN baru."
-          : "Berikan PIN yang tadi dibuat langsung kepada tutor. Kalau PIN lupa setelah halaman ditutup, buka sesi untuk membuat PIN baru.",
-        button: "Buka PIN sesi",
-        Icon: KeyRound,
-        tone: "indigo" as const,
-      };
-    case "student_acknowledge_learning_plan":
-      return {
-        eyebrow: "Perlu persetujuanmu",
-        title: "Cek tujuan belajar",
-        description: "Tutor sudah menyiapkan tujuan belajar. Baca dulu, lalu setujui kalau sudah sesuai supaya hasil belajar sesi nanti bisa dicatat.",
-        button: "Periksa tujuan belajar",
+        eyebrow: "Tutor sudah siap",
+        title: "Kamu sudah hadir?",
+        description: "Konfirmasi dengan satu tap jika kamu sudah bersama tutor atau sudah siap mengikuti kelas online.",
+        button: "Saya Sudah Hadir",
         Icon: CheckCircle2,
-        tone: "amber" as const,
+        tone: "emerald" as const,
       };
     case "student_review_session":
       return {
         eyebrow: "Butuh keputusanmu",
         title: "Cek sesi yang baru selesai",
-        description: "Tutor sudah mengirim bukti pelaksanaan. Periksa dulu sebelum menyatakan sesi sudah sesuai.",
+        description: "Tutor sudah menyimpan hasil belajar. Periksa ringkasannya lalu pilih Sesi Sesuai atau Ada masalah.",
         button: "Periksa sesi",
         Icon: CheckCircle2,
         tone: "amber" as const,
       };
-    case "teacher_check_in":
+    case "teacher_mark_ready":
       return {
-        eyebrow: "Langkah berikutnya",
-        title: "Siap mulai mengajar?",
-        description: "Minta PIN 6 digit kepada murid setelah kamu benar-benar hadir, lalu masukkan PIN untuk memulai sesi.",
-        button: "Masukkan PIN & mulai",
+        eyebrow: "Sesi segera dimulai",
+        title: "Sudah siap mengajar?",
+        description: "Kirim status siap ke murid. Sesi resmi dimulai setelah murid mengonfirmasi kehadiran.",
+        button: "Saya Siap Mengajar",
         Icon: PlayCircle,
         tone: "indigo" as const,
       };
-    case "teacher_mark_attendance":
+    case "teacher_waiting_student_presence":
       return {
-        eyebrow: "Kehadiran tutor terverifikasi",
-        title: "Catat kehadiran murid",
-        description: "Pastikan status kehadiran seluruh murid tersimpan sebelum sesi diakhiri.",
-        button: "Catat kehadiran",
-        Icon: UserCheck,
-        tone: "indigo" as const,
-      };
-    case "teacher_prepare_learning_plan":
-      return {
-        eyebrow: "Siapkan arah belajar",
-        title: "Tentukan tujuan belajar murid",
-        description: "Tuliskan tujuan belajar singkat lalu minta murid menyetujuinya. Ini diperlukan sebelum hasil belajar sesi dapat diterbitkan.",
-        button: "Isi tujuan belajar",
-        Icon: NotebookPen,
-        tone: "indigo" as const,
+        eyebrow: "Menunggu murid",
+        title: "Kesiapanmu sudah terkirim",
+        description: "Tidak perlu melakukan apa-apa lagi. Sesi mulai otomatis setelah murid menekan Saya Sudah Hadir.",
+        button: "Lihat ruang belajar",
+        Icon: Clock3,
+        tone: "amber" as const,
       };
     case "teacher_session_ready":
       return {
         eyebrow: "Persiapan selesai",
-        title: "Tujuan sudah disepakati. Selamat mengajar!",
-        description: "Kehadiran dan tujuan belajar sudah beres. Fokus mengajar dulu; BimbelKu akan mengingatkan lagi saat waktunya menutup sesi.",
+        title: "Sesi sedang berlangsung. Selamat mengajar!",
+        description: "Kehadiran sudah beres. Fokus mengajar dulu; BimbelKu akan mengingatkan lagi saat waktunya menutup sesi.",
         button: "Buka ruang belajar",
         Icon: CheckCircle2,
         tone: "emerald" as const,
@@ -160,24 +123,6 @@ const copyFor = (action: SessionAction) => {
         button: "Isi hasil belajar",
         Icon: NotebookPen,
         tone: "indigo" as const,
-      };
-    case "teacher_waiting_plan_acknowledgement":
-      return {
-        eyebrow: "Menunggu murid",
-        title: "Tujuan belajar belum disetujui",
-        description: "Murid perlu menyetujui tujuan belajar terlebih dahulu. Kamu bisa membuka Ruang Belajar untuk melihat statusnya.",
-        button: "Lihat ruang belajar",
-        Icon: Clock3,
-        tone: "amber" as const,
-      };
-    case "teacher_complete_session":
-      return {
-        eyebrow: "Administrasi sudah lengkap",
-        title: "Selesaikan sesi",
-        description: "Kehadiran dan hasil belajar sudah tersimpan. Kirim bukti pelaksanaan untuk meneruskan sesi ke persetujuan murid.",
-        button: "Selesaikan sesi",
-        Icon: CheckCircle2,
-        tone: "emerald" as const,
       };
     case "cheap_teacher_report_required":
       return {
@@ -202,7 +147,7 @@ const copyFor = (action: SessionAction) => {
     case "cheap_admin_verify_report":
       return {
         eyebrow: "Perlu dicek",
-        title: "Laporan Kelas Murah menunggu verifikasi",
+        title: "Laporan Kelas Kelompok menunggu verifikasi",
         description: `${action.teacher_name || "Tutor"} sudah mengirim laporan sesi ${action.session_number || ""}. Cek kehadiran, progress, dan catatannya lalu konfirmasi atau minta perbaikan.`,
         button: "Periksa laporan",
         Icon: ClipboardCheck,
@@ -221,7 +166,7 @@ const copyFor = (action: SessionAction) => {
       return {
         eyebrow: "Kelas selesai",
         title: "Semua pertemuan sudah selesai",
-        description: "Seluruh sesi Kelas Murah sudah diverifikasi admin. Progress akhir dan riwayat belajarmu tetap bisa dilihat kapan saja.",
+        description: "Seluruh sesi Kelas Kelompok sudah diverifikasi admin. Progress akhir dan riwayat belajarmu tetap bisa dilihat kapan saja.",
         button: "Lihat progress akhir",
         Icon: CheckCircle2,
         tone: "emerald" as const,

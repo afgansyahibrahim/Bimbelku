@@ -15,7 +15,7 @@ const sections = [
     title: "Paket Belajar, pencocokan tutor, dan jadwal",
     content: (
       <>
-        <p>Murid menyusun Paket Belajar dengan memilih paket, jenjang, kelas atau tingkat, metode online atau offline, mata pelajaran, bab, subbab, alokasi sesi, durasi, dan jadwal. Sistem hanya menerima jadwal yang memenuhi batas waktu pemesanan, slot aktif, masa berlaku paket, dan pemeriksaan bentrok yang berlaku pada saat pemesanan.</p>
+        <p>Murid menyusun Paket Belajar dengan memilih paket, jenjang, kelas atau tingkat, metode online atau offline, mata pelajaran, bab, alokasi sesi, durasi, dan jadwal. Sistem hanya menerima jadwal yang memenuhi batas waktu pemesanan, slot aktif, masa berlaku paket, dan pemeriksaan bentrok yang berlaku pada saat pemesanan.</p>
         <p>Setelah rincian pesanan dikonfirmasi, sistem membuat tagihan terlebih dahulu. Pencarian tutor untuk Paket Belajar baru dimulai setelah pembayaran dinyatakan diterima oleh sistem. Bagian pembayaran melalui transfer diperiksa admin, sedangkan tagihan yang seluruhnya ditutup dengan Saldo BimbelKu dapat diselesaikan otomatis. Murid tidak memilih tutor dari katalog publik; sistem mengirim penawaran kepada tutor yang memenuhi kompetensi, jenjang, ketersediaan, performa, pemerataan, dan kebutuhan jarak untuk sesi offline.</p>
         <p>Data <em>BookingRequest</em> dapat tetap digunakan secara internal untuk mesin pencocokan Paket Belajar dan untuk menyelesaikan transaksi lama yang masih sah. Jalur pembuatan booking lama tidak lagi menjadi jalur pemesanan baru bagi murid.</p>
       </>
@@ -27,17 +27,17 @@ const sections = [
       <>
         <p>Tarif ditetapkan admin dan dapat berbeda untuk mode online, offline, privat, atau kelompok. Nilai transaksi dan persentase komisi disimpan saat pemesanan sehingga perubahan tarif berikutnya tidak mengubah transaksi lama.</p>
         <p>Untuk pembayaran melalui transfer, murid mentransfer dana ke rekening yang ditampilkan oleh BimbelKu lalu mengunggah bukti. Bagian pembayaran yang berasal dari transfer belum dianggap diterima sebelum admin mencocokkannya dengan mutasi rekening. Bukti yang ditolak dapat dikirim ulang sebelum batas pembayaran.</p>
-        <p>Saldo BimbelKu adalah kredit belajar yang berasal dari refund dan tidak dapat ditarik tunai. Saldo dapat dipakai pada pembayaran Paket Belajar dan Kelas Murah. Jika saldo menutup seluruh tagihan, pembayaran dapat diselesaikan otomatis oleh sistem; jika hanya menutup sebagian, saldo ditahan untuk pesanan tersebut dan murid cukup mentransfer sisa tagihan. Saldo yang ditahan dikembalikan apabila pembayaran dibatalkan, kedaluwarsa, atau ditolak sesuai status transaksi.</p>
+        <p>Saldo BimbelKu adalah kredit belajar yang berasal dari refund dan tidak dapat ditarik tunai. Saldo dapat dipakai pada pembayaran Paket Belajar dan Kelas Kelompok. Jika saldo menutup seluruh tagihan, pembayaran dapat diselesaikan otomatis oleh sistem; jika hanya menutup sebagian, saldo ditahan untuk pesanan tersebut dan murid cukup mentransfer sisa tagihan. Saldo yang ditahan dikembalikan apabila pembayaran dibatalkan, kedaluwarsa, atau ditolak sesuai status transaksi.</p>
         <p>Jika transaksi yang kemudian direfund sebelumnya dibayar menggunakan Saldo BimbelKu, bagian refund yang berasal dari saldo selalu dikembalikan ke Saldo BimbelKu dan tidak dapat dialihkan ke rekening atau e-wallet. Pada pembayaran campuran saldo + transfer, murid dapat memilih rekening/e-wallet hanya untuk bagian yang semula dibayar melalui transfer; bagian saldo tetap kembali ke saldo. Jika seluruh pembayaran berasal dari Saldo BimbelKu, refund seluruhnya kembali ke Saldo BimbelKu.</p>
         <p>BimbelKu tidak memakai payment gateway. Pendapatan tutor dan refund ke rekening atau e-wallet tetap ditransfer manual oleh admin dengan bukti transfer yang dicatat pada sistem. Transaksi langsung di luar alur BimbelKu tidak dilindungi.</p>
       </>
     ),
   },
   {
-    title: "Kelas Murah",
+    title: "Kelas Kelompok",
     content: (
       <>
-        <p>Kelas Murah dibuat dan dijadwalkan oleh admin. Murid hanya dapat bergabung ketika pendaftaran terbuka, kuota masih tersedia, jadwal tidak bentrok, dan tutor kelas tersedia. Saat bergabung, kursi ditahan sementara sampai batas pembayaran yang ditampilkan sistem.</p>
+        <p>Kelas Kelompok dibuat dan dijadwalkan oleh admin. Murid hanya dapat bergabung ketika pendaftaran terbuka, kuota masih tersedia, jadwal tidak bentrok, dan tutor kelas tersedia. Saat bergabung, kursi ditahan sementara sampai batas pembayaran yang ditampilkan sistem.</p>
         <p>Keikutsertaan menjadi terkonfirmasi setelah pembayaran dinyatakan valid. Pembatalan, pergantian tutor, penutupan pendaftaran, kelas yang dibatalkan, dan kondisi yang memerlukan pengembalian dana mengikuti status transaksi yang tercatat pada sistem. Dana yang sudah dinyatakan valid tetapi harus dikembalikan diproses melalui antrean refund admin.</p>
       </>
     ),
@@ -46,7 +46,7 @@ const sections = [
     title: "Kehadiran, bukti, dan keadaan darurat",
     content: (
       <>
-        <p>Tutor wajib hadir sesuai jadwal dan mengunggah foto bukti pelaksanaan beserta catatan sesi. Murid yang tidak hadir dan tidak dapat membuktikan alasan yang diterima dapat kehilangan pembayaran setelah laporan tutor diperiksa admin.</p>
+        <p>Tutor wajib hadir sesuai jadwal dan mencatat hasil belajar. Pada Session Flow terbaru, tutor menandai kesiapan lalu murid mengonfirmasi kehadiran satu kali; sistem menyimpan waktu mulai, waktu selesai, durasi, dan jejak sesi secara otomatis. Sesi historis dapat tetap memakai mekanisme verifikasi lama untuk menjaga kompatibilitas.</p>
         <p>Ketidakhadiran tutor yang terbukti menghasilkan refund penuh dan sanksi poin. Keadaan darurat tutor wajib disertai jenis kejadian, kronologi, waktu, lokasi, dampak, dan bukti yang dapat dipercaya. Refund murid langsung masuk antrean; admin kemudian menentukan validitas laporan dan sanksi tutor.</p>
       </>
     ),
@@ -55,7 +55,7 @@ const sections = [
     title: "Penyelesaian, keberatan, dan refund",
     content: (
       <>
-        <p>Setelah bukti tutor diunggah, murid memiliki waktu 48 jam untuk menyetujui atau mengajukan keberatan. Persetujuan penyelesaian bersifat final dan menutup hak keberatan untuk sesi tersebut. Jika tidak ada jawaban, kasus masuk pemeriksaan admin—bukan otomatis disetujui.</p>
+        <p>Setelah tutor menyimpan hasil belajar dan mengakhiri sesi, murid diberi batas waktu yang ditampilkan pada aplikasi untuk memilih Sesi Sesuai atau melaporkan masalah. Persetujuan penyelesaian bersifat final dan menutup hak keberatan untuk sesi tersebut. Jika tidak ada jawaban sampai batas waktu, kasus masuk pemeriksaan admin—bukan otomatis disetujui.</p>
         <p>Keberatan harus menjelaskan masalah secara jelas dan dapat dilengkapi bukti. Untuk refund yang telah disetujui, murid memilih tujuan pengembalian dana: rekening atau e-wallet, atau Saldo BimbelKu. Pilihan dapat diperbarui selama refund masih menunggu proses, sedangkan admin hanya mengeksekusi pilihan terakhir yang tersimpan dan tidak dapat mengganti tujuan refund. Pilihan rekening/e-wallet hanya berlaku untuk bagian refund yang semula dibayar melalui transfer; bagian yang semula dibayar dari Saldo BimbelKu selalu kembali ke saldo. Refund ke Saldo BimbelKu selesai saat kredit saldo tercatat; refund ke rekening atau e-wallet selesai setelah admin mencatat bukti transfer untuk bagian transfer eksternal.</p>
       </>
     ),

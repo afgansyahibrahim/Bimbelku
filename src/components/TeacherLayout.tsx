@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import LogoutButton from "@/components/LogoutButton";
+import ProfileQuickMenu from "@/components/ProfileQuickMenu";
 import { scheduleNonCriticalTask } from "@/lib/schedule";
 import { usePersistentSidebarScroll } from "@/hooks/usePersistentSidebarScroll";
 import { hasSidebarAttention, NAVIGATION_ATTENTION_CHANGED_EVENT, unreadIdsForCurrentPage, type AttentionNotification } from "@/lib/navigationAttention";
@@ -230,7 +231,7 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
                 <div className="space-y-1">
                     <NavItem to="/guru/permintaan" icon={ClipboardCheck} label="Permintaan Bimbel" active={isActive('/guru/permintaan')} attention={hasSidebarAttention("teacher", "/guru/permintaan", attentionNotifications)} />
                     <NavItem to="/guru/kelas" icon={BookOpen} label="Kelas Saya" active={isActive('/guru/kelas')} attention={hasSidebarAttention("teacher", "/guru/kelas", attentionNotifications)} />
-                    <NavItem to="/guru/kelas-murah" icon={Users} label="Kelas Murah" active={isActive('/guru/kelas-murah')} attention={hasSidebarAttention("teacher", "/guru/kelas-murah", attentionNotifications)} />
+                    <NavItem to="/guru/kelas-murah" icon={Users} label="Kelas Kelompok" active={isActive('/guru/kelas-murah')} attention={hasSidebarAttention("teacher", "/guru/kelas-murah", attentionNotifications)} />
                     <NavItem to="/guru/pesan" icon={MessageSquare} label="Pesan" active={isActive('/guru/pesan')} attention={hasSidebarAttention("teacher", "/guru/pesan", attentionNotifications)} />
                     <NavItem to="/guru/jadwal" icon={CalendarClock} label="Jadwal Mengajar" active={isActive('/guru/jadwal')} attention={hasSidebarAttention("teacher", "/guru/jadwal", attentionNotifications)} />
                 </div>
@@ -280,8 +281,8 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
                  </button>
                  {showNotifDropdown && (
                      <>
-                        <button type="button" aria-label="Tutup daftar notifikasi" className="fixed inset-0 z-[100]" onClick={() => setShowNotifDropdown(false)} />
-                        <div className="fixed left-3 right-3 top-14 mt-2 max-h-[min(72dvh,32rem)] overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-2xl z-[101] animate-in fade-in zoom-in-95 duration-200 origin-top-right sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-4 sm:w-[min(24rem,calc(100vw-1.5rem))]">
+                        <button type="button" aria-label="Tutup daftar notifikasi" className="fixed inset-0 z-[var(--layer-dropdown)]" onClick={() => setShowNotifDropdown(false)} />
+                        <div className="fixed left-3 right-3 top-14 z-[var(--layer-dropdown)] mt-2 max-h-[min(72dvh,32rem)] origin-top-right overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200 sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-4 sm:w-[min(24rem,calc(100vw-1.5rem))]">
                             <div className="p-4 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center"><h3 className="font-bold text-slate-800">Notifikasi</h3>{unreadCount > 0 && <span className="text-[10px] bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full font-bold">{unreadCount} Baru</span>}</div>
                             <div className="max-h-[400px] overflow-y-auto custom-scrollbar p-2 space-y-1">
                                 {notifications.length > 0 ? notifications.map((notif) => (
@@ -297,11 +298,14 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
                  )}
              </div>
 
-             {/* Profile */}
-             <Link to="/guru/saya" aria-label="Buka halaman Saya" className="flex h-8 items-center gap-2 border-l border-slate-200 pl-2 sm:gap-4 sm:pl-6 group">
-                 <div className="text-right hidden sm:block"><p className="text-sm font-bold text-slate-800 leading-tight group-hover:text-indigo-600 transition-colors">{userData ? userData.name : "Memuat..."}</p><p className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full inline-block mt-1">Pengajar Aktif</p></div>
-                 <div className="relative"><div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 border-2 border-white shadow-lg ring-2 ring-indigo-50 group-hover:ring-indigo-200 transition-all flex items-center justify-center overflow-hidden">{userData?.photo ? <img src={userData.photo} alt={`Foto profil ${userData.name || "tutor"}`} loading="lazy" decoding="async" className="w-full h-full object-cover"/> : <span className="font-bold text-sm">{userData?.name?.charAt(0)}</span>}</div></div>
-             </Link>
+             <ProfileQuickMenu
+               user={userData}
+               accent="teacher"
+               roleLabel="Tutor"
+               profileTo="/guru/profil"
+               accountTo="/guru/saya"
+               helpTo="/guru/bantuan"
+             />
           </div>
         </header>
 
@@ -316,12 +320,12 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
 
         {/* --- [FIXED] MODAL DETAIL NOTIFIKASI GURU --- */}
         {selectedNotif && (
-            <div role="dialog" aria-modal="true" aria-label="Detail notifikasi" className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+            <div role="dialog" aria-modal="true" aria-label="Detail notifikasi" className="fixed inset-0 z-[var(--layer-modal)] flex items-end justify-center bg-slate-900/45 p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] animate-in fade-in duration-300 sm:items-center sm:p-4">
                 {/* [PERBAIKAN] 
                     1. flex flex-col: Agar children (header, content, footer) tertata vertikal
                     2. max-h-[90dvh]: Batasi tinggi modal agar tidak melebihi layar
                 */}
-                <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl relative animate-in zoom-in-95 duration-300 overflow-hidden flex flex-col max-h-[90dvh]">
+                <div className="relative flex max-h-[calc(100dvh-1.5rem)] w-full min-w-0 max-w-lg flex-col overflow-hidden rounded-[1.75rem] bg-white shadow-2xl animate-in slide-in-from-bottom-4 duration-300 sm:max-h-[90dvh] sm:rounded-[2.5rem] sm:zoom-in-95">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-100/50 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
                     
                     {/* Header: Fixed (Shrink-0) */}
@@ -334,8 +338,8 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
                         </div>
 
                         <div>
-                            <h3 className="text-2xl font-black text-slate-900 leading-tight">{selectedNotif.title}</h3>
-                            <div className="flex items-center gap-2 mt-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+                            <h3 className="min-w-0 break-words text-xl font-black leading-tight text-slate-900 sm:text-2xl">{selectedNotif.title}</h3>
+                            <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-slate-400 sm:text-xs sm:tracking-wider">
                                 <span>Dari Admin</span><span>•</span><span>{new Date(selectedNotif.created_at).toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'short' })}</span>
                             </div>
                         </div>
@@ -343,7 +347,7 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
 
                     {/* Content: Scrollable (Overflow-y-auto) */}
                     <div className="relative z-10 px-5 sm:px-8 overflow-y-auto custom-scrollbar">
-                        <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 text-slate-600 leading-relaxed text-sm whitespace-pre-wrap">
+                        <div className="min-w-0 break-words rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm leading-relaxed text-slate-600 whitespace-pre-wrap sm:rounded-3xl sm:p-6">
                             {selectedNotif.message}
                         </div>
                     </div>

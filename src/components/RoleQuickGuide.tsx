@@ -55,7 +55,7 @@ const fallback: Record<Role, Tutorial> = {
     description: "Ikuti garis kuningnya. Bacanya pelan-pelan saja.",
     steps: [
       { title: "Ada tawaran mengajar", body: "Tekan sini jika ada murid yang minta diajar. Baca hari, jam, pelajaran, dan uangnya dulu.", target: '[href="/guru/permintaan"]' },
-      { title: "Kelas yang sudah jadi", body: "Tekan sini untuk masuk ke kelas. Kamu bisa isi link Zoom, cek hadir, dan kirim bukti selesai.", target: '[href="/guru/kelas"]' },
+      { title: "Kelas yang sudah jadi", body: "Tekan sini untuk masuk ke kelas. Ikuti tombol yang muncul untuk mulai sesi, mengajar, lalu menyimpan hasil belajar.", target: '[href="/guru/kelas"]' },
       { title: "Pesan untuk kelas", body: "Tekan sini untuk ngobrol dengan murid setelah kelas sudah dibayar.", target: '[href="/guru/pesan"]' },
       { title: "Uang dan data kamu", body: "Tekan sini untuk lihat uang, rekening, profil, dan bantuan.", target: '[href="/guru/saya"]' },
     ],
@@ -68,7 +68,7 @@ const fallback: Record<Role, Tutorial> = {
       { title: "Mulai dari ringkasan", body: "Buka ringkasan kerja untuk melihat kondisi operasional yang perlu diperiksa.", target: '[href="/admin"]' },
       { title: "Pantau pencarian tutor", body: "Buka pencarian tutor untuk melihat permintaan yang masih mencari pengajar.", target: '[href="/admin/tutor-searches"]' },
       { title: "Periksa pembayaran", body: "Buka pembayaran murid untuk memverifikasi bukti yang masuk.", target: '[href="/admin/pembayaran"]' },
-      { title: "Kelola Kelas Murah", body: "Buka menu Kelas Murah untuk membuat paket dan memantau tutor serta peserta.", target: '[href="/admin/kelas-murah"]' },
+      { title: "Kelola Kelas Kelompok", body: "Buka menu Kelas Kelompok untuk membuat paket dan memantau tutor serta peserta.", target: '[href="/admin/kelas-murah"]' },
     ],
   },
 };
@@ -85,7 +85,7 @@ const packageBuilderTutorial: Tutorial = {
     },
     {
       title: "Pilih lama belajar",
-      body: "Pilih mau belajar 1, 2, atau 3 jam setiap kali bertemu.",
+      body: "Pilih mau belajar 1 atau 2 jam setiap kali bertemu.",
       target: '[data-tour="package-duration-picker"]',
     },
     {
@@ -110,12 +110,12 @@ const contextualTutorials: Record<Role, Record<string, Tutorial>> = {
   student: {
     "cheap-classes": {
       id: -4,
-      title: "Cara ikut Kelas Murah",
+      title: "Cara ikut Kelas Kelompok",
       description: "Kelas ini belajar ramai-ramai. Lihat garis kuning, ya.",
       steps: [
-        { title: "Ini Kelas Murah", body: "Di sini kamu bisa belajar bersama teman lain dengan harga lebih hemat.", target: '[data-tour="cheap-class-hero"]' },
+        { title: "Ini Kelas Kelompok", body: "Di sini kamu bisa belajar bersama teman lain dengan harga lebih hemat.", target: '[data-tour="cheap-class-hero"]' },
         { title: "Baca kartu kelas", body: "Lihat pelajaran, hari, jam, harga, dan jumlah teman yang sudah ikut.", target: '[data-tour="cheap-class-list"]' },
-        { title: "Mau ikut? Tekan Gabung", body: "Kalau waktunya cocok, tekan Gabung Kelas Murah. Kursimu ditahan sebentar supaya kamu bisa bayar.", target: '[data-tour="cheap-class-list"]' },
+        { title: "Mau ikut? Tekan Gabung", body: "Kalau waktunya cocok, tekan Gabung Kelas Kelompok. Kursimu ditahan sebentar supaya kamu bisa bayar.", target: '[data-tour="cheap-class-list"]' },
       ],
     },
     classes: {
@@ -145,9 +145,9 @@ const contextualTutorials: Record<Role, Record<string, Tutorial>> = {
       title: "Cara menjalankan kelas",
       description: "Buka kelas yang mau kamu ajar, lalu ikuti tombolnya satu-satu.",
       steps: [
-        { title: "Urutan saat mengajar", body: "Ini urutan mudahnya: masuk kelas, cek murid hadir, lalu kirim bukti setelah selesai.", target: '[data-tour="teacher-class-steps"]' },
+        { title: "Urutan saat mengajar", body: "Untuk sesi baru: tekan Saya Siap Mengajar, tunggu murid mengonfirmasi hadir, lalu fokus mengajar sampai waktunya menyimpan hasil belajar.", target: '[data-tour="teacher-class-steps"]' },
         { title: "Pilih kelas", body: "Tekan Kelola sesi pada kelas yang akan kamu ajar. Di dalamnya ada link Zoom dan tombol tindakan.", target: '[data-tour="teacher-class-list"]' },
-        { title: "Jangan lupa bukti selesai", body: "Sesudah kelas selesai, ikuti tombol Selesai dan ambil foto bukti saat itu juga.", target: '[data-tour="teacher-class-list"]' },
+        { title: "Simpan hasil belajar", body: "Sesudah kelas selesai, akhiri sesi lalu isi hasil belajar singkat. Murid akan diminta memilih Sesi Sesuai atau Ada masalah.", target: '[data-tour="teacher-class-list"]' },
       ],
     },
     "teacher-schedule": {
@@ -162,10 +162,10 @@ const contextualTutorials: Record<Role, Record<string, Tutorial>> = {
     },
     "teacher-cheap-classes": {
       id: -9,
-      title: "Cara mengajar Kelas Murah",
+      title: "Cara mengajar Kelas Kelompok",
       description: "Link Zoom hanya boleh diisi setelah kelas sudah pasti jadi.",
       steps: [
-        { title: "Lihat kelas yang ditugaskan", body: "Di sini ada Kelas Murah yang menjadi tugasmu. Cek hari, jam, dan jumlah muridnya.", target: '[data-tour="teacher-cheap-hero"]' },
+        { title: "Lihat kelas yang ditugaskan", body: "Di sini ada Kelas Kelompok yang menjadi tugasmu. Cek hari, jam, dan jumlah muridnya.", target: '[data-tour="teacher-cheap-hero"]' },
         { title: "Isi link Zoom", body: "Jika status kelas sudah dikonfirmasi, isi link Zoom lalu tekan tombol simpan di sebelahnya.", target: '[data-tour="teacher-cheap-list"]' },
       ],
     },
@@ -530,7 +530,7 @@ function RoleQuickGuideContent({ role }: { role: Role }) {
 
   const tutorialOverlay = open && typeof document !== "undefined" ? (
     <div
-      className="fixed inset-0 z-[220] overflow-hidden overscroll-contain"
+      className="fixed inset-0 z-[var(--layer-modal)] overflow-hidden overscroll-contain"
       data-tutorial-portal
       role="presentation"
       onWheel={(event) => event.preventDefault()}
@@ -557,7 +557,7 @@ function RoleQuickGuideContent({ role }: { role: Role }) {
         aria-modal="true"
         aria-labelledby="tutorial-title"
         data-tutorial-context={context}
-        className="fixed z-[222] flex max-h-[calc(100dvh-1.5rem)] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-[1.5rem] bg-white shadow-2xl outline-none sm:rounded-[1.75rem]"
+        className="fixed z-[var(--layer-modal-content)] flex max-h-[calc(100dvh-1.5rem)] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-[1.5rem] bg-white shadow-2xl outline-none sm:rounded-[1.75rem]"
         style={dialogStyle}
         onMouseDown={(event) => event.stopPropagation()}
         onWheel={(event) => event.stopPropagation()}

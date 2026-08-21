@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
+const exists = (relativePath) => fs.existsSync(path.join(root, relativePath));
 
 const app = read("src/App.tsx");
 const packageBuilder = read("src/pages/students/PackageBuilder.tsx");
@@ -20,6 +21,7 @@ const failures = [];
 const expect = (condition, message) => { if (!condition) failures.push(message); };
 
 expect(!app.includes('import("./pages/SearchPage")'), "Router masih memuat SearchPage");
+expect(!exists("src/pages/SearchPage.tsx"), "SearchPage legacy masih tersisa setelah cleanup Tahap 3");
 expect(app.includes('<Route path="/search" element={<LegacyPackageRedirect />} />'), "/search belum menjadi redirect");
 expect(app.includes('<Route path="/student/find" element={<LegacyPackageRedirect />} />'), "/student/find belum menjadi redirect");
 expect(app.indexOf('<Route path="/search" element={<LegacyPackageRedirect />} />') < app.indexOf('<Route element={<StudentPackageRoute />}>'), "/search harus dinormalisasi sebelum guard Paket Baru");
@@ -46,7 +48,7 @@ expect(packageReschedule.includes("<ResponsiveSelect"), "Penjadwalan ulang belum
 
 expect(responsiveSelect.includes("100dvw-1.5rem"), "Dropdown responsif belum dibatasi dynamic viewport");
 expect(baseSelect.includes("collisionPadding = 12"), "Dropdown dasar belum menjaga jarak dari tepi layar");
-expect(baseSelect.includes("z-[500]"), "Dropdown dasar belum aman di atas modal");
+expect(baseSelect.includes("!z-[var(--layer-detail-popover)]"), "Dropdown dasar belum aman di atas modal");
 expect(subjectCombobox.includes("overflow-x-hidden"), "Dropdown mapel belum menahan teks panjang");
 expect(subjectCombobox.includes("break-anywhere"), "Nama mapel buatan belum dapat dibungkus");
 expect(/\.form-field\s*\{[\s\S]*min-w-0[\s\S]*max-w-full/.test(css), "Field global belum dibatasi oleh lebar induk");

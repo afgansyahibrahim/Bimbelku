@@ -25,7 +25,6 @@ class AdminMatchingController extends Controller
             'status' => ['nullable', Rule::in(array_merge(['all', 'attention'], self::MONITORED_STATUSES))],
             'scope' => ['nullable', Rule::in(['active', 'history'])],
             'learning_mode' => ['nullable', Rule::in(['all', 'online', 'offline'])],
-            'class_type' => ['nullable', Rule::in(['all', 'private', 'group'])],
             'q' => ['nullable', 'string', 'max:120'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:10', 'max:50'],
@@ -34,12 +33,13 @@ class AdminMatchingController extends Controller
         $status = $validated['status'] ?? 'all';
         $scope = $validated['scope'] ?? 'active';
         $mode = $validated['learning_mode'] ?? 'all';
-        $classType = $validated['class_type'] ?? 'all';
         $search = trim((string) ($validated['q'] ?? ''));
         $perPage = (int) ($validated['per_page'] ?? 20);
 
         $query = BookingRequest::query()
+            ->whereNotNull('package_subject_id')
             ->whereIn('status', $scope === 'history' ? self::HISTORY_STATUSES : self::ACTIVE_STATUSES)
+            ->when($scope === 'active', fn ($active) => $active->whereDate('scheduled_date', '>=', today()))
             ->matchingAnchors()
             ->with([
                 'student:id,name,email',
@@ -48,7 +48,6 @@ class AdminMatchingController extends Controller
                     ->with('teacher:id,name,email')
                     ->latest('offered_at'),
                 'packageSubject.package:id,student_id,status',
-                'groupPool:id,created_by,status',
             ]);
 
         if ($status === 'attention') {
@@ -59,10 +58,6 @@ class AdminMatchingController extends Controller
 
         if ($mode !== 'all') {
             $query->where('learning_mode', $mode);
-        }
-
-        if ($classType !== 'all') {
-            $query->where('class_type', $classType);
         }
 
         if ($search !== '') {
@@ -124,7 +119,6 @@ class AdminMatchingController extends Controller
                 ->with(['teacher:id,name,email', 'teacher.teacherProfile:user_id,points,max_travel_km'])
                 ->latest('offered_at'),
             'packageSubject.package:id,student_id,status,total_sessions,used_sessions',
-            'groupPool:id,created_by,status,search_radius_km',
             'matchingOperationLogs' => fn ($logs) => $logs
                 ->with('actor:id,name,email')
                 ->latest('created_at'),
@@ -163,8 +157,6 @@ class AdminMatchingController extends Controller
                     ],
                     'request_details' => [
                         'chapter' => $bookingRequest->chapter,
-                        'subtopic' => $bookingRequest->subtopic,
-                        'topic' => $bookingRequest->topic,
                         'learning_goal' => $bookingRequest->learning_goal,
                         'address_available' => filled($bookingRequest->address),
                         'coordinates_available' => $bookingRequest->latitude !== null
@@ -311,7 +303,6 @@ class AdminMatchingController extends Controller
                     ->with('teacher:id,name,email')
                     ->latest('offered_at'),
                 'packageSubject.package:id,student_id,status',
-                'groupPool:id,created_by,status',
             ])),
         ]);
     }
@@ -319,6 +310,7 @@ class AdminMatchingController extends Controller
     private function summaryCounts(): array
     {
         $base = BookingRequest::query()
+            ->whereNotNull('package_subject_id')
             ->whereIn('status', self::MONITORED_STATUSES)
             ->matchingAnchors();
 
@@ -379,7 +371,7 @@ class AdminMatchingController extends Controller
             'education_level' => $bookingRequest->education_level,
             'grade' => $bookingRequest->grade,
             'learning_mode' => $bookingRequest->learning_mode,
-            'class_type' => $bookingRequest->class_type,
+            'class_type' => 'private',
             'scheduled_at' => $this->scheduledAt($bookingRequest)?->toIso8601String(),
             'status' => $bookingRequest->status,
             'status_label' => $this->statusLabel($bookingRequest->status),
@@ -427,15 +419,11 @@ class AdminMatchingController extends Controller
                 'accepted' => $bookingRequest->offers->where('status', 'accepted')->count(),
             ],
             'source' => [
-                'type' => $bookingRequest->package_subject_id
-                    ? 'package'
-                    : ($bookingRequest->group_pool_id ? 'group' : 'single'),
-                'label' => $bookingRequest->package_subject_id ? 'Paket Belajar' : 'Arsip sistem lama',
-                'is_legacy' => $bookingRequest->package_subject_id === null,
+                'type' => 'package',
+                'label' => 'Paket Belajar',
+                'is_legacy' => false,
                 'package_id' => $bookingRequest->packageSubject?->learning_package_id,
                 'package_status' => $bookingRequest->packageSubject?->package?->status,
-                'group_pool_id' => $bookingRequest->group_pool_id,
-                'group_status' => $bookingRequest->groupPool?->status,
             ],
         ];
     }

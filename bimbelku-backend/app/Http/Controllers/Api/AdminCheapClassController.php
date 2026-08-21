@@ -144,8 +144,8 @@ class AdminCheapClassController extends Controller
             : ' Paket ini hanya dibuat sekali.';
         return response()->json([
             'message' => $teacher
-                ? "1 paket Kelas Murah dibuat dengan {$subjectCount} mapel dan {$class->session_count} sesi. Tutor {$teacher->name} dipilih otomatis.{$recurrenceMessage}"
-                : "1 paket Kelas Murah dibuat dengan {$subjectCount} mapel dan {$class->session_count} sesi. Paket tersimpan dan sistem masih mencari tutor yang cocok.{$recurrenceMessage}",
+                ? "1 paket Kelas Kelompok dibuat dengan {$subjectCount} mapel dan {$class->session_count} sesi. Tutor {$teacher->name} dipilih otomatis.{$recurrenceMessage}"
+                : "1 paket Kelas Kelompok dibuat dengan {$subjectCount} mapel dan {$class->session_count} sesi. Paket tersimpan dan sistem masih mencari tutor yang cocok.{$recurrenceMessage}",
             'data' => $this->adminPackagePayload($class),
         ], 201);
     }
@@ -279,7 +279,6 @@ class AdminCheapClassController extends Controller
                     'custom_price_per_student' => $class->custom_price_per_student !== null
                         ? (float) $class->custom_price_per_student
                         : null,
-                    'subtopic' => $class->subtopic,
                     'topic' => $class->topic,
                     'registration_opens_at' => $class->registration_opens_at,
                     'registration_deadline' => $class->registration_deadline,
@@ -340,7 +339,7 @@ class AdminCheapClassController extends Controller
                 ->where('cheap_class_id', $class->id)
                 ->lockForUpdate()
                 ->firstOrFail();
-            abort_unless($class->status === 'confirmed', 422, 'Paket Kelas Murah ini sudah tidak menerima verifikasi sesi baru.');
+            abort_unless($class->status === 'confirmed', 422, 'Paket Kelas Kelompok ini sudah tidak menerima verifikasi sesi baru.');
             abort_unless($lockedSession->status === 'awaiting_admin_verification', 422, 'Laporan sesi ini tidak sedang menunggu verifikasi admin.');
             abort_unless($lockedSession->report_submitted_at && $lockedSession->progress_recorded_at, 422, 'Laporan tutor belum lengkap.');
             abort_if(
@@ -357,7 +356,7 @@ class AdminCheapClassController extends Controller
             $verifiedUpdates = [];
             foreach ($lockedSession->progress_updates ?? [] as $change) {
                 $index = (int) ($change['subject_index'] ?? -1);
-                abort_unless(array_key_exists($index, $subjects), 422, 'Bab pada laporan sudah tidak cocok dengan paket Kelas Murah.');
+                abort_unless(array_key_exists($index, $subjects), 422, 'Bab pada laporan sudah tidak cocok dengan paket Kelas Kelompok.');
 
                 $beforeStatus = (string) ($subjects[$index]['progress_status'] ?? 'not_started');
                 $beforeNeedsReview = (bool) ($subjects[$index]['needs_review'] ?? false);
@@ -406,7 +405,7 @@ class AdminCheapClassController extends Controller
                 ['unique_key' => "cheap-class-session-verified:{$session->id}:teacher:{$result['teacher_id']}"],
                 [
                     'user_id' => $result['teacher_id'],
-                    'title' => $freshClass->status === 'completed' ? 'Kelas Murah selesai' : 'Laporan sesi diverifikasi',
+                    'title' => $freshClass->status === 'completed' ? 'Kelas Kelompok selesai' : 'Laporan sesi diverifikasi',
                     'message' => $freshClass->status === 'completed'
                         ? "Seluruh sesi {$result['subject_name']} sudah terverifikasi admin. Kelas selesai dan masuk Riwayat."
                         : "Sesi {$result['session_number']} {$result['subject_name']} sudah dikonfirmasi admin.",
@@ -421,7 +420,7 @@ class AdminCheapClassController extends Controller
                 ['unique_key' => "cheap-class-session-verified:{$session->id}:student:{$studentId}"],
                 [
                     'user_id' => $studentId,
-                    'title' => $freshClass->status === 'completed' ? 'Kelas Murah selesai' : 'Progress Kelas Murah diperbarui',
+                    'title' => $freshClass->status === 'completed' ? 'Kelas Kelompok selesai' : 'Progress Kelas Kelompok diperbarui',
                     'message' => $freshClass->status === 'completed'
                         ? "Seluruh pertemuan {$result['subject_name']} sudah diverifikasi. Kelas selesai; progress akhir tetap bisa kamu lihat di Riwayat."
                         : "Pertemuan {$result['session_number']} {$result['subject_name']} sudah diverifikasi. Lihat progress belajar terbarumu.",
@@ -434,7 +433,7 @@ class AdminCheapClassController extends Controller
 
         return response()->json([
             'message' => $freshClass->status === 'completed'
-                ? 'Sesi dikonfirmasi. Seluruh pertemuan sudah terverifikasi dan paket Kelas Murah selesai.'
+                ? 'Sesi dikonfirmasi. Seluruh pertemuan sudah terverifikasi dan paket Kelas Kelompok selesai.'
                 : 'Sesi dikonfirmasi. Progress resmi murid sudah diperbarui.',
             'class_status' => $freshClass->status,
         ]);
@@ -506,7 +505,7 @@ class AdminCheapClassController extends Controller
         $cheapClasses->cancelClass($cheapClass, $reason);
 
         return response()->json([
-            'message' => 'Paket Kelas Murah berhasil dibatalkan.',
+            'message' => 'Paket Kelas Kelompok berhasil dibatalkan.',
             'data' => $this->adminPackagePayload($cheapClass->fresh(['teacher:id,name', 'sessions'])),
         ]);
     }
@@ -543,7 +542,7 @@ class AdminCheapClassController extends Controller
     {
         CheapClassSchema::ensureReady();
         $cheapClasses->finalizeIfReady($cheapClass);
-        return response()->json(['message' => 'Status Kelas Murah diperiksa ulang.', 'data' => $cheapClass->fresh()]);
+        return response()->json(['message' => 'Status Kelas Kelompok diperiksa ulang.', 'data' => $cheapClass->fresh()]);
     }
 
     public function updateRecurrence(
@@ -569,7 +568,6 @@ class AdminCheapClassController extends Controller
     {
         $request->merge([
             'subject_name' => $request->filled('subject_name') ? trim((string) $request->input('subject_name')) : null,
-            'subtopic' => $request->filled('subtopic') ? trim((string) $request->input('subtopic')) : null,
             'topic' => $request->filled('topic') ? trim((string) $request->input('topic')) : null,
         ]);
         $data = $request->validate([
@@ -582,7 +580,6 @@ class AdminCheapClassController extends Controller
             'curriculum_chapter_id' => ['nullable', 'required_without:subjects', 'integer', 'exists:curriculum_chapters,id'],
             'education_level' => ['required', Rule::in(EducationCatalog::LEVELS)],
             'grade' => ['required', 'string', 'max:50'],
-            'subtopic' => ['nullable', 'string', 'max:220'],
             'topic' => ['nullable', 'string', 'max:1500'],
             // Request UI baru memakai tanggal/jam pembukaan. first_session_date
             // tetap diterima untuk kompatibilitas test dan klien lama.
@@ -767,7 +764,6 @@ class AdminCheapClassController extends Controller
             'education_level' => $class->education_level,
             'grade' => $class->grade,
             'chapter' => $this->chapterSummary($class),
-            'subtopic' => $class->subtopic,
             'topic' => $class->topic,
             'starts_at' => $class->starts_at,
             'ends_at' => $class->ends_at,

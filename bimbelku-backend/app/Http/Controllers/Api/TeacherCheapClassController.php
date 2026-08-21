@@ -56,7 +56,7 @@ class TeacherCheapClassController extends Controller
         abort_unless($cheapClass->status === 'confirmed', 422, 'Tautan Zoom dapat diisi setelah kelas dikonfirmasi.');
         abort_unless($cheapClass->sessions()->where('ends_at', '>', now())->exists(), 422, 'Seluruh sesi paket sudah berakhir.');
         $cheapClass->update(['meeting_link' => $data['meeting_link']]);
-        return response()->json(['message' => 'Tautan Zoom Kelas Murah disimpan.']);
+        return response()->json(['message' => 'Tautan Zoom Kelas Kelompok disimpan.']);
     }
 
     public function updateProgress(Request $request, CheapClass $cheapClass, CheapClassService $cheapClasses)
@@ -67,7 +67,7 @@ class TeacherCheapClassController extends Controller
         abort_unless(
             $cheapClass->status === 'confirmed',
             422,
-            'Laporan sesi hanya dapat dikirim pada Kelas Murah yang sedang berjalan.'
+            'Laporan sesi hanya dapat dikirim pada Kelas Kelompok yang sedang berjalan.'
         );
 
         $validated = $request->validate([
@@ -84,7 +84,7 @@ class TeacherCheapClassController extends Controller
         [$session, $subjects, $summary] = DB::transaction(function () use ($request, $cheapClass, $cheapClasses, $validated) {
             $class = CheapClass::query()->lockForUpdate()->findOrFail($cheapClass->id);
             abort_unless((int) $class->teacher_id === (int) $request->user()->id, 403);
-            abort_unless($class->status === 'confirmed', 422, 'Kelas Murah sudah tidak menerima laporan sesi baru.');
+            abort_unless($class->status === 'confirmed', 422, 'Kelas Kelompok sudah tidak menerima laporan sesi baru.');
 
             /** @var CheapClassSession|null $session */
             $session = CheapClassSession::query()
@@ -92,7 +92,7 @@ class TeacherCheapClassController extends Controller
                 ->where('cheap_class_id', $class->id)
                 ->lockForUpdate()
                 ->first();
-            abort_unless($session, 422, 'Sesi Kelas Murah tidak ditemukan pada paket ini.');
+            abort_unless($session, 422, 'Sesi Kelas Kelompok tidak ditemukan pada paket ini.');
             abort_unless($session->ends_at?->lte(now()), 422, 'Laporan sesi baru dapat dikirim setelah jadwal belajar berakhir.');
             abort_unless(
                 in_array($session->status, ['report_required', 'revision_requested'], true),
@@ -112,7 +112,7 @@ class TeacherCheapClassController extends Controller
             $sessionUpdates = [];
             foreach ($validated['updates'] as $update) {
                 $index = (int) $update['subject_index'];
-                abort_unless(array_key_exists($index, $subjects), 422, 'Bab Kelas Murah tidak ditemukan.');
+                abort_unless(array_key_exists($index, $subjects), 422, 'Bab Kelas Kelompok tidak ditemukan.');
 
                 $status = (string) $update['progress_status'];
                 $needsReview = $status === 'completed'
@@ -163,8 +163,8 @@ class TeacherCheapClassController extends Controller
                 ['unique_key' => "cheap-class-session-report:{$session->id}:admin:{$adminId}"],
                 [
                     'user_id' => $adminId,
-                    'title' => 'Laporan sesi Kelas Murah masuk',
-                    'message' => "Sesi {$session->session_number} Kelas Murah {$cheapClass->subject_name} menunggu verifikasi.",
+                    'title' => 'Laporan sesi Kelas Kelompok masuk',
+                    'message' => "Sesi {$session->session_number} Kelas Kelompok {$cheapClass->subject_name} menunggu verifikasi.",
                     'type' => 'info',
                     'target_url' => '/admin/kelas-murah/jadwal?view=sessions&scope=active&status=awaiting_admin_verification',
                     'is_read' => false,

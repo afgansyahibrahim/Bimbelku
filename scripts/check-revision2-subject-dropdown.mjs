@@ -9,7 +9,7 @@ const packageController = read("bimbelku-backend/app/Http/Controllers/Api/Studen
 
 const checks = [
   [combobox.includes("createPortal") && combobox.includes("document.body"), "dropdown dirender melalui portal agar tidak terpotong parent"],
-  [combobox.includes('className="fixed z-[1000]') && combobox.includes("visualViewport"), "posisi dropdown mengikuti ruang viewport"],
+  [combobox.includes('z-[var(--layer-detail-popover)]') && combobox.includes("visualViewport"), "posisi dan layer dropdown mengikuti ruang viewport"],
   [combobox.includes('placement: "top" | "bottom"') && combobox.includes('"translateY(-100%)"'), "dropdown dapat berpindah ke atas saat ruang bawah sempit"],
   [combobox.includes("maxHeight: menuPosition.maxHeight") && combobox.includes("overflow-y-auto") && combobox.includes("overscroll-contain"), "daftar panjang memiliki batas tinggi dan scroll internal"],
   [combobox.includes('document.addEventListener("pointerdown", closeWhenOutside)'), "klik atau sentuh di luar menutup dropdown"],

@@ -10,9 +10,8 @@ use App\Models\CurriculumSubject;
 use App\Models\HourlyRate;
 use App\Models\LearningPackage;
 use App\Models\LearningTimeSlot;
-use App\Models\LearningTopic;
 use App\Models\Order;
-use App\Models\PackageLearningTopic;
+use App\Models\PackageChapter;
 use App\Models\PackagePlan;
 use App\Models\PackageSession;
 use App\Models\PackageSubject;
@@ -92,26 +91,8 @@ class DemoPackageRenewal extends Command
                 ]
             );
 
-            [$oldChapter, $oldTopics] = $this->ensureChapterAndTopics(
-                $catalogSubject,
-                'Persamaan Linear',
-                [
-                    'Mengenal bentuk persamaan linear',
-                    'Menentukan nilai variabel',
-                    'Menyelesaikan soal cerita persamaan linear',
-                ],
-                1
-            );
-            $this->ensureChapterAndTopics(
-                $catalogSubject,
-                'Fungsi dan Persamaan Kuadrat',
-                [
-                    'Mengenal konsep fungsi',
-                    'Menentukan nilai fungsi',
-                    'Menyelesaikan persamaan kuadrat sederhana',
-                ],
-                2
-            );
+            $oldChapter = $this->ensureChapter($catalogSubject, 'Persamaan Linear', 1);
+            $this->ensureChapter($catalogSubject, 'Fungsi dan Persamaan Kuadrat', 2);
 
             HourlyRate::query()->updateOrCreate(
                 [
@@ -152,12 +133,10 @@ class DemoPackageRenewal extends Command
                 'curriculum_subject_id' => $catalogSubject->id,
                 'curriculum_chapter_id' => $oldChapter->id,
                 'curriculum_chapter_ids' => [$oldChapter->id],
-                'learning_topic_ids' => $oldTopics->pluck('id')->map(fn ($id) => (int) $id)->all(),
                 'assigned_teacher_id' => $teacher->id,
                 'preferred_teacher_id' => $teacher->id,
                 'subject_name' => self::SUBJECT_NAME,
                 'chapter' => 'Persamaan Linear',
-                'subtopic' => $oldTopics->pluck('name')->join(', '),
                 'learning_goal' => 'Menguasai Persamaan Linear.',
                 'allocated_sessions' => 4,
                 'unit_price' => 50000,
@@ -165,21 +144,16 @@ class DemoPackageRenewal extends Command
                 'status' => 'completed',
             ]);
 
-            foreach ($oldTopics->values() as $index => $topic) {
-                PackageLearningTopic::create([
-                    'package_subject_id' => $subject->id,
-                    'curriculum_chapter_id' => $oldChapter->id,
-                    'learning_topic_id' => $topic->id,
-                    'chapter' => 'Persamaan Linear',
-                    'title' => $topic->name,
-                    'normalized_title' => mb_strtolower(preg_replace('/\s+/u', ' ', trim($topic->name))),
-                    'status' => 'completed',
-                    'needs_review' => false,
-                    'sort_order' => $index + 1,
-                    'started_at' => now()->subDays(12),
-                    'completed_at' => $completedAt,
-                ]);
-            }
+            PackageChapter::create([
+                'package_subject_id' => $subject->id,
+                'curriculum_chapter_id' => $oldChapter->id,
+                'title' => $oldChapter->title,
+                'status' => 'completed',
+                'needs_review' => false,
+                'sort_order' => 1,
+                'started_at' => now()->subDays(12),
+                'completed_at' => $completedAt,
+            ]);
 
             $order = Order::create([
                 'user_id' => $student->id,
@@ -216,9 +190,7 @@ class DemoPackageRenewal extends Command
                     'education_level' => 'SMP',
                     'grade' => 'Kelas 7',
                     'chapter' => 'Persamaan Linear',
-                    'subtopic' => $oldTopics->pluck('name')->join(', '),
-                    'topic' => 'Demo paket lama sudah selesai.',
-                    'learning_goal' => 'Menguasai Persamaan Linear.',
+                        'learning_goal' => 'Menguasai Persamaan Linear.',
                     'learning_mode' => 'online',
                     'class_type' => 'private',
                     'scheduled_date' => $start->toDateString(),
@@ -272,7 +244,7 @@ class DemoPackageRenewal extends Command
                 }
             }
 
-            return $package->fresh(['subjects.assignedTeacher', 'subjects.learningTopics']);
+            return $package->fresh(['subjects.assignedTeacher', 'subjects.chapters']);
         });
 
         Cache::forget('learning_catalog.payload');
@@ -381,8 +353,6 @@ class DemoPackageRenewal extends Command
                     'student_approved_at' => null,
                     'payout_status' => 'locked',
                     'objection_deadline' => null,
-                    'session_pin_hash' => null,
-                    'session_pin_expires_at' => null,
                 ]);
                 $booking->bookingRequest?->update([
                     'status' => 'confirmed',
@@ -405,8 +375,8 @@ class DemoPackageRenewal extends Command
         $this->info('Paket 2 dipercepat ke PERTEMUAN TERAKHIR. Pertemuan sebelumnya dianggap selesai hanya untuk demo lokal.');
         $this->line('Booking final ID : '.$last?->id);
         $this->line('Jadwal final : '.$last?->start_at?->format('d-m-Y H:i').' - '.$last?->end_at?->format('H:i'));
-        $this->comment('Sekarang jalankan alur normal: Murid buat PIN -> Tutor check-in -> absen -> target -> murid setujui.');
-        $this->comment('Setelah target disetujui, jalankan: php artisan demo:package-renewal checkout-ready');
+        $this->comment('Paket 2 memakai Session Flow V2: Tutor -> Saya Siap Mengajar, lalu Murid -> Saya Sudah Hadir.');
+        $this->comment('Setelah murid hadir, jalankan: php artisan demo:package-renewal checkout-ready');
 
         return self::SUCCESS;
     }
@@ -436,7 +406,7 @@ class DemoPackageRenewal extends Command
         });
 
         $this->info('Sesi final Paket 2 sekarang siap diakhiri. Refresh tutor.');
-        $this->comment('Tutor: Akhiri Sesi -> Isi Hasil Belajar -> Selesaikan Sesi + foto -> Murid konfirmasi.');
+        $this->comment('Tutor: Akhiri Sesi -> Isi Hasil Belajar -> Murid memilih Sesi Sesuai / Ada masalah.');
         $this->comment('Karena ini sesi terakhir, setelah murid menyetujui Paket 2 harus pindah ke Riwayat.');
 
         return self::SUCCESS;
@@ -450,17 +420,17 @@ class DemoPackageRenewal extends Command
             return self::SUCCESS;
         }
 
-        $source->load('subjects.learningTopics');
+        $source->load('subjects.chapters');
         $renewal = LearningPackage::query()
             ->where('renewal_of_id', $source->id)
-            ->with(['subjects.learningTopics', 'subjects.assignedTeacher', 'subjects.bookingRequest.offers', 'subjects.sessions.booking', 'orders'])
+            ->with(['subjects.chapters', 'subjects.assignedTeacher', 'subjects.bookingRequest.offers', 'subjects.sessions.booking', 'orders'])
             ->latest('id')
             ->first();
 
         $rows = [
             ['Paket 1', $source->package_code],
             ['Status Paket 1', $source->status],
-            ['Progress Paket 1', $source->subjects->flatMap->learningTopics->every(fn ($topic) => $topic->status === 'completed') ? '100% selesai' : 'belum 100%'],
+            ['Progress Paket 1', $source->subjects->flatMap->chapters->every(fn ($topic) => $topic->status === 'completed') ? '100% selesai' : 'belum 100%'],
             ['Bisa diperpanjang sekarang', $source->status === 'completed' ? 'ya' : 'tidak'],
             ['Paket 2', $renewal?->package_code ?: 'belum dibuat lewat UI'],
             ['Status Paket 2', $renewal?->status ?: '-'],
@@ -473,7 +443,7 @@ class DemoPackageRenewal extends Command
         $this->table(['Data', 'Nilai'], $rows);
 
         if ($renewal) {
-            $topics = $renewal->subjects->flatMap->learningTopics;
+            $topics = $renewal->subjects->flatMap->chapters;
             if ($topics->isNotEmpty()) {
                 $this->newLine();
                 $this->line('Materi Paket 2:');
@@ -547,7 +517,6 @@ class DemoPackageRenewal extends Command
                 'is_online' => true,
                 'is_offline' => false,
                 'is_private_active' => true,
-                'is_group_active' => false,
             ]
         );
         foreach ([1 => 'Senin', 2 => 'Selasa', 3 => 'Rabu', 4 => 'Kamis', 5 => 'Jumat', 6 => 'Sabtu', 7 => 'Minggu'] as $day) {
@@ -575,9 +544,9 @@ class DemoPackageRenewal extends Command
         return [$student->fresh(), $teacher->fresh('teacherProfile')];
     }
 
-    private function ensureChapterAndTopics(CurriculumSubject $subject, string $title, array $topicNames, int $sortOrder): array
+    private function ensureChapter(CurriculumSubject $subject, string $title, int $sortOrder): CurriculumChapter
     {
-        $chapter = CurriculumChapter::query()->updateOrCreate(
+        return CurriculumChapter::query()->updateOrCreate(
             [
                 'curriculum_subject_id' => $subject->id,
                 'grade' => 'Kelas 7',
@@ -591,22 +560,6 @@ class DemoPackageRenewal extends Command
                 'source_reference' => 'demo-renewal-local',
             ]
         );
-        $topics = collect($topicNames)->map(function (string $name, int $index) use ($title, $sortOrder) {
-            return LearningTopic::query()->updateOrCreate(
-                [
-                    'subject_name' => self::SUBJECT_NAME,
-                    'education_level' => 'SMP',
-                    'grade' => 'Kelas 7',
-                    'chapter' => $title,
-                    'name' => $name,
-                ],
-                [
-                    'sort_order' => ($sortOrder * 10) + $index,
-                    'is_active' => true,
-                ]
-            );
-        });
-        return [$chapter, $topics];
     }
 
     private function latestSourcePackage(): ?LearningPackage

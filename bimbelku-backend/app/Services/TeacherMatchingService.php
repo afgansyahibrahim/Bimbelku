@@ -36,29 +36,8 @@ class TeacherMatchingService
     public function dispatchNextOffer(BookingRequest $bookingRequest): ?TeacherOffer
     {
         $bookingRequest->refresh();
-        if ($bookingRequest->group_pool_id) {
-            // Semua anggota kelompok memakai satu permintaan jangkar supaya
-            // scheduler dan polling anggota tidak membuat penawaran ganda.
-            $bookingRequest = BookingRequest::query()
-                ->where('group_pool_id', $bookingRequest->group_pool_id)
-                ->whereHas('groupMember', fn ($query) => $query->whereIn('status', ['waiting', 'joined']))
-                ->whereIn('status', ['matching', 'teacher_pending', 'no_teacher'])
-                ->orderByRaw(
-                    'CASE WHEN student_id = ? THEN 0 ELSE 1 END',
-                    [(int) ($bookingRequest->groupPool?->created_by ?? 0)]
-                )
-                ->oldest('id')
-                ->first();
-            if (!$bookingRequest) {
-                return null;
-            }
-        }
 
         if (!in_array($bookingRequest->status, ['matching', 'teacher_pending', 'no_teacher'], true)) {
-            return null;
-        }
-
-        if ($bookingRequest->class_type === 'group' && $bookingRequest->groupPool?->status === 'forming') {
             return null;
         }
 
@@ -120,9 +99,7 @@ class TeacherMatchingService
         }
 
         $endAt = $this->endAt($bookingRequest);
-        $offerRequestIds = $bookingRequest->group_pool_id
-            ? $bookingRequest->groupPool->members()->pluck('booking_request_id')
-            : collect([$bookingRequest->id]);
+        $offerRequestIds = collect([$bookingRequest->id]);
         $offerCycleResetAt = $bookingRequest->matchingOperationLogs()
             ->where('action', 'schedule_changed')
             ->latest('created_at')
@@ -328,9 +305,7 @@ class TeacherMatchingService
             return 0;
         }
 
-        $requestIds = $bookingRequest->group_pool_id
-            ? $bookingRequest->groupPool?->members()->pluck('booking_request_id') ?? collect([$bookingRequest->id])
-            : collect([$bookingRequest->id]);
+        $requestIds = collect([$bookingRequest->id]);
         $alreadyOffered = TeacherOffer::query()
             ->whereIn('booking_request_id', $requestIds)
             ->pluck('teacher_id');
@@ -374,9 +349,7 @@ class TeacherMatchingService
         BookingRequest $bookingRequest
     ): ?string {
         $modeColumn = $bookingRequest->learning_mode === 'offline' ? 'is_offline' : 'is_online';
-        $classTypeColumn = $bookingRequest->class_type === 'group'
-            ? 'is_group_active'
-            : 'is_private_active';
+        $classTypeColumn = 'is_private_active';
 
         $subjectMatches = $profile->subjects()
             ->where('name', $bookingRequest->subject_name)
@@ -463,7 +436,7 @@ class TeacherMatchingService
     ): int {
         return DB::transaction(function () use ($bookingRequest, $actor, $reason, $source) {
             $lockedRequest = BookingRequest::query()
-                ->with(['groupPool.members', 'packageSubject.package'])
+                ->with(['packageSubject.package'])
                 ->lockForUpdate()
                 ->findOrFail($bookingRequest->id);
 
@@ -490,10 +463,6 @@ class TeacherMatchingService
                     'matched_teacher_id' => null,
                     'teacher_response_deadline' => null,
                 ]);
-
-            if ($lockedRequest->group_pool_id) {
-                $lockedRequest->groupPool?->update(['search_radius_km' => $nextRadius]);
-            }
 
             if ($lockedRequest->package_subject_id) {
                 $lockedRequest->packageSubject?->update(['status' => 'matching']);
@@ -543,9 +512,7 @@ class TeacherMatchingService
                     });
             })
             ->whereHas('teacherProfile.subjects', function ($query) use ($bookingRequest, $modeColumn) {
-                $classTypeColumn = $bookingRequest->class_type === 'group'
-                    ? 'is_group_active'
-                    : 'is_private_active';
+                $classTypeColumn = 'is_private_active';
 
                 $query->where('name', $bookingRequest->subject_name)
                     ->where('is_active', true)
@@ -732,7 +699,7 @@ class TeacherMatchingService
             ->where('student_id', $bookingRequest->student_id)
             ->where('status', 'completed')
             ->where('learning_mode', $bookingRequest->learning_mode)
-            ->where('class_type', $bookingRequest->class_type)
+            ->where('class_type', 'private')
             ->whereHas('bookingRequest', function ($query) use ($bookingRequest) {
                 $query->where('subject_name', $bookingRequest->subject_name)
                     ->where('education_level', $bookingRequest->education_level);
@@ -873,7 +840,7 @@ class TeacherMatchingService
     private function matchingFailureContext(BookingRequest $bookingRequest, Collection $alreadyOffered): array
     {
         $modeColumn = $bookingRequest->learning_mode === 'offline' ? 'is_offline' : 'is_online';
-        $classTypeColumn = $bookingRequest->class_type === 'group' ? 'is_group_active' : 'is_private_active';
+        $classTypeColumn = 'is_private_active';
 
         $qualified = User::query()
             ->where('role', 'teacher')
@@ -962,24 +929,15 @@ class TeacherMatchingService
         array $attributes,
         bool $incrementAttempts = false
     ): void {
-        $ids = collect([$bookingRequest->id]);
-        if ($bookingRequest->group_pool_id) {
-            $ids = $bookingRequest->groupPool->members()
-                ->whereIn('status', ['waiting', 'joined'])
-                ->pluck('booking_request_id');
-        }
+        $query = BookingRequest::query()
+            ->whereKey($bookingRequest->id)
+            ->whereIn('status', ['matching', 'teacher_pending', 'no_teacher']);
 
         if ($incrementAttempts) {
-            BookingRequest::query()
-                ->whereIn('id', $ids)
-                ->whereIn('status', ['matching', 'teacher_pending', 'no_teacher'])
-                ->increment('matching_attempts');
+            (clone $query)->increment('matching_attempts');
         }
 
-        BookingRequest::query()
-            ->whereIn('id', $ids)
-            ->whereIn('status', ['matching', 'teacher_pending', 'no_teacher'])
-            ->update($attributes);
+        $query->update($attributes);
     }
 
     private function teacherResponseMinutes(BookingRequest $bookingRequest): int
@@ -998,7 +956,7 @@ class TeacherMatchingService
 
     public function maximumSearchHours(): int
     {
-        return min(48, max(1, (int) (Setting::where('key', 'maximum_search_hours')->value('value') ?? 48)));
+        return min(72, max(1, (int) (Setting::where('key', 'maximum_search_hours')->value('value') ?? 72)));
     }
 
     private function indonesianDayName(int $isoDay): string
@@ -1008,15 +966,7 @@ class TeacherMatchingService
 
     private function activeRequestIds(BookingRequest $bookingRequest): Collection
     {
-        if (!$bookingRequest->group_pool_id) {
-            return collect([$bookingRequest->id]);
-        }
-
-        $ids = $bookingRequest->groupPool?->members()
-            ->whereIn('status', ['waiting', 'joined'])
-            ->pluck('booking_request_id') ?? collect();
-
-        return $ids->isNotEmpty() ? $ids : collect([$bookingRequest->id]);
+        return collect([$bookingRequest->id]);
     }
 
     private function distanceKm(float $lat1, float $lon1, float $lat2, float $lon2): float

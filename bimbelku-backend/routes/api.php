@@ -12,7 +12,6 @@ use App\Http\Controllers\Api\AdminRatingController;
 use App\Http\Controllers\Api\AdminSettingController;
 use App\Http\Controllers\Api\AdminStageFiveController;
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\BookingRequestController;
 use App\Http\Controllers\Api\CheapClassController;
 use App\Http\Controllers\Api\ClassroomController;
 use App\Http\Controllers\Api\CustomerWalletController;
@@ -20,9 +19,7 @@ use App\Http\Controllers\Api\CurriculumChapterController;
 use App\Http\Controllers\Api\CurriculumSubjectController;
 use App\Http\Controllers\Api\HourlyRateController;
 use App\Http\Controllers\Api\LearningCatalogController;
-use App\Http\Controllers\Api\LearningAttachmentController;
 use App\Http\Controllers\Api\LearningSessionController;
-use App\Http\Controllers\Api\LearningTopicController;
 use App\Http\Controllers\Api\NoteController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OrderController;
@@ -47,10 +44,10 @@ use App\Http\Controllers\Api\TutorAvailabilityController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\StageFiveContentController;
 
-Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
-Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
-Route::post('/forgot-password', [PasswordResetController::class, 'sendResetLink'])->middleware('throttle:5,1');
-Route::post('/reset-password', [PasswordResetController::class, 'reset'])->middleware('throttle:5,1');
+Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:auth-register');
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:auth-login');
+Route::post('/forgot-password', [PasswordResetController::class, 'sendResetLink'])->middleware('throttle:auth-forgot-password');
+Route::post('/reset-password', [PasswordResetController::class, 'reset'])->middleware('throttle:auth-reset-password');
 
 Route::get('/learning-catalog', [LearningCatalogController::class, 'index']);
 Route::get('/settings/footer', [PublicController::class, 'getFooterSettings']);
@@ -72,13 +69,13 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
     // berkas tetap terbaca konsisten oleh PHP.
     Route::post('/user', [UserController::class, 'update']);
     Route::put('/user/password', [UserController::class, 'updatePassword'])
-        ->middleware('throttle:5,1');
+        ->middleware('throttle:account-password-change');
     Route::post('/logout', [AuthController::class, 'logout']);
 
     Route::get('/tickets/my', [TicketController::class, 'myTickets']);
-    Route::post('/tickets', [TicketController::class, 'store'])->middleware('throttle:10,1');
+    Route::post('/tickets', [TicketController::class, 'store'])->middleware('throttle:support-ticket-create');
     Route::get('/tickets/{id}', [TicketController::class, 'show']);
-    Route::post('/tickets/{id}/reply', [TicketController::class, 'reply'])->middleware('throttle:20,1');
+    Route::post('/tickets/{id}/reply', [TicketController::class, 'reply'])->middleware('throttle:support-ticket-reply');
     Route::post('/tickets/{id}/close', [TicketController::class, 'close']);
 
     Route::get('/notifications', [NotificationController::class, 'index']);
@@ -88,9 +85,7 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         ->whereNumber('id');
     Route::get('/teachers/{teacher}/documents/{document}', [TeacherDocumentController::class, 'show'])
         ->where('document', 'cv_file|identity_document|live_selfie|qualification_document|certification_document');
-    Route::get('/learning-attachments/{bookingRequest}', [LearningAttachmentController::class, 'show']);
     Route::get('/orders/{order}/payment-proof', [ProtectedFileController::class, 'paymentProof']);
-    Route::get('/bookings/{booking}/completion-evidence', [ProtectedFileController::class, 'completionEvidence']);
     Route::get('/session-reports/{sessionReport}/evidence', [ProtectedFileController::class, 'reportEvidence']);
     Route::get('/disputes/{bookingDispute}/evidence', [ProtectedFileController::class, 'disputeEvidence']);
     Route::get('/payouts/{payout}/proof', [ProtectedFileController::class, 'payoutProof']);
@@ -98,50 +93,40 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
     Route::get('/ticket-replies/{ticketReply}/attachment', [ProtectedFileController::class, 'ticketAttachment']);
     Route::get('/bookings/{booking}/learning-session', [LearningSessionController::class, 'show']);
     Route::get('/session-action/next', [LearningSessionController::class, 'nextAction'])
-        ->middleware('throttle:60,1');
+        ->middleware('throttle:session-action-poll');
     Route::get('/payment-settings/qris', [AdminController::class, 'qrisImage']);
     Route::get('/conversations', [LearningSessionController::class, 'conversations']);
     Route::delete('/conversations/{booking}', [LearningSessionController::class, 'destroyConversation']);
     Route::post('/bookings/{booking}/messages', [LearningSessionController::class, 'storeMessage'])
-        ->middleware('throttle:30,1');
+        ->middleware('throttle:booking-message-send');
     Route::get('/classroom-messages/{classroomMessage}/attachment', [ProtectedFileController::class, 'classroomMessageAttachment']);
     Route::get('/teacher-appeals/{teacherAppeal}/evidence', [ProtectedFileController::class, 'teacherAppealEvidence']);
     Route::get('/bookings/{booking}/schedule-options', [ScheduleChangeController::class, 'options'])
-        ->middleware('throttle:30,1');
+        ->middleware('throttle:booking-schedule-options');
     Route::post('/bookings/{booking}/schedule-changes', [ScheduleChangeController::class, 'store'])
-        ->middleware('throttle:5,1');
+        ->middleware('throttle:booking-schedule-change-create');
     Route::post('/bookings/{booking}/schedule-changes/{scheduleChangeRequest}/respond', [ScheduleChangeController::class, 'respond'])
-        ->middleware('throttle:10,1');
+        ->middleware('throttle:booking-schedule-change-respond');
 
     Route::middleware('role:student')->group(function () {
         Route::get('/student/cheap-classes', [CheapClassController::class, 'index']);
         Route::get('/student/cheap-classes/{cheapClass}', [CheapClassController::class, 'show']);
         Route::post('/student/cheap-classes/{cheapClass}/join', [CheapClassController::class, 'join'])
-            ->middleware(['throttle:10,1', 'idempotency']);
+            ->middleware(['throttle:student-cheap-class-join', 'idempotency']);
         Route::post('/student/cheap-class-enrollments/{cheapClassEnrollment}/cancel', [CheapClassController::class, 'cancel'])
-            ->middleware('throttle:10,1');
+            ->middleware('throttle:student-cheap-class-cancel');
         Route::post('/student/tutor-availability', [TutorAvailabilityController::class, 'check'])
-            ->middleware('throttle:20,1');
-        Route::get('/student/booking-requests', [BookingRequestController::class, 'index']);
-        Route::post('/student/booking-requests', [BookingRequestController::class, 'legacyStoreDisabled'])
-            ->middleware('throttle:10,1');
-        Route::get('/student/booking-requests/{bookingRequest}', [BookingRequestController::class, 'show']);
-        Route::post('/student/booking-requests/{bookingRequest}/expand-radius', [BookingRequestController::class, 'expandRadius']);
-        Route::post('/student/booking-requests/{bookingRequest}/extend', [BookingRequestController::class, 'extendSearch']);
-        Route::post('/student/booking-requests/{bookingRequest}/teacher-decision', [BookingRequestController::class, 'teacherDecision']);
-        Route::post('/student/booking-requests/{bookingRequest}/group-decision', [BookingRequestController::class, 'groupDecision']);
-        Route::post('/student/booking-requests/{bookingRequest}/cancel', [BookingRequestController::class, 'cancel']);
+            ->middleware('throttle:student-tutor-availability');
         Route::post('/student/bookings/{booking}/approve', [SessionWorkflowController::class, 'studentApprove']);
         Route::post('/student/bookings/{booking}/dispute', [SessionWorkflowController::class, 'studentDispute']);
         Route::post('/student/bookings/{booking}/teacher-absence', [SessionWorkflowController::class, 'reportTeacherAbsence']);
-        Route::post('/student/bookings/{booking}/session-pin', [LearningSessionController::class, 'generatePin'])
-            ->middleware('throttle:student-session-pin');
-        Route::post('/student/bookings/{booking}/learning-plan/acknowledge', [LearningSessionController::class, 'acknowledgePlan']);
+        Route::post('/student/bookings/{booking}/presence-confirm', [LearningSessionController::class, 'studentConfirmPresence'])
+            ->middleware('throttle:student-session-presence-confirm');
 
         Route::get('/student/orders/{id}/status', [StudentController::class, 'checkOrderStatus']);
         Route::get('/student/wallet', [CustomerWalletController::class, 'show']);
         Route::post('/student/refunds/{refund}/destination', [StudentRefundController::class, 'selectDestination'])
-            ->middleware(['throttle:10,1', 'idempotency', 'finance.audit:refund_destination_select']);
+            ->middleware(['throttle:student-refund-destination', 'idempotency', 'finance.audit:refund_destination_select']);
         Route::get('/student/orders/{order}/wallet-quote', [CustomerWalletController::class, 'quote']);
         Route::get('/student/classes', [StudentController::class, 'getMyClasses']);
         Route::post('/orders/{id}/pay', [OrderController::class, 'pay'])
@@ -157,16 +142,16 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         Route::post('/student/packages', [StudentPackageController::class, 'store'])
             ->middleware(['throttle:student-package-create', 'idempotency']);
         Route::post('/student/packages/{learningPackage}/retry', [StudentPackageController::class, 'retryMatching'])
-            ->middleware('throttle:5,1');
+            ->middleware('throttle:student-package-retry');
         Route::post('/student/packages/{learningPackage}/reschedule', [StudentPackageController::class, 'reschedule'])
-            ->middleware('throttle:5,1');
+            ->middleware('throttle:student-package-reschedule');
         Route::post('/student/packages/{learningPackage}/cancel', [StudentPackageController::class, 'cancel']);
         Route::get('/student/packages/{learningPackage}', [StudentPackageController::class, 'show']);
         Route::get('/student/vouchers', [StudentPackageController::class, 'vouchers']);
         Route::post('/student/promotions/preview', [StudentPackageController::class, 'previewPromotion'])
-            ->middleware('throttle:20,1');
+            ->middleware('throttle:student-promotion-preview');
         Route::post('/student/promotions/{promotion}/claim', [StudentPackageController::class, 'claim'])
-            ->middleware('throttle:10,1');
+            ->middleware('throttle:student-promotion-claim');
         Route::post('/student/packages/quote', [StudentPackageController::class, 'previewPromotion'])
             ->middleware('throttle:student-package-quote');
     });
@@ -174,41 +159,37 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
     Route::prefix('teacher')->middleware('role:teacher')->group(function () {
         Route::get('/cheap-classes', [TeacherCheapClassController::class, 'index']);
         Route::put('/cheap-classes/{cheapClass}/meeting-link', [TeacherCheapClassController::class, 'updateMeetingLink'])
-            ->middleware('throttle:10,1');
+            ->middleware('throttle:teacher-cheap-class-meeting-link');
         Route::put('/cheap-classes/{cheapClass}/progress', [TeacherCheapClassController::class, 'updateProgress'])
-            ->middleware('throttle:20,1');
+            ->middleware('throttle:teacher-cheap-class-progress');
         Route::get('/offers', [TeacherOfferController::class, 'index']);
         Route::post('/offers/{teacherOffer}/accept', [TeacherOfferController::class, 'accept'])
-            ->middleware('throttle:10,1');
+            ->middleware('throttle:teacher-offer-action');
         Route::post('/offers/{teacherOffer}/reject', [TeacherOfferController::class, 'reject'])
-            ->middleware('throttle:10,1');
+            ->middleware('throttle:teacher-offer-action');
 
         Route::get('/dashboard-v2', [TeacherOperationsController::class, 'dashboard']);
         Route::get('/profile', [TeacherController::class, 'getProfile']);
         Route::post('/profile', [TeacherController::class, 'updateProfile']);
         Route::post('/subjects', [TeacherController::class, 'syncSubjects']);
         Route::post('/bank', [TeacherController::class, 'updateBank'])
-            ->middleware(['throttle:5,1', 'idempotency', 'finance.audit:teacher_bank_change']);
+            ->middleware(['throttle:teacher-bank-change', 'idempotency', 'finance.audit:teacher_bank_change']);
         Route::get('/salary', [TeacherController::class, 'getSalaryData']);
         Route::get('/payout-requests', [TeacherOperationsController::class, 'payoutRequests']);
         Route::post('/payout-requests', [TeacherOperationsController::class, 'requestPayout'])
-            ->middleware(['throttle:5,1', 'idempotency', 'finance.audit:teacher_payout_request']);
+            ->middleware(['throttle:teacher-payout-request', 'idempotency', 'finance.audit:teacher_payout_request']);
         Route::get('/performance', [TeacherOperationsController::class, 'performance']);
         Route::post('/point-ledgers/{teacherPointLedger}/appeals', [TeacherOperationsController::class, 'storeAppeal'])
-            ->middleware('throttle:3,1');
+            ->middleware('throttle:teacher-point-appeal');
         Route::get('/classes', [ClassroomController::class, 'index']);
         Route::get('/package-subjects/{packageSubject}/progress', [ClassroomController::class, 'packageSubjectProgress']);
         Route::put('/classes/{id}', [ClassroomController::class, 'update']);
-        Route::post('/bookings/{booking}/complete', [SessionWorkflowController::class, 'teacherComplete']);
         Route::post('/bookings/{booking}/absence', [SessionWorkflowController::class, 'reportStudentAbsence']);
         Route::post('/bookings/{booking}/emergency', [SessionWorkflowController::class, 'reportEmergency']);
-        Route::post('/bookings/{booking}/check-in', [LearningSessionController::class, 'teacherCheckIn'])
-            ->middleware('throttle:10,1');
+        Route::post('/bookings/{booking}/ready', [LearningSessionController::class, 'teacherReady'])
+            ->middleware('throttle:teacher-session-ready');
         Route::post('/bookings/{booking}/check-out', [LearningSessionController::class, 'teacherCheckOut'])
-            ->middleware('throttle:10,1');
-        Route::put('/bookings/{booking}/participant-attendance', [LearningSessionController::class, 'storeParticipantAttendance'])
-            ->middleware('throttle:10,1');
-        Route::put('/bookings/{booking}/learning-plan', [LearningSessionController::class, 'storePlan']);
+            ->middleware('throttle:teacher-session-checkout');
         Route::post('/bookings/{booking}/progress-reports', [LearningSessionController::class, 'storeProgressReport']);
         Route::get('/schedule', [TeacherScheduleController::class, 'index']);
         Route::post('/schedule', [TeacherScheduleController::class, 'update']);
@@ -222,20 +203,20 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         Route::get('/cheap-class-templates/recurring', [AdminCheapClassController::class, 'recurringTemplates']);
         Route::get('/cheap-class-templates', [AdminCheapClassController::class, 'index']);
         Route::post('/cheap-class-templates', [AdminCheapClassController::class, 'store'])
-            ->middleware(['throttle:10,1', 'idempotency']);
+            ->middleware(['throttle:admin-cheap-class-template-create', 'idempotency']);
         Route::patch('/cheap-class-templates/{cheapClassTemplate}/recurrence', [AdminCheapClassController::class, 'updateRecurrence'])
-            ->middleware(['throttle:10,1', 'idempotency']);
+            ->middleware(['throttle:admin-cheap-class-template-recurrence', 'idempotency']);
         Route::get('/cheap-classes/schedule', [AdminCheapClassController::class, 'schedule']);
         Route::post('/cheap-classes/{cheapClass}/cancel', [AdminCheapClassController::class, 'cancel'])
             ->middleware(['idempotency', 'finance.audit:cheap_class_cancel']);
         Route::delete('/cheap-classes/{cheapClass}', [AdminCheapClassController::class, 'destroy']);
         Route::post('/cheap-classes/{cheapClass}/retry-teacher', [AdminCheapClassController::class, 'retryTeacher'])
-            ->middleware('throttle:10,1');
+            ->middleware('throttle:admin-cheap-class-retry-teacher');
         Route::post('/cheap-classes/{cheapClass}/finalize', [AdminCheapClassController::class, 'finalize']);
         Route::post('/cheap-classes/{cheapClass}/sessions/{session}/verify', [AdminCheapClassController::class, 'verifySessionReport'])
-            ->middleware(['throttle:20,1', 'idempotency']);
+            ->middleware(['throttle:admin-cheap-class-session-review', 'idempotency']);
         Route::post('/cheap-classes/{cheapClass}/sessions/{session}/request-revision', [AdminCheapClassController::class, 'requestSessionReportRevision'])
-            ->middleware(['throttle:20,1', 'idempotency']);
+            ->middleware(['throttle:admin-cheap-class-session-review', 'idempotency']);
         Route::get('/audit-log', [AdminAccessController::class, 'audit']);
 
         Route::post('/notifications/send', [NotificationController::class, 'send']);
@@ -244,10 +225,6 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         Route::post('/hourly-rates', [HourlyRateController::class, 'store']);
         Route::post('/hourly-rates/defaults', [HourlyRateController::class, 'updateDefaults']);
         Route::delete('/hourly-rates/{hourlyRate}', [HourlyRateController::class, 'destroy']);
-        Route::get('/learning-topics', [LearningTopicController::class, 'index']);
-        Route::post('/learning-topics', [LearningTopicController::class, 'store']);
-        Route::put('/learning-topics/{learningTopic}', [LearningTopicController::class, 'update']);
-        Route::delete('/learning-topics/{learningTopic}', [LearningTopicController::class, 'destroy']);
 
         Route::get('/pending-teachers', [AdminController::class, 'getPendingTeachers']);
         Route::get('/history-teachers', [AdminController::class, 'getHistoryTeachers']);
@@ -274,11 +251,11 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         Route::get('/tutor-searches/{bookingRequest}/candidates', [AdminMatchingController::class, 'candidates']);
         Route::get('/tutor-searches/{bookingRequest}', [AdminMatchingController::class, 'show']);
         Route::post('/tutor-searches/{bookingRequest}/synchronize', [AdminMatchingController::class, 'synchronize'])
-            ->middleware('throttle:20,1');
+            ->middleware('throttle:admin-matching-synchronize');
         Route::post('/tutor-searches/{bookingRequest}/expand-radius', [AdminMatchingController::class, 'expandRadius'])
-            ->middleware('throttle:10,1');
+            ->middleware('throttle:admin-matching-expand-radius');
         Route::post('/tutor-searches/{bookingRequest}/assign-teacher', [AdminMatchingController::class, 'assignTeacher'])
-            ->middleware('throttle:10,1');
+            ->middleware('throttle:admin-matching-assign-teacher');
         Route::get('/cases', [SessionWorkflowController::class, 'adminCases']);
         Route::post('/teacher-appeals/{teacherAppeal}/resolve', [TeacherOperationsController::class, 'resolveAppeal']);
         Route::post('/disputes/{bookingDispute}/resolve', [SessionWorkflowController::class, 'resolveDispute']);

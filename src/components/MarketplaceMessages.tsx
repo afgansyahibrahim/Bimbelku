@@ -28,7 +28,7 @@ type Conversation = {
   title: string;
   counterpart_name: string;
   counterpart_avatar?: string | null;
-  class_type: "private" | "group";
+  class_type: "private";
   status: string;
   start_at: string;
   unread_count: number;

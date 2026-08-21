@@ -397,7 +397,6 @@ class TeacherController extends Controller
                     'is_online' => $subject['is_online'],
                     'is_offline' => $subject['is_offline'],
                     'is_private_active' => true,
-                    'is_group_active' => true,
                 ]);
             }
 

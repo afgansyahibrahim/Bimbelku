@@ -1,75 +1,39 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { Monitor, MapPin, User, ShieldCheck } from "lucide-react";
+import { BookOpenCheck, CalendarCheck2, CreditCard, ShieldCheck } from "lucide-react";
 import Reveal from "@/components/Reveal";
 
-const features = [
-  {
-    icon: Monitor,
-    title: "Kelas Online",
-    description: "Belajar melalui tautan pertemuan yang dibagikan tutor",
-    color: "bg-teal-light text-teal",
-  },
-  {
-    icon: MapPin,
-    title: "Kelas Offline",
-    description: "Tutor terdekat datang ke alamat murid dalam radius layanan",
-    color: "bg-coral-light text-coral-dark",
-  },
-  {
-    icon: User,
-    title: "Privat 1-on-1",
-    description: "Fokus penuh dengan pembelajaran personal yang intensif",
-    color: "bg-secondary text-secondary-foreground",
-  },
-  {
-    icon: ShieldCheck,
-    title: "Tutor Terverifikasi",
-    description: "Identitas, kompetensi, dan kesiapan tutor diperiksa admin",
-    color: "bg-accent/20 text-accent",
-  },
-];
+const trustItems = [
+  { icon: ShieldCheck, title: "Tutor terverifikasi", description: "Identitas, profil, dan kesiapan tutor diperiksa sebelum mengajar.", className: "bg-indigo-50 text-indigo-700" },
+  { icon: CreditCard, title: "Pembayaran tercatat", description: "Tagihan, verifikasi pembayaran, saldo, dan riwayat tersimpan dalam sistem.", className: "bg-orange-50 text-orange-700" },
+  { icon: BookOpenCheck, title: "Progress terdokumentasi", description: "Perkembangan materi dicatat per Bab supaya murid mudah melihat apa yang sudah dipelajari.", className: "bg-emerald-50 text-emerald-700" },
+  { icon: CalendarCheck2, title: "Jadwal sesuai kebutuhan", description: "Hari dan jam dipilih sejak awal dan menjadi bagian dari proses pencocokan tutor.", className: "bg-sky-50 text-sky-700" },
+] as const;
 
-const FeaturesSection = () => {
+export default function FeaturesSection() {
   return (
-    <section className="py-20 bg-background">
-      <div className="container mx-auto px-4">
-        <div className="text-center mb-12 flex flex-col items-center">
-          <Reveal>
-             <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
-                Pilih Gaya Belajar yang Cocok
-             </h2>
+    <section className="bg-white py-20 sm:py-24">
+      <div className="container mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="grid items-start gap-8 lg:grid-cols-[.82fr_1.18fr] lg:gap-12">
+          <Reveal direction="right">
+            <div className="rounded-[2rem] bg-slate-950 p-7 text-white shadow-xl sm:p-9">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-300">Kenapa BimbelKu?</p>
+              <h2 className="mt-4 text-balance text-3xl font-black leading-tight sm:text-4xl">Bukan cuma menemukan tutor, tetapi membuat proses belajar lebih terarah.</h2>
+              <p className="mt-5 text-sm leading-7 text-slate-300 sm:text-base">Dari transaksi sampai progress belajar, informasi penting tetap tercatat tanpa membuat alur murid dan tutor terasa berat.</p>
+            </div>
           </Reveal>
-          <Reveal delay={0.2}>
-             <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-                Layanan privat dirancang untuk kebutuhan akademik dan keterampilan umum
-             </p>
-          </Reveal>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {features.map((feature, index) => (
-            <Reveal 
-                key={feature.title} 
-                delay={index * 0.15} 
-                direction="up" 
-                width="100%"
-                className="h-full"
-            >
-                <Card className="border-0 bg-card hover-rise cursor-default h-full">
-                <CardContent className="p-6 text-center">
-                    <div className={`w-14 h-14 rounded-2xl ${feature.color} flex items-center justify-center mx-auto mb-4`}>
-                    <feature.icon className="h-7 w-7" />
-                    </div>
-                    <h3 className="font-bold text-lg mb-2">{feature.title}</h3>
-                    <p className="text-muted-foreground text-sm">{feature.description}</p>
-                </CardContent>
-                </Card>
-            </Reveal>
-          ))}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {trustItems.map(({ icon: Icon, title, description, className }, index) => (
+              <Reveal key={title} delay={index * 0.07} direction="up" width="100%" className="h-full">
+                <article className="h-full rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-shadow duration-300 hover:shadow-md">
+                  <div className={`grid h-12 w-12 place-items-center rounded-2xl ${className}`}><Icon className="h-6 w-6" /></div>
+                  <h3 className="mt-5 text-lg font-black text-slate-900">{title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
+                </article>
+              </Reveal>
+            ))}
+          </div>
         </div>
       </div>
     </section>
   );
-};
-
-export default FeaturesSection;
+}

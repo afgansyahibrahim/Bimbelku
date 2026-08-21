@@ -24,7 +24,7 @@ import {
   cheapClassChapterStats,
   isCheapClassProgressVisible,
   isPackageProgressVisible,
-  packageTopicStats,
+  packageChapterStats,
   readPackageRows,
 } from "@/lib/studentProgress";
 
@@ -101,7 +101,7 @@ export default function LearningProgress() {
             <div className="min-w-0 flex-1">
               <p className="text-[11px] font-black uppercase tracking-[.18em] text-blue-200">Ruang belajar</p>
               <h1 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">Perkembangan Belajar</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Pantau posisi materi tiap program. Pilih satu program untuk melihat Bab, Subbab, dan riwayat perkembangan setiap sesi.</p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Pantau posisi materi tiap program. Pilih satu program untuk melihat progress per Bab dan riwayat perkembangan setiap sesi.</p>
               <div className="mt-5 flex flex-wrap gap-2">
                 <HeaderMetric label="Berjalan" value={activeCount} />
                 <HeaderMetric label="Selesai" value={completedCount} />
@@ -115,7 +115,7 @@ export default function LearningProgress() {
           <div className="flex min-w-0 gap-2 overflow-x-auto pb-1 sm:pb-0">
             <FilterButton active={filter === "all"} onClick={() => setFilter("all")}>Semua</FilterButton>
             <FilterButton active={filter === "package"} onClick={() => setFilter("package")}>Paket Belajar</FilterButton>
-            <FilterButton active={filter === "cheap_class"} onClick={() => setFilter("cheap_class")}>Kelas Murah</FilterButton>
+            <FilterButton active={filter === "cheap_class"} onClick={() => setFilter("cheap_class")}>Kelas Kelompok</FilterButton>
           </div>
           <button type="button" onClick={() => void load(true)} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black text-slate-600 transition hover:bg-indigo-50 hover:text-indigo-700">
             <RefreshCw size={15} /> Muat ulang
@@ -153,14 +153,14 @@ export default function LearningProgress() {
 }
 
 function PackageProgressCard({ item }: { item: StudentPackageProgress }) {
-  const stats = packageTopicStats(item);
+  const stats = packageChapterStats(item);
   const subjects = item.subjects || [];
   const names = subjects.map((subject) => subject.name).filter(Boolean).join(" · ");
   const teachers = subjects.map((subject) => subject.teacher).filter((teacher): teacher is NonNullable<typeof teacher> => Boolean(teacher));
   const firstTeacher = teachers[0];
   const teacherLabel = firstTeacher ? (teachers.length > 1 ? `${firstTeacher.name} +${teachers.length - 1} tutor` : firstTeacher.name) : "Tutor akan ditampilkan setelah terhubung";
-  const activeTopics = subjects.flatMap((subject) => (subject.learning_topics || []).filter((topic) => topic.status === "in_progress" || topic.status === "review_needed"));
-  const nextTopic = activeTopics[0] || subjects.flatMap((subject) => subject.learning_topics || []).find((topic) => topic.status !== "completed");
+  const activeChapters = subjects.flatMap((subject) => (subject.learning_chapters || []).filter((chapter) => chapter.status === "in_progress" || chapter.status === "review_needed"));
+  const nextChapter = activeChapters[0] || subjects.flatMap((subject) => subject.learning_chapters || []).find((chapter) => chapter.status !== "completed");
 
   return (
     <article className="group overflow-hidden rounded-[1.55rem] border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/55 to-blue-50/70 shadow-sm transition duration-300 hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg">
@@ -190,15 +190,15 @@ function PackageProgressCard({ item }: { item: StudentPackageProgress }) {
           <div className="mt-3 grid gap-2 border-t border-indigo-100 pt-3 sm:grid-cols-[1fr_auto] sm:items-end">
             <div className="min-w-0">
               <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Fokus materi saat ini</p>
-              <p className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-slate-700">{nextTopic ? `${nextTopic.chapter ? `${nextTopic.chapter} · ` : ""}${nextTopic.title}` : stats.total > 0 ? "Seluruh subbab sudah selesai" : "Materi belum disusun"}</p>
+              <p className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-slate-700">{nextChapter ? nextChapter.chapter : stats.total > 0 ? "Seluruh Bab sudah selesai" : "Materi belum disusun"}</p>
             </div>
-            <p className="text-[11px] font-bold text-slate-400">{stats.completed}/{stats.total} subbab selesai</p>
+            <p className="text-[11px] font-bold text-slate-400">{stats.completed}/{stats.total} Bab selesai</p>
           </div>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-semibold text-slate-500">
           <span className="inline-flex items-center gap-1.5"><CalendarDays size={14} className="text-indigo-500" />{item.used_sessions}/{item.total_sessions} pertemuan selesai</span>
-          <span className="inline-flex items-center gap-1.5"><History size={14} className="text-indigo-500" />{stats.inProgress} subbab sedang dipelajari</span>
+          <span className="inline-flex items-center gap-1.5"><History size={14} className="text-indigo-500" />{stats.inProgress} Bab sedang dipelajari</span>
         </div>
 
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -229,7 +229,7 @@ function CheapClassProgressCard({ item }: { item: CheapClassProgress }) {
             {item.teacher?.photo ? <img src={item.teacher.photo} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <Users size={22} />}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2"><p className="text-[10px] font-black uppercase tracking-[.16em] text-indigo-600">{item.subject_name}</p><span className="text-indigo-200">•</span><span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Kelas Murah</span></div>
+            <div className="flex flex-wrap items-center gap-2"><p className="text-[10px] font-black uppercase tracking-[.16em] text-indigo-600">{item.subject_name}</p><span className="text-indigo-200">•</span><span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Kelas Kelompok</span></div>
             <div className="mt-1 flex flex-wrap items-start justify-between gap-2">
               <h2 className="min-w-0 break-words text-base font-black text-slate-900 sm:text-lg">{[item.education_level, item.grade].filter(Boolean).join(" · ") || "Kelas belajar bersama"}</h2>
               <span className={`shrink-0 rounded-full border px-3 py-1 text-[10px] font-black uppercase ${statusTone(item.status)}`}>{statusLabel[item.status] || item.status}</span>

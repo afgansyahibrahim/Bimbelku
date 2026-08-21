@@ -1,8 +1,8 @@
 import { notify } from "@/lib/notify";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Menu, X, User, LogOut, LayoutDashboard } from "lucide-react";
+import { BookOpenCheck, LayoutDashboard, LogOut, Menu, User, X } from "lucide-react";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import StudentPackageLink from "@/components/StudentPackageLink";
 
@@ -21,6 +21,7 @@ const readStoredUser = () => {
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const [user, setUser] = useState<any>(() => readStoredUser());
   const location = useLocation();
   const navigate = useNavigate();
@@ -31,10 +32,20 @@ const Navbar = () => {
 
   const navLinks = [
     { href: "/student/packages/new", label: "Cari Bimbingan", studentOnly: true },
-    { href: "/why-us", label: "Kenapa Harus Belajar?" },
+    { href: "/why-us", label: "Kenapa BimbelKu?" },
   ];
 
-  // 2. Fungsi Logout
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 16);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    setIsOpen(false);
+  }, [location.pathname, location.search]);
+
   const handleLogout = async () => {
     const approved = await confirm({
       title: "Keluar dari akun?",
@@ -60,7 +71,6 @@ const Navbar = () => {
     }
   };
 
-  // 3. Helper Link Dashboard
   const getDashboardLink = () => {
     if (!user) return "/login";
     if (user.role === "admin") return "/admin";
@@ -69,143 +79,149 @@ const Navbar = () => {
   };
 
   return (
-    // Menggunakan style asli (transparan/blur) karena logo sudah aman (transparan)
-    <nav className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-md">
-      <div className="container mx-auto px-4">
-        <div className="flex h-16 items-center justify-between">
-          
-          {/* === LOGO === */}
-          <Link to="/" className="flex items-center gap-3">
-            <img 
-              src="/bimbel_cerdas.png" 
-              alt="Logo BimbelKu" 
-              loading="eager"
-              decoding="async"
-              className="h-10 w-auto object-contain" 
-            />
-            <span className="text-xl font-bold text-foreground"></span>
+    <nav
+      className={`sticky top-0 z-50 w-full border-b transition-[background-color,box-shadow,border-color] duration-300 ${
+        scrolled
+          ? "border-slate-200/80 bg-white/95 shadow-sm backdrop-blur-xl"
+          : "border-slate-200/60 bg-white/90 backdrop-blur-lg"
+      }`}
+    >
+      <div className="container mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="flex h-[4.25rem] items-center justify-between gap-4">
+          <Link
+            to="/"
+            className="group inline-flex shrink-0 items-center gap-2.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            aria-label="BimbelKu - halaman utama"
+          >
+            <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-sm transition-transform duration-300 group-hover:-rotate-2 group-hover:scale-105">
+              <BookOpenCheck className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <span className="text-lg font-black tracking-tight text-slate-900 sm:text-xl">
+              Bimbel<span className="text-primary">Ku</span>
+            </span>
           </Link>
 
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-8">
+          <div className="hidden items-center gap-1 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-1 md:flex">
             {navLinks.map((link) => {
-              const className = `text-sm font-medium transition-colors hover:text-primary ${isNavActive(link.href) ? "text-primary" : "text-muted-foreground"}`;
+              const className = `rounded-xl px-4 py-2 text-sm font-bold transition-colors ${
+                isNavActive(link.href)
+                  ? "bg-white text-primary shadow-sm"
+                  : "text-slate-600 hover:bg-white/80 hover:text-slate-950"
+              }`;
               return link.studentOnly ? (
-                <StudentPackageLink key={link.href} to={link.href} className={className}>{link.label}</StudentPackageLink>
+                <StudentPackageLink key={link.href} to={link.href} className={className}>
+                  {link.label}
+                </StudentPackageLink>
               ) : (
-                <Link key={link.href} to={link.href} className={className}>{link.label}</Link>
+                <Link key={link.href} to={link.href} className={className}>
+                  {link.label}
+                </Link>
               );
             })}
           </div>
 
-          {/* Desktop Actions */}
-          <div className="hidden md:flex items-center gap-3">
+          <div className="hidden items-center gap-2 md:flex">
             {user ? (
-              // --- TAMPILAN SUDAH LOGIN ---
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 mr-2">
-                   <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-700 font-bold text-xs border border-orange-200">
-                      {user.name.charAt(0).toUpperCase()}
-                   </div>
-                   <div className="flex flex-col">
-                      <span className="text-xs font-bold text-gray-900 leading-none">{user.name.split(" ")[0]}</span>
-                      <span className="text-[10px] text-gray-500 capitalize leading-none mt-1">{user.role}</span>
-                   </div>
+              <>
+                <div className="mr-1 flex items-center gap-2 rounded-xl px-2 py-1.5">
+                  <div className="grid h-8 w-8 place-items-center rounded-full border border-orange-200 bg-orange-50 text-xs font-black text-orange-700">
+                    {(user.name || "U").charAt(0).toUpperCase()}
+                  </div>
+                  <div className="max-w-28 leading-none">
+                    <span className="block truncate text-xs font-black text-slate-900">{(user.name || "Pengguna").split(" ")[0]}</span>
+                    <span className="mt-1 block text-[10px] font-semibold capitalize text-slate-500">{user.role}</span>
+                  </div>
                 </div>
-
                 <Link to={getDashboardLink()}>
-                  <Button size="sm" className="bg-orange-600 hover:bg-orange-700 text-white shadow-md shadow-orange-200">
-                    <LayoutDashboard size={16} className="mr-2"/> Dashboard Saya
+                  <Button size="sm" className="rounded-xl font-bold">
+                    <LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard
                   </Button>
                 </Link>
-                
-                {/* [MODIFIKASI] Tombol Logout jadi Teks "Keluar" */}
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={handleLogout} 
-                  className="text-red-600 hover:text-red-700 hover:bg-red-50 font-bold"
-                >
-                   Keluar
+                <Button variant="ghost" size="sm" onClick={handleLogout} className="rounded-xl font-bold text-red-600 hover:bg-red-50 hover:text-red-700">
+                  Keluar
                 </Button>
-              </div>
+              </>
             ) : (
-              // --- TAMPILAN TAMU ---
               <>
                 <Link to="/login">
-                  <Button variant="ghost" size="sm">
-                    Masuk
-                  </Button>
+                  <Button variant="ghost" size="sm" className="rounded-xl font-bold">Masuk</Button>
                 </Link>
                 <Link to="/register">
-                  <Button size="sm">Daftar Gratis</Button>
+                  <Button size="sm" className="rounded-xl px-4 font-black shadow-sm">Daftar Gratis</Button>
                 </Link>
               </>
             )}
           </div>
 
-          {/* Mobile Menu Button */}
           <button
-            className="md:hidden p-2"
-            onClick={() => setIsOpen(!isOpen)}
-            aria-label="Toggle menu"
+            type="button"
+            className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50 md:hidden"
+            onClick={() => setIsOpen((value) => !value)}
+            aria-label={isOpen ? "Tutup menu" : "Buka menu"}
+            aria-expanded={isOpen}
           >
-            {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
+      </div>
 
-        {/* Mobile Menu */}
-        {isOpen && (
-          <div className="md:hidden py-4 border-t animate-fade-in">
-            <div className="flex flex-col gap-4">
+      {isOpen && (
+        <div className="border-t border-slate-100 bg-white/98 shadow-xl backdrop-blur-xl md:hidden">
+          <div className="container mx-auto max-w-7xl px-4 py-4 sm:px-6">
+            <div className="flex flex-col gap-1">
               {navLinks.map((link) => {
-                const className = `text-sm font-medium transition-colors hover:text-primary ${isNavActive(link.href) ? "text-primary" : "text-muted-foreground"}`;
-                const closeMenu = () => setIsOpen(false);
+                const className = `rounded-xl px-3 py-3 text-sm font-bold ${
+                  isNavActive(link.href) ? "bg-orange-50 text-primary" : "text-slate-700 hover:bg-slate-50"
+                }`;
                 return link.studentOnly ? (
-                  <StudentPackageLink key={link.href} to={link.href} className={className} onNavigate={closeMenu}>{link.label}</StudentPackageLink>
+                  <StudentPackageLink key={link.href} to={link.href} className={className} onNavigate={() => setIsOpen(false)}>
+                    {link.label}
+                  </StudentPackageLink>
                 ) : (
-                  <Link key={link.href} to={link.href} className={className} onClick={closeMenu}>{link.label}</Link>
+                  <Link key={link.href} to={link.href} className={className} onClick={() => setIsOpen(false)}>
+                    {link.label}
+                  </Link>
                 );
               })}
-              
-              <div className="flex flex-col gap-2 pt-4 border-t">
+
+              <div className="mt-2 border-t border-slate-100 pt-3">
                 {user ? (
-                   // MOBILE: SUDAH LOGIN
-                   <>
-                      <div className="flex items-center gap-3 px-2 mb-2">
-                        <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-700 font-bold">
-                            {user.name.charAt(0).toUpperCase()}
-                        </div>
-                        <span className="font-bold text-sm">{user.name}</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3">
+                      <div className="grid h-9 w-9 place-items-center rounded-full bg-orange-100 text-sm font-black text-orange-700">
+                        {(user.name || "U").charAt(0).toUpperCase()}
                       </div>
-                      <Link to={getDashboardLink()} onClick={() => setIsOpen(false)}>
-                        <Button className="w-full justify-start bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100">
-                          <LayoutDashboard className="h-4 w-4 mr-2" /> Dashboard Saya
-                        </Button>
-                      </Link>
-                      <Button variant="ghost" onClick={handleLogout} className="w-full justify-start text-red-600">
-                         <LogOut className="h-4 w-4 mr-2" /> Keluar
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-slate-900">{user.name || "Pengguna"}</p>
+                        <p className="mt-0.5 text-xs font-semibold capitalize text-slate-500">{user.role}</p>
+                      </div>
+                    </div>
+                    <Link to={getDashboardLink()} onClick={() => setIsOpen(false)}>
+                      <Button className="w-full justify-start rounded-xl font-bold">
+                        <LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard Saya
                       </Button>
-                   </>
+                    </Link>
+                    <Button variant="ghost" onClick={handleLogout} className="w-full justify-start rounded-xl font-bold text-red-600 hover:bg-red-50">
+                      <LogOut className="mr-2 h-4 w-4" /> Keluar
+                    </Button>
+                  </div>
                 ) : (
-                   // MOBILE: TAMU
-                   <>
+                  <div className="grid gap-2 sm:grid-cols-2">
                     <Link to="/login" onClick={() => setIsOpen(false)}>
-                      <Button variant="ghost" className="w-full justify-start">
-                        <User className="h-4 w-4 mr-2" />
-                        Masuk
+                      <Button variant="outline" className="w-full justify-center rounded-xl font-bold">
+                        <User className="mr-2 h-4 w-4" /> Masuk
                       </Button>
                     </Link>
                     <Link to="/register" onClick={() => setIsOpen(false)}>
-                      <Button className="w-full">Daftar Gratis</Button>
+                      <Button className="w-full rounded-xl font-black">Daftar Gratis</Button>
                     </Link>
-                   </>
+                  </div>
                 )}
               </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </nav>
   );
 };

@@ -1,0 +1,145 @@
+import { useEffect, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { ChevronDown, CircleHelp, Settings, UserRound } from "lucide-react";
+import LogoutButton from "@/components/LogoutButton";
+
+type Accent = "student" | "teacher" | "admin";
+
+const styles: Record<Accent, { ring: string; badge: string; icon: string }> = {
+  student: {
+    ring: "from-blue-500 to-indigo-600 shadow-blue-500/20",
+    badge: "bg-blue-50 text-blue-700",
+    icon: "bg-blue-50 text-blue-700",
+  },
+  teacher: {
+    ring: "from-indigo-500 to-violet-600 shadow-indigo-500/20",
+    badge: "bg-indigo-50 text-indigo-700",
+    icon: "bg-indigo-50 text-indigo-700",
+  },
+  admin: {
+    ring: "from-orange-500 to-rose-600 shadow-orange-500/20",
+    badge: "bg-orange-50 text-orange-700",
+    icon: "bg-orange-50 text-orange-700",
+  },
+};
+
+export default function ProfileQuickMenu({
+  user,
+  accent,
+  roleLabel,
+  profileTo,
+  accountTo,
+  helpTo,
+}: {
+  user: any;
+  accent: Accent;
+  roleLabel: string;
+  profileTo: string;
+  accountTo?: string;
+  helpTo?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const location = useLocation();
+  const tone = styles[accent];
+  const image = user?.avatar_url || user?.avatar || user?.photo || user?.photo_url;
+  const initial = String(user?.name || roleLabel || "U").trim().charAt(0).toUpperCase();
+
+  useEffect(() => setOpen(false), [location.pathname, location.search]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    const isMobile = !window.matchMedia("(min-width: 1024px)").matches;
+    const previousOverflow = document.body.style.overflow;
+    if (isMobile) document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", close);
+    return () => {
+      if (isMobile) document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", close);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative border-l border-slate-200 pl-1.5 sm:pl-4">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Buka menu profil"
+        className="group flex min-h-11 min-w-11 items-center justify-end gap-2 rounded-2xl px-1.5 py-1 transition hover:bg-slate-50 sm:gap-3 sm:px-2"
+      >
+        <div className="hidden min-w-0 text-right md:block">
+          <p className="max-w-40 truncate text-sm font-black leading-tight text-slate-800">{user?.name || "Memuat..."}</p>
+          <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${tone.badge}`}>{roleLabel}</span>
+        </div>
+        <div className={`h-10 w-10 shrink-0 rounded-full bg-gradient-to-tr p-[2px] shadow-lg ${tone.ring}`}>
+          <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-white">
+            {image ? (
+              <img src={image} alt={`Foto profil ${user?.name || roleLabel}`} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+            ) : (
+              <span className="text-sm font-black text-slate-700">{initial}</span>
+            )}
+          </div>
+        </div>
+        <ChevronDown size={15} className={`hidden text-slate-400 transition sm:block ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <>
+          <button
+            type="button"
+            aria-label="Tutup menu profil"
+            className="fixed inset-0 z-[var(--layer-modal)] bg-slate-950/35 lg:z-[var(--layer-dropdown)] lg:bg-transparent"
+            onClick={() => setOpen(false)}
+          />
+          <div
+            role="menu"
+            aria-label="Menu akun"
+            className="fixed inset-x-0 bottom-0 z-[var(--layer-modal-content)] max-h-[min(82dvh,38rem)] overflow-y-auto overscroll-contain rounded-t-[1.75rem] border-x border-t border-slate-200 bg-white px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-2 shadow-[0_-18px_55px_rgba(15,23,42,0.18)] animate-in slide-in-from-bottom-4 duration-200 lg:absolute lg:inset-x-auto lg:bottom-auto lg:right-0 lg:top-full lg:z-[var(--layer-dropdown)] lg:mt-3 lg:w-[min(22rem,calc(100vw-2rem))] lg:overflow-hidden lg:rounded-[1.5rem] lg:border lg:p-3 lg:shadow-[0_18px_50px_rgba(15,23,42,0.18)] lg:fade-in lg:slide-in-from-bottom-0 lg:zoom-in-95"
+          >
+            <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-slate-200 lg:hidden" aria-hidden="true" />
+
+            <div className="rounded-2xl bg-slate-950 p-4 text-white">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className={`grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white ${tone.icon}`}>
+                  {image ? <img src={image} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <span className="font-black">{initial}</span>}
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate font-black">{user?.name || "Pengguna BimbelKu"}</p>
+                  <p className="mt-0.5 truncate text-xs text-slate-300">{user?.email || "Akun BimbelKu"}</p>
+                  <span className="mt-2 inline-flex rounded-full bg-white/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-white">{roleLabel}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-2 space-y-1">
+              <Link role="menuitem" to={profileTo} className="flex min-h-12 items-center gap-3 rounded-2xl px-4 py-3 text-sm font-black text-slate-700 transition hover:bg-slate-50">
+                <span className={`grid h-9 w-9 place-items-center rounded-xl ${tone.icon}`}><UserRound size={17} /></span>
+                Profil Saya
+              </Link>
+              {accountTo && (
+                <Link role="menuitem" to={accountTo} className="flex min-h-12 items-center gap-3 rounded-2xl px-4 py-3 text-sm font-black text-slate-700 transition hover:bg-slate-50">
+                  <span className="grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-slate-600"><Settings size={17} /></span>
+                  Pengaturan
+                </Link>
+              )}
+              {helpTo && (
+                <Link role="menuitem" to={helpTo} className="flex min-h-12 items-center gap-3 rounded-2xl px-4 py-3 text-sm font-black text-slate-700 transition hover:bg-slate-50">
+                  <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-50 text-emerald-700"><CircleHelp size={17} /></span>
+                  Bantuan
+                </Link>
+              )}
+            </div>
+
+            <div className="mt-2 border-t border-slate-100 pt-2">
+              <LogoutButton accent={accent} />
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

@@ -52,6 +52,7 @@ const TEACHER_GROUPS: PageGroup[] = [
 
 const ADMIN_GROUPS: PageGroup[] = [
   { key: "admin-dashboard", paths: ["/admin"], mobileKey: "home" },
+  { key: "admin-profile", paths: ["/admin/profile"] },
   { key: "admin-searches", paths: ["/admin/tutor-searches"] },
   { key: "admin-classes", paths: ["/admin/classes"] },
   { key: "admin-cases", paths: ["/admin/cases"] },
@@ -64,7 +65,7 @@ const ADMIN_GROUPS: PageGroup[] = [
   { key: "admin-messages", paths: ["/admin/pesan"], mobileKey: "messages" },
   { key: "admin-send-notification", paths: ["/admin/notifikasi"] },
   { key: "admin-subjects", paths: ["/admin/subjects"] },
-  { key: "admin-topics", paths: ["/admin/learning-topics"] },
+  { key: "admin-topics", paths: ["/admin/chapters"] },
   { key: "admin-rates", paths: ["/admin/hourly-rates"] },
   { key: "admin-stage-five", paths: ["/admin/stage-five"] },
   { key: "admin-ratings", paths: ["/admin/ratings"] },

@@ -24,6 +24,14 @@ add("feature test proves unverified tutor report does not change student progres
 add("feature test covers admin revision and tutor resubmission", test.includes("request-revision") && test.includes("revision_requested"));
 add("feature test covers final admin verification and package completion", test.includes("/verify") && test.includes("assertJsonPath('class_status', 'completed')"));
 
+
+add("pre-payment stage exists and starts as open offer", command.includes("'pre-payment' => $this->prePayment()") && command.includes("'status' => 'open'") && command.includes("BELUM bayar"));
+add("pre-payment keeps main student unenrolled and seeds one confirmed participant", command.includes("Peserta kedua sengaja sudah terverifikasi") && command.includes("SECOND_STUDENT_EMAIL"));
+add("pre-payment uses production join/payment services", command.includes("app(CheapClassService::class)->join") && command.includes("submitPayment(") && command.includes("verifyPayment("));
+add("payment shortcut provides protected demo proof", command.includes("cheap-class-payment-proof.png") && command.includes("Storage::disk('local')->put"));
+add("session-live stage can advance confirmed class without changing production rules", command.includes("'session-live' => $this->sessionLive()") && command.includes("Semua shortcut hanya local/testing"));
+add("feature test covers pre-payment to report-required flow", test.includes("test_pre_payment_demo_can_start_before_payment_without_waiting_for_admin_opening_hour") && test.includes("payment-submitted") && test.includes("payment-paid") && test.includes("session-live"));
+
 let failed = 0;
 for (const [label, ok] of checks) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}`);
@@ -31,4 +39,4 @@ for (const [label, ok] of checks) {
 }
 
 if (failed) process.exit(1);
-console.log(`\n${checks.length}/${checks.length} Demo Kelas Murah checks PASS`);
+console.log(`\n${checks.length}/${checks.length} Demo Kelas Kelompok checks PASS`);

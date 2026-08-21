@@ -35,7 +35,7 @@ expect(
   studentController.includes("'order_kind' => $isCheapClass ? 'cheap_class'")
     && studentController.includes("'will_refund_if_accepted'")
     && studentController.includes("'can_cancel'"),
-  "status order murid harus membawa konteks Kelas Murah eksplisit",
+  "status order murid harus membawa konteks Kelas Kelompok eksplisit",
 );
 expect(
   orderController.includes("'order_kind' => $isCheapClass ? 'cheap_class'")
@@ -48,7 +48,7 @@ expect(
     && cheapClassController.includes("'cheap_class_status'")
     && cheapStudent.includes('orderKind: response.data.order_kind || "cheap_class"')
     && cheapStudent.includes('canCancel: Boolean(response.data.can_cancel)'),
-  "respons join dan navigasi PaymentPage harus membawa konteks Kelas Murah yang sama",
+  "respons join dan navigasi PaymentPage harus membawa konteks Kelas Kelompok yang sama",
 );
 expect(
   orderController.includes("'Batas pembayaran sudah berakhir. Tagihan tidak lagi menerima bukti transfer.'")
@@ -74,7 +74,7 @@ expect(
   popup.includes('orderKind === "cheap_class"')
     && popup.includes('order.can_cancel')
     && popup.includes('Kamu masih dapat bergabung kembali'),
-  "popup tagihan harus memakai kontrak pembatalan Kelas Murah terbaru",
+  "popup tagihan harus memakai kontrak pembatalan Kelas Kelompok terbaru",
 );
 expect(
   finance.includes("'will_refund_if_accepted'")
@@ -95,7 +95,7 @@ expect(
     && tests.includes("->assertJsonPath('will_refund_if_accepted', true)")
     && tests.includes("->assertJsonPath('pending.0.can_resubmit_if_rejected', false)")
     && tests.includes("->assertJsonPath('pending.0.refund_reason_if_accepted', 'capacity_full')"),
-  "regression test kontrak UI-backend Kelas Murah harus tersedia",
+  "regression test kontrak UI-backend Kelas Kelompok harus tersedia",
 );
 expect(
   lifecycleTests.includes('test_payment_endpoint_returns_frontend_error_code_at_exact_seat_deadline')
@@ -105,8 +105,8 @@ expect(
 );
 
 if (failures.length) {
-  console.error("Pemeriksaan sinkronisasi UI-backend Kelas Murah gagal:");
+  console.error("Pemeriksaan sinkronisasi UI-backend Kelas Kelompok gagal:");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
-console.log("Pemeriksaan sinkronisasi UI-backend Kelas Murah lulus.");
+console.log("Pemeriksaan sinkronisasi UI-backend Kelas Kelompok lulus.");

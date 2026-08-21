@@ -7,7 +7,7 @@ const text = fs.readFileSync(file, 'utf8');
 
 const checks = [
   ['uses current Paket Belajar terminology', text.includes('Paket Belajar')],
-  ['uses current Kelas Murah terminology', text.includes('Kelas Murah')],
+  ['uses current Kelas Kelompok terminology', text.includes('Kelas Kelompok')],
   ['explains material progress', text.includes('Progress berbasis materi')],
   ['explains session history', text.includes('riwayat per sesi') || text.includes('Riwayat per sesi')],
   ['keeps StudentPackageLink guard', text.includes('StudentPackageLink')],
@@ -16,6 +16,7 @@ const checks = [
   ['removes oversized person icon visual', !text.includes('size={300}')],
   ['keeps responsive mobile-first layout', text.includes('sm:grid-cols-2') && text.includes('lg:grid-cols-2')],
   ['avoids old malformed hover utility', !text.includes('group-hover-shadow') && !text.includes('group-hover-scale')],
+  ['centers final CTA across full reveal width', text.includes('<Reveal width="100%">') && text.includes('mx-auto flex w-full max-w-5xl')],
 ];
 
 let failed = 0;

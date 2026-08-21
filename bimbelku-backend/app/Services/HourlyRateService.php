@@ -39,9 +39,7 @@ class HourlyRateService
             }
 
             $key = "default_{$classType}_{$learningMode}_rate";
-            $legacyKey = $classType === 'group'
-                ? 'default_group_hourly_rate'
-                : 'default_private_hourly_rate';
+            $legacyKey = 'default_private_hourly_rate';
 
             return (int) (
                 Setting::where('key', $key)->value('value')

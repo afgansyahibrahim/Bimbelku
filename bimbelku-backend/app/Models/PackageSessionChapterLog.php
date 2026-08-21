@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class PackageSessionTopicLog extends Model
+class PackageSessionChapterLog extends Model
 {
     protected $guarded = ['id'];
 
@@ -15,9 +15,9 @@ class PackageSessionTopicLog extends Model
         return $this->belongsTo(PackageSession::class, 'package_session_id');
     }
 
-    public function topic()
+    public function chapter()
     {
-        return $this->belongsTo(PackageLearningTopic::class, 'package_learning_topic_id');
+        return $this->belongsTo(PackageChapter::class, 'package_chapter_id');
     }
 
     public function progressReport()

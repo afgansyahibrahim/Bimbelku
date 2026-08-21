@@ -10,7 +10,6 @@ import {
   CalendarClock,
   Clock3,
   CreditCard,
-  History,
   Loader2,
   RefreshCw,
   Search,
@@ -221,9 +220,6 @@ export default function MyPackages() {
             <p className="mt-2 max-w-xl text-sm text-indigo-100/70">Kelola paket yang masih berjalan dari tab Aktif. Paket yang sudah selesai, dibatalkan, atau berakhir tetap tersimpan rapi di Riwayat.</p>
           </div>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <Link to="/student/requests/legacy" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 text-sm font-black text-white hover:bg-white/15">
-              <History size={17} /> Permintaan Lama
-            </Link>
             <Link to="/student/packages/new" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-white px-5 text-sm font-black text-slate-950">
               Tambah Paket <ArrowRight size={17} />
             </Link>
@@ -257,15 +253,15 @@ export default function MyPackages() {
               const canChangeSchedule = subjects.some((subject) => subject.status === "no_teacher" && subject.matching?.can_change_schedule);
               const retryLabel = retryableSubjects.length === 1 ? (retryableSubjects[0].matching?.retry_label || "Cari Lagi") : "Cari Lagi";
               return (
-                <article key={item.id} className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm">
-                  <div className="flex flex-col justify-between gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:p-6">
-                    <div>
+                <article key={item.id} className="min-w-0 max-w-full overflow-hidden rounded-[1.6rem] border border-slate-100 bg-white shadow-sm sm:rounded-[2rem]">
+                  <div className="flex min-w-0 flex-col justify-between gap-4 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:p-6">
+                    <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="text-xl font-black text-slate-900">{item.plan?.name || "Paket belajar"}</h2>
+                        <h2 className="min-w-0 break-words text-lg font-black leading-snug text-slate-900 sm:text-xl">{item.plan?.name || "Paket belajar"}</h2>
                         <span className="rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-indigo-700">{labels[displayStatus] || displayStatus}</span>
                         {item.renewal_of_id && <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-700">Paket lanjutan</span>}
                       </div>
-                      <p className="mt-1 text-xs font-bold text-slate-400">{item.package_code} · {item.learning_mode === "online" ? "Online" : "Offline"}</p>
+                      <p className="mt-1 break-all text-xs font-bold text-slate-400">{item.package_code} · {item.learning_mode === "online" ? "Online" : "Offline"}</p>
                     </div>
                     <div className="flex w-full flex-wrap gap-2 sm:w-auto">
                       {canRetry && (
@@ -310,7 +306,7 @@ export default function MyPackages() {
                     <OrderProgress status={item.status} />
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2 p-4 sm:gap-4 sm:p-6">
+                  <div className="grid grid-cols-1 gap-2 p-4 min-[360px]:grid-cols-3 sm:gap-4 sm:p-6">
                     <Stat icon={BookOpenCheck} label="Sisa sesi" value={`${item.remaining_sessions} sesi`} />
                     <Stat icon={CalendarDays} label="Masa aktif" value={formatShortDate(item.expires_at)} />
                     <Stat icon={Clock3} label="Durasi" value={`${item.duration_hours || 1} jam`} />

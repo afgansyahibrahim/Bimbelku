@@ -326,7 +326,7 @@ function TimeSelect({ kind, label, value, onChange }: { kind: "start" | "end"; l
           position="popper"
           sideOffset={6}
           collisionPadding={12}
-          className="z-[300] max-h-[min(18rem,calc(100dvh-2rem))] rounded-2xl border-slate-200 bg-white shadow-2xl"
+          className="z-[var(--layer-detail-popover)] max-h-[min(18rem,calc(100dvh-2rem))] rounded-2xl border-slate-200 bg-white shadow-2xl"
         >
           {options.map((time) => (
             <SelectItem key={time} value={time} className="min-h-10 rounded-xl py-2.5 text-sm font-bold">

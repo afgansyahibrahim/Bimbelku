@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BookOpen, Check, ChevronDown, Loader2, Plus, Search } from "lucide-react";
+import { BookOpen, Check, ChevronDown, Loader2, Plus, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface SubjectOption {
@@ -174,7 +174,7 @@ export default function SubjectCombobox({
       ref={listboxRef}
       id={listboxId}
       role="listbox"
-      className="fixed z-[1000] min-w-0 max-w-[calc(100dvw-1.5rem)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl"
+      className="fixed z-[var(--layer-detail-popover)] min-w-0 max-w-[calc(100dvw-1.5rem)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl"
       style={{
         top: menuPosition.top,
         left: menuPosition.left,
@@ -278,12 +278,28 @@ export default function SubjectCombobox({
           }}
           className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
+        {(query || value) && !disabled && (
+          <button
+            type="button"
+            aria-label="Hapus pilihan mata pelajaran"
+            title="Hapus pilihan"
+            onClick={() => {
+              setQuery("");
+              onChange("");
+              setOpen(true);
+              window.requestAnimationFrame(() => rootRef.current?.querySelector("input")?.focus());
+            }}
+            className="grid min-h-11 min-w-11 shrink-0 place-items-center rounded-xl text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            <X size={16} />
+          </button>
+        )}
         <button
           type="button"
           aria-label={open ? "Tutup daftar mata pelajaran" : "Buka daftar mata pelajaran"}
           disabled={disabled}
           onClick={() => setOpen((current) => !current)}
-          className="shrink-0 rounded-lg p-1 text-slate-500 hover:bg-slate-100"
+          className="grid min-h-11 min-w-11 shrink-0 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <ChevronDown size={17} className={cn("transition", open && "rotate-180")} />
         </button>

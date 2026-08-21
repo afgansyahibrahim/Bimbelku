@@ -19,7 +19,6 @@ use App\Models\Notification;
 use App\Models\Refund;
 use App\Models\TeacherProfile;
 use App\Models\TeacherPayoutRequest;
-use App\Services\GroupClassService;
 use App\Services\CheapClassService;
 use App\Services\TeacherMatchingService;
 use App\Services\TeacherOfferReleaseService;
@@ -374,7 +373,6 @@ class AdminController extends Controller
     // --- [VERIFIKASI PEMBAYARAN (JADWAL KOMPLEKS)] ---
     public function verifyPayment(
         Request $request,
-        GroupClassService $groupService,
         PackageCheckoutService $packageCheckoutService,
         CheapClassService $cheapClassService
     )
@@ -447,418 +445,10 @@ class AdminController extends Controller
             return response()->json(['message' => $result['message']]);
         }
 
-        if (($details['flow_version'] ?? 0) >= 3) {
-            return $this->verifyLatestBookingPayment(
-                $request,
-                $order,
-                $validated['status'],
-                $details,
-                $reason,
-                $groupService
-            );
-        }
-
-        if (($details['flow_version'] ?? null) === 2) {
-            return $this->verifyHourlyBookingPayment($order, $validated['status'], $details, $reason);
-        }
-
         return response()->json([
-            'message' => 'Format pesanan lama tidak dapat diverifikasi lewat alur sesi terbaru. Tutup atau migrasikan pesanan ini terlebih dahulu.',
-        ], 422);
+            'message' => 'Pesanan langsung lama sudah dipensiunkan. Hanya Paket Belajar dan Kelas Kelompok yang dapat diverifikasi.',
+        ], 410);
     }
-
-    private function verifyHourlyBookingPayment(Order $order, string $status, array $details, string $reason = '')
-    {
-        return DB::transaction(function () use ($order, $status, $details, $reason) {
-            $lockedOrder = Order::query()->lockForUpdate()->findOrFail($order->id);
-            if ($lockedOrder->status !== 'submitted') {
-                return response()->json(['message' => 'Pembayaran ini sudah diproses.'], 422);
-            }
-
-            $booking = Booking::query()->lockForUpdate()->find($details['booking_id'] ?? null);
-            if (!$booking) {
-                return response()->json(['message' => 'Data booking tidak ditemukan.'], 404);
-            }
-
-            if ($status === 'rejected') {
-                if ($reason !== '') {
-                    $details['payment_rejection_reason'] = $reason;
-                }
-
-                $lockedOrder->update([
-                    'status' => 'rejected',
-                    'class_details_snapshot' => $details,
-                ]);
-                $booking->update(['status' => 'payment_rejected']);
-                $booking->bookingRequest->update(['status' => 'payment_rejected']);
-
-                Notification::create([
-                    'user_id' => $booking->student_id,
-                    'title' => 'Pembayaran ditolak',
-                    'message' => $reason !== ''
-                        ? 'Bukti pembayaran ditolak: '.$reason
-                        : 'Bukti pembayaran ditolak. Silakan hubungi admin melalui pusat bantuan.',
-                    'type' => 'warning',
-                    'target_url' => '/student/history',
-                ]);
-
-                return response()->json(['message' => 'Pembayaran ditolak.', 'data' => $lockedOrder->fresh()]);
-            }
-
-            $student = User::find($booking->student_id);
-            $teacher = User::find($booking->teacher_id);
-            $subject = $details['subject'] ?? $booking->bookingRequest->subject_name;
-            $typeLabel = $booking->class_type === 'group' ? 'Grup' : 'Privat';
-            $title = "{$subject} - {$student->name} ({$typeLabel})";
-            $theme = $booking->learning_mode === 'offline'
-                ? 'from-emerald-600 to-teal-800'
-                : 'from-blue-600 to-indigo-700';
-
-            $classroom = $lockedOrder->classroom_id ? Classroom::find($lockedOrder->classroom_id) : null;
-            if (!$classroom) {
-                $dayNames = [1 => 'Senin', 2 => 'Selasa', 3 => 'Rabu', 4 => 'Kamis', 5 => 'Jumat', 6 => 'Sabtu', 7 => 'Minggu'];
-                $classroom = Classroom::create([
-                    'user_id' => $booking->teacher_id,
-                    'title' => $title,
-                    'subject' => $subject,
-                    'type' => $typeLabel,
-                    'status' => 'Open',
-                    'method' => $booking->learning_mode,
-                    'location_id' => null,
-                    'theme' => $theme,
-                    'day' => $dayNames[$booking->start_at->dayOfWeekIso],
-                    'time' => $booking->start_at->format('H:i:s'),
-                ]);
-
-                $classroom->sessions()->create([
-                    'title' => 'Pertemuan 1',
-                    'content' => $details['topic'] ?? null,
-                    'date' => $booking->start_at->toDateString(),
-                    'time' => $booking->start_at->format('H:i:s'),
-                    'start_time' => $booking->start_at,
-                    'is_completed' => false,
-                ]);
-                $lockedOrder->classroom_id = $classroom->id;
-            }
-
-            $classroom->students()->syncWithoutDetaching([$booking->student_id]);
-            $lockedOrder->status = 'paid';
-            $lockedOrder->save();
-            $booking->update(['status' => 'confirmed']);
-            $booking->bookingRequest->update(['status' => 'confirmed']);
-            $teacher->teacherProfile()->update([
-                'assignment_count' => DB::raw('assignment_count + 1'),
-                'last_assigned_at' => now(),
-            ]);
-
-            Notification::create([
-                'user_id' => $booking->student_id,
-                'title' => 'Kelas dikonfirmasi',
-                'message' => "Pembayaran diterima. Kelas bersama {$teacher->name} sudah aktif.",
-                'type' => 'success',
-                'target_url' => '/student/my-classes',
-            ]);
-            Notification::create([
-                'user_id' => $booking->teacher_id,
-                'title' => 'Pembayaran murid diterima',
-                'message' => "Kelas {$subject} pada {$booking->start_at->format('d/m/Y H:i')} WIB sudah dikonfirmasi.",
-                'type' => 'success',
-                'target_url' => '/guru/kelas',
-            ]);
-
-            return response()->json(['message' => 'Pembayaran diverifikasi dan kelas dikonfirmasi.', 'data' => $lockedOrder->fresh()]);
-        });
-    }
-
-    private function verifyLatestBookingPayment(
-        Request $request,
-        Order $order,
-        string $status,
-        array $details,
-        string $reason,
-        GroupClassService $groupService
-    ) {
-        if ($status === 'rejected' && $reason === '') {
-            return response()->json(['message' => 'Alasan penolakan pembayaran wajib diisi.'], 422);
-        }
-
-        return DB::transaction(function () use (
-            $request,
-            $order,
-            $status,
-            $details,
-            $reason,
-            $groupService
-        ) {
-            $lockedOrder = Order::query()->lockForUpdate()->findOrFail($order->id);
-            $booking = Booking::query()->lockForUpdate()->find($lockedOrder->booking_id);
-            $participant = $lockedOrder->participant()->lockForUpdate()->first();
-
-            if (!$booking || !$participant) {
-                return response()->json(['message' => 'Data booking atau peserta tidak ditemukan.'], 404);
-            }
-            if ($lockedOrder->status !== 'submitted') {
-                return response()->json(['message' => 'Pembayaran ini sudah diproses.'], 422);
-            }
-
-            if ($status === 'rejected') {
-                $details['payment_rejection_reason'] = $reason;
-                $lockedOrder->update([
-                    'status' => 'rejected',
-                    'payment_rejection_reason' => $reason,
-                    'class_details_snapshot' => $details,
-                    'verified_at' => now(),
-                    'verified_by' => $request->user()->id,
-                ]);
-                $participant->update(['status' => 'awaiting_payment']);
-                $participant->bookingRequest?->update(['status' => 'payment_rejected']);
-
-                $activeGroupStatuses = [
-                    'confirmed',
-                    'in_progress',
-                    'awaiting_student_approval',
-                    'disputed',
-                    'absence_review',
-                    'admin_review_required',
-                    'completed',
-                ];
-                $keepActiveGroup = $booking->class_type === 'group'
-                    && in_array($booking->status, $activeGroupStatuses, true);
-                $booking->update([
-                    'status' => $keepActiveGroup
-                        ? $booking->status
-                        : ($booking->class_type === 'group'
-                            ? 'payment_collecting'
-                            : 'awaiting_payment'),
-                ]);
-
-                Notification::create([
-                    'user_id' => $lockedOrder->user_id,
-                    'title' => 'Bukti pembayaran ditolak',
-                    'message' => 'Bukti perlu dikirim ulang: '.$reason,
-                    'type' => 'warning',
-                    'target_url' => '/student/history',
-                ]);
-
-                return response()->json([
-                    'message' => 'Pembayaran ditolak. Murid dapat mengirim bukti pengganti sebelum batas waktu.',
-                    'data' => $lockedOrder->fresh(),
-                ]);
-            }
-
-            if (now()->greaterThanOrEqualTo($booking->start_at)) {
-                unset($details['payment_rejection_reason']);
-                $lockedOrder->update([
-                    'status' => 'refund_pending',
-                    'payment_rejection_reason' => null,
-                    'class_details_snapshot' => $details,
-                    'verified_at' => now(),
-                    'verified_by' => $request->user()->id,
-                ]);
-                $participant->update(['status' => 'refund_pending']);
-                $participant->bookingRequest?->update(['status' => 'refund_pending']);
-                Refund::firstOrCreate(
-                    ['order_id' => $lockedOrder->id],
-                    [
-                        'user_id' => $lockedOrder->user_id,
-                        'booking_id' => $booking->id,
-                        'amount' => $lockedOrder->amount,
-                        'reason' => 'Pembayaran terverifikasi setelah sesi dimulai',
-                        'status' => 'pending',
-                    ]
-                );
-
-                if ($booking->class_type === 'private') {
-                    $booking->update([
-                        'status' => 'refund_pending',
-                        'gross_amount' => 0,
-                        'teacher_net_amount' => 0,
-                        'payout_status' => 'cancelled',
-                    ]);
-                    Notification::create([
-                        'user_id' => $booking->teacher_id,
-                        'title' => 'Sesi dibatalkan karena pembayaran terlambat',
-                        'message' => 'Pembayaran baru terverifikasi setelah sesi dimulai. Dana murid masuk antrean refund dan sesi tidak menghasilkan pendapatan.',
-                        'type' => 'warning',
-                        'target_url' => '/guru/kelas',
-                    ]);
-                } else {
-                    if ($participant->bookingRequest) {
-                        $groupService->leave($participant->bookingRequest);
-                    }
-                    $groupService->settleAfterProfileDecision(
-                        $booking,
-                        'Pembayaran peserta kelompok baru terverifikasi setelah sesi dimulai'
-                    );
-                    $booking->refresh();
-
-                    $paidParticipants = $booking->participants()
-                        ->where('status', 'paid')
-                        ->with(['order', 'bookingRequest'])
-                        ->lockForUpdate()
-                        ->get();
-                    if (!in_array($booking->status, [
-                        'cancelled',
-                        'refund_pending',
-                        'refunded',
-                        'payment_expired',
-                    ], true)) {
-                        $grossAmount = $paidParticipants->sum('amount');
-                        $booking->update([
-                            'status' => in_array($booking->status, [
-                                'confirmed',
-                                'in_progress',
-                                'awaiting_student_approval',
-                                'disputed',
-                                'absence_review',
-                                'admin_review_required',
-                                'completed',
-                            ], true)
-                                ? $booking->status
-                                : (now()->lt($booking->end_at)
-                                    ? 'in_progress'
-                                    : 'admin_review_required'),
-                            'gross_amount' => $grossAmount,
-                            'teacher_net_amount' => round(
-                                (float) $grossAmount
-                                * (100 - (float) $booking->commission_percent)
-                                / 100
-                            ),
-                        ]);
-                    }
-                }
-
-                Notification::create([
-                    'user_id' => $lockedOrder->user_id,
-                    'title' => 'Pembayaran masuk antrean refund',
-                    'message' => 'Bukti diterima setelah sesi dimulai sehingga dana dikembalikan penuh melalui proses transfer admin.',
-                    'type' => 'warning',
-                    'target_url' => '/student/history',
-                ]);
-
-                return response()->json([
-                    'message' => 'Pembayaran tercatat, tetapi sesi sudah dimulai. Refund penuh masuk antrean transfer.',
-                    'data' => $lockedOrder->fresh(),
-                ]);
-            }
-
-            $wasConfirmed = in_array($booking->status, [
-                'confirmed', 'in_progress', 'awaiting_student_approval', 'completed',
-            ], true);
-            unset($details['payment_rejection_reason']);
-            $lockedOrder->update([
-                'status' => 'paid',
-                'payment_rejection_reason' => null,
-                'class_details_snapshot' => $details,
-                'verified_at' => now(),
-                'verified_by' => $request->user()->id,
-            ]);
-            $participant->update(['status' => 'paid']);
-            $participant->bookingRequest?->update(['status' => 'payment_verified']);
-
-            $teacher = User::findOrFail($booking->teacher_id);
-            $student = User::findOrFail($participant->student_id);
-            $typeLabel = $booking->class_type === 'group' ? 'Kelompok' : 'Privat';
-            $subject = $details['subject'] ?? $booking->bookingRequest->subject_name;
-            $title = "{$subject} - {$typeLabel}";
-            $theme = $booking->learning_mode === 'offline'
-                ? 'from-emerald-600 to-teal-800'
-                : 'from-blue-600 to-indigo-700';
-
-            $classroom = $lockedOrder->classroom_id
-                ? Classroom::find($lockedOrder->classroom_id)
-                : Classroom::query()
-                    ->whereHas('orders', fn ($query) => $query->where('booking_id', $booking->id))
-                    ->first();
-
-            if (!$classroom) {
-                $dayNames = [1 => 'Senin', 2 => 'Selasa', 3 => 'Rabu', 4 => 'Kamis', 5 => 'Jumat', 6 => 'Sabtu', 7 => 'Minggu'];
-                $classroom = Classroom::create([
-                    'user_id' => $booking->teacher_id,
-                    'title' => $title,
-                    'subject' => $subject,
-                    'type' => $typeLabel,
-                    'status' => 'Open',
-                    'method' => $booking->learning_mode,
-                    'location_id' => null,
-                    'theme' => $theme,
-                    'day' => $dayNames[$booking->start_at->dayOfWeekIso],
-                    'time' => $booking->start_at->format('H:i:s'),
-                ]);
-                $classroom->sessions()->create([
-                    'title' => 'Sesi bimbingan',
-                    'content' => $details['topic'] ?? $details['subtopic'] ?? null,
-                    'date' => $booking->start_at->toDateString(),
-                    'time' => $booking->start_at->format('H:i:s'),
-                    'start_time' => $booking->start_at,
-                    'is_completed' => false,
-                ]);
-                Order::query()->where('booking_id', $booking->id)->update(['classroom_id' => $classroom->id]);
-            }
-
-            $classroom->students()->syncWithoutDetaching([$student->id]);
-            $paidCount = $booking->participants()->where('status', 'paid')->count();
-            $grossAmount = $booking->participants()->where('status', 'paid')->sum('amount');
-            $teacherNetAmount = round(
-                (float) $grossAmount * (100 - (float) $booking->commission_percent) / 100
-            );
-            $minimumParticipants = $booking->class_type === 'group'
-                ? (int) ($booking->groupPool?->minimum_participants ?? 2)
-                : 1;
-
-            if ($paidCount >= $minimumParticipants) {
-                $booking->update([
-                    'status' => 'confirmed',
-                    'gross_amount' => $grossAmount,
-                    'teacher_net_amount' => $teacherNetAmount,
-                ]);
-                $booking->participants()->where('status', 'paid')->with('bookingRequest')->get()
-                    ->each(fn ($paidParticipant) => $paidParticipant->bookingRequest?->update(['status' => 'confirmed']));
-                $booking->groupPool?->update(['status' => 'confirmed']);
-
-                if (!$wasConfirmed) {
-                    $teacher->teacherProfile()->update([
-                        'assignment_count' => DB::raw('assignment_count + 1'),
-                        'last_assigned_at' => now(),
-                    ]);
-                    Notification::create([
-                        'user_id' => $teacher->id,
-                        'title' => 'Sesi dikonfirmasi',
-                        'message' => "Pembayaran minimum terpenuhi. Sesi {$subject} sudah aktif.",
-                        'type' => 'success',
-                        'target_url' => '/guru/kelas',
-                    ]);
-                }
-            } else {
-                $booking->update([
-                    'status' => 'payment_collecting',
-                    'gross_amount' => $grossAmount,
-                    'teacher_net_amount' => $teacherNetAmount,
-                ]);
-            }
-
-            Notification::create([
-                'user_id' => $student->id,
-                'title' => 'Pembayaran diterima',
-                'message' => $paidCount >= $minimumParticipants
-                    ? "Sesi bersama {$teacher->name} sudah dikonfirmasi."
-                    : 'Pembayaran diterima. Kelas kelompok menunggu pembayaran anggota minimum.',
-                'type' => 'success',
-                'target_url' => $paidCount >= $minimumParticipants ? '/student/my-classes' : '/student/packages',
-            ]);
-
-            return response()->json([
-                'message' => $paidCount >= $minimumParticipants
-                    ? 'Pembayaran diverifikasi dan sesi dikonfirmasi.'
-                    : 'Pembayaran diverifikasi. Kelompok masih menunggu anggota minimum.',
-                'data' => $lockedOrder->fresh(),
-            ]);
-        });
-    }
-
-    // =========================================================================
-    // 4. PENGATURAN REKENING ADMIN (QRIS)
-    // =========================================================================
 
     public function getPaymentSettings()
     {
@@ -1285,6 +875,7 @@ class AdminController extends Controller
         $canPayouts = $can(AdminPermissionCatalog::FINANCE_PAYOUTS);
         $canTeachers = $can(AdminPermissionCatalog::TEACHERS_MANAGE);
         $canUsers = $can(AdminPermissionCatalog::USERS_MANAGE);
+        $canClasses = $can(AdminPermissionCatalog::CLASSES_MANAGE);
 
         $revenueToday = $canPayments
             ? Order::where('status', 'paid')->whereDate('verified_at', $today)->sum('amount')
@@ -1344,6 +935,30 @@ class AdminController extends Controller
                 + BookingDispute::where('status', 'pending')->count()
                 + Booking::where('status', 'admin_review_required')->count()
                 + TeacherAppeal::where('status', 'pending')->count()
+            : 0;
+        $monitoringNeedsAttention = $canClasses
+            ? Booking::query()
+                ->where('class_type', 'private')
+                ->where(function ($attention) {
+                    $attention
+                        ->whereIn('status', [
+                            'disputed',
+                            'absence_review',
+                            'admin_review_required',
+                            'emergency_refund_pending',
+                            'refund_pending',
+                        ])
+                        ->orWhere(fn ($unfinished) => $unfinished
+                            ->whereIn('status', ['confirmed', 'in_progress'])
+                            ->where('end_at', '<=', now()))
+                        ->orWhere(fn ($studentDecision) => $studentDecision
+                            ->where('status', 'awaiting_student_approval')
+                            ->whereNotNull('objection_deadline')
+                            ->where('objection_deadline', '<=', now()->addHours(6)))
+                        ->orWhereHas('latestLearningProgressReport', fn ($report) => $report
+                            ->whereRaw('learning_progress_reports.actual_duration_minutes < (bookings.duration_hours * 36)'));
+                })
+                ->count()
             : 0;
         $pendingRefunds = $canRefunds ? Refund::where('status', 'pending')->count() : 0;
         $pendingPayouts = $canPayouts ? TeacherPayoutRequest::where('status', 'pending')->count() : 0;
@@ -1412,6 +1027,14 @@ class AdminController extends Controller
                 'href' => '/admin/cases',
                 'tone' => $pendingCases > 0 ? 'warning' : 'normal',
             ] : null,
+            $canClasses ? [
+                'key' => 'monitoring',
+                'label' => 'Monitoring kelas',
+                'description' => 'Sesi aktif yang memerlukan tindak lanjut operasional.',
+                'count' => $monitoringNeedsAttention,
+                'href' => '/admin/classes?scope=attention',
+                'tone' => $monitoringNeedsAttention > 0 ? 'urgent' : 'normal',
+            ] : null,
             $canRefunds ? [
                 'key' => 'refunds',
                 'label' => 'Refund',
@@ -1453,6 +1076,7 @@ class AdminController extends Controller
                 'matching_active' => $activeMatching,
                 'matching_attention' => $matchingNeedsAttention,
                 'cases' => $pendingCases,
+                'monitoring_attention' => $monitoringNeedsAttention,
                 'refunds' => $pendingRefunds,
                 'payouts' => $pendingPayouts,
             ],
@@ -1460,6 +1084,7 @@ class AdminController extends Controller
                 'payments' => $canPayments,
                 'matching' => $canMatching,
                 'cases' => $canCases,
+                'classes' => $canClasses,
                 'refunds' => $canRefunds,
                 'payouts' => $canPayouts,
                 'teachers' => $canTeachers,

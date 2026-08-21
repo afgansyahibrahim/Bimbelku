@@ -35,6 +35,7 @@ export const permissionForAdminPath = (pathname: string): AdminPermission | null
   if (!path) return ADMIN_PERMISSIONS.OPERATIONS_DASHBOARD;
 
   const rules: Array<[RegExp, AdminPermission]> = [
+    [/^profile(?:\/|$)/, ADMIN_PERMISSIONS.OPERATIONS_DASHBOARD],
     [/^tutor-searches(?:\/|$)/, ADMIN_PERMISSIONS.MATCHING_MANAGE],
     [/^(?:pembayaran|settings-payment)(?:\/|$)/, ADMIN_PERMISSIONS.FINANCE_PAYMENTS],
     [/^refunds(?:\/|$)/, ADMIN_PERMISSIONS.FINANCE_REFUNDS],
@@ -45,7 +46,7 @@ export const permissionForAdminPath = (pathname: string): AdminPermission | null
     [/^cases(?:\/|$)/, ADMIN_PERMISSIONS.CASES_MANAGE],
     [/^(?:classes|ratings)(?:\/|$)/, ADMIN_PERMISSIONS.CLASSES_MANAGE],
     [/^(?:pesan|notifikasi)(?:\/|$)/, ADMIN_PERMISSIONS.SUPPORT_MANAGE],
-    [/^(?:subjects|learning-topics|hourly-rates|stage-five|kelas-murah)(?:\/|$)/, ADMIN_PERMISSIONS.CONTENT_MANAGE],
+    [/^(?:subjects|chapters|hourly-rates|stage-five|kelas-murah)(?:\/|$)/, ADMIN_PERMISSIONS.CONTENT_MANAGE],
     [/^(?:settings-display|settings-footer|notes)(?:\/|$)/, ADMIN_PERMISSIONS.SETTINGS_MANAGE],
     [/^access-control(?:\/|$)/, ADMIN_PERMISSIONS.OPERATIONS_DASHBOARD],
     [/^audit-log(?:\/|$)/, ADMIN_PERMISSIONS.AUDIT_VIEW],

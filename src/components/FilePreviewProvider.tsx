@@ -95,7 +95,7 @@ export default function FilePreviewProvider() {
     <div
       ref={dialogRef}
       tabIndex={-1}
-      className="fixed inset-0 z-[200] flex flex-col bg-slate-950/95 text-white backdrop-blur-sm outline-none"
+      className="fixed inset-0 z-[var(--layer-preview)] flex flex-col bg-slate-950/95 text-white backdrop-blur-sm outline-none"
       role="dialog"
       aria-modal="true"
       aria-label={`Pratinjau ${preview.filename}`}

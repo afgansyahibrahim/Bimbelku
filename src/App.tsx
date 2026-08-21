@@ -47,6 +47,7 @@ const ResetPassword = routeLazy(exactPath("/reset-password"), () => import("./pa
 
 // 4. Halaman Admin
 const DashboardOverview = routeLazy(exactPath("/admin"), () => import("./pages/admin/DashboardOverview"));
+const AdminProfile = routeLazy(exactPath("/admin/profile"), () => import("./pages/admin/AdminProfile"));
 const TutorSearchMonitoring = routeLazy(exactPath("/admin/tutor-searches"), () => import("./pages/admin/TutorSearchMonitoring"));
 const TeacherVerification = routeLazy(exactPath("/admin/guru"), () => import("./pages/admin/TeacherVerification"));
 const PaymentVerification = routeLazy(exactPath("/admin/pembayaran"), () => import("./pages/admin/PaymentVerification"));
@@ -63,7 +64,7 @@ const AdminNotes = routeLazy(exactPath("/admin/notes"), () => import("./pages/ad
 const SettingsDisplay = routeLazy(exactPath("/admin/settings-display"), () => import("./pages/admin/SettingsDisplay"));
 const AdminRatings = routeLazy(exactPath("/admin/ratings"), () => import("./pages/admin/AdminRatings"));
 const HourlyRates = routeLazy(exactPath("/admin/hourly-rates"), () => import("./pages/admin/HourlyRates"));
-const LearningTopics = routeLazy(exactPath("/admin/learning-topics"), () => import("./pages/admin/LearningTopics"));
+const Chapters = routeLazy(exactPath("/admin/chapters"), () => import("./pages/admin/Chapters"));
 const SubjectManagement = routeLazy(exactPath("/admin/subjects"), () => import("./pages/admin/SubjectManagement"));
 const CaseCenter = routeLazy(exactPath("/admin/cases"), () => import("./pages/admin/CaseCenter"));
 const StageFiveManagement = routeLazy(exactPath("/admin/stage-five"), () => import("./pages/admin/StageFiveManagement"));
@@ -96,7 +97,6 @@ const Account = routeLazy(exactPath("/student/account"), () => import("./pages/s
 const PackageBuilder = routeLazy(exactPath("/student/packages/new", "/search", "/student/find"), () => import("./pages/students/PackageBuilder"));
 const PackageReschedule = routeLazy(pathPattern(/^\/student\/packages\/[^/]+\/reschedule$/), () => import("./pages/students/PackageReschedule"));
 const MyPackages = routeLazy(exactPath("/student/packages"), () => import("./pages/students/MyPackages"));
-const LegacyRequests = routeLazy(exactPath("/student/requests/legacy"), () => import("./pages/students/LegacyRequests"));
 const Vouchers = routeLazy(exactPath("/student/vouchers"), () => import("./pages/students/Vouchers"));
 const PromotionDetail = routeLazy(pathPattern(/^\/student\/offers\/[^/]+$/), () => import("./pages/students/PromotionDetail"));
 const Messages = routeLazy(exactPath("/student/messages"), () => import("./pages/students/Messages"));
@@ -257,6 +257,7 @@ const App = () => (
                ========================================= */}
             <Route element={<PrivateRoute allowedRoles={['admin']} />}>
               <Route path="/admin" element={<DashboardOverview />} />
+              <Route path="/admin/profile" element={<AdminProfile />} />
               <Route path="/admin/tutor-searches" element={<TutorSearchMonitoring />} />
               <Route path="/admin/guru" element={<TeacherVerification />} />
               <Route path="/admin/pembayaran" element={<PaymentVerification />} />
@@ -274,7 +275,7 @@ const App = () => (
               <Route path="/admin/settings-display" element={<SettingsDisplay />} />
               <Route path="/admin/ratings" element={<AdminRatings />} />
               <Route path="/admin/hourly-rates" element={<HourlyRates />} />
-              <Route path="/admin/learning-topics" element={<LearningTopics />} />
+              <Route path="/admin/chapters" element={<Chapters />} />
               <Route path="/admin/subjects" element={<SubjectManagement />} />
               <Route path="/admin/cases" element={<CaseCenter />} />
               <Route path="/admin/stage-five" element={<StageFiveManagement />} />
@@ -334,7 +335,6 @@ const App = () => (
               <Route path="/student/profile" element={<Profile />} />
               <Route path="/student/account" element={<Account />} />
               <Route path="/student/packages" element={<MyPackages />} />
-              <Route path="/student/requests/legacy" element={<LegacyRequests />} />
               <Route path="/student/packages/:id/reschedule" element={<PackageReschedule />} />
               <Route path="/student/vouchers" element={<Vouchers />} />
               <Route path="/student/offers/:id" element={<PromotionDetail />} />

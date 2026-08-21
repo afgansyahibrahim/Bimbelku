@@ -19,12 +19,12 @@ export default function DashboardPreviewSection() {
             <h2 className="mt-4 max-w-xl text-3xl font-black leading-tight text-white md:text-4xl">Lihat per paket dulu, buka detail saat dibutuhkan</h2>
           </Reveal>
           <Reveal direction="right" delay={0.16} width="100%">
-            <p className="mt-4 max-w-xl leading-7 text-slate-300">BimbelKu tidak menumpuk semua bab, subbab, sesi, dan laporan dalam satu layar. Kamu memilih programnya lebih dulu, baru melihat progress yang relevan.</p>
+            <p className="mt-4 max-w-xl leading-7 text-slate-300">BimbelKu tidak menumpuk semua Bab, sesi, dan laporan dalam satu layar. Kamu memilih programnya lebih dulu, baru melihat progress yang relevan.</p>
           </Reveal>
           <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            <Reveal direction="right" delay={0.22} width="100%"><Point icon={Layers3} text="Halaman awal tersusun per Paket Belajar atau Kelas Murah" /></Reveal>
-            <Reveal direction="right" delay={0.3} width="100%"><Point icon={BookOpenCheck} text="Paket Belajar menunjukkan Bab → Subbab" /></Reveal>
-            <Reveal direction="right" delay={0.38} width="100%"><Point icon={Users} text="Kelas Murah cukup menunjukkan progress per Bab" /></Reveal>
+            <Reveal direction="right" delay={0.22} width="100%"><Point icon={Layers3} text="Halaman awal tersusun per Paket Belajar atau Kelas Kelompok" /></Reveal>
+            <Reveal direction="right" delay={0.3} width="100%"><Point icon={BookOpenCheck} text="Paket Belajar menunjukkan progress per Bab" /></Reveal>
+            <Reveal direction="right" delay={0.38} width="100%"><Point icon={Users} text="Kelas Kelompok cukup menunjukkan progress per Bab" /></Reveal>
           </div>
         </div>
 
@@ -64,10 +64,10 @@ function DesktopProgressPreview() {
 
       <div className="mt-4 grid gap-3">
         <Reveal delay={0.28} width="100%">
-          <DarkPreviewProgram badge="Paket Belajar" title="Intensif Matematika" subtitle="Aljabar · Persamaan Linear" progress={67} meta="8 dari 12 subbab selesai" />
+          <DarkPreviewProgram badge="Paket Belajar" title="Intensif Matematika" subtitle="Aljabar · Persamaan Linear" progress={67} meta="5 dari 8 Bab selesai" />
         </Reveal>
         <Reveal delay={0.38} width="100%">
-          <DarkPreviewProgram badge="Kelas Murah" title="TKA Matematika" subtitle="Belajar bersama · Online" progress={50} meta="2 dari 4 bab selesai" cheap />
+          <DarkPreviewProgram badge="Kelas Kelompok" title="TKA Matematika" subtitle="Belajar bersama · Online" progress={50} meta="2 dari 4 bab selesai" cheap />
         </Reveal>
       </div>
 
@@ -97,8 +97,8 @@ function MobileProgressPreview() {
       </div>
 
       <div className="mt-3 space-y-2.5">
-        <MobileProgram badge="Paket Belajar" title="Intensif Matematika" progress={67} meta="8/12 subbab selesai" />
-        <MobileProgram badge="Kelas Murah" title="TKA Matematika" progress={50} meta="2/4 bab selesai" cheap />
+        <MobileProgram badge="Paket Belajar" title="Intensif Matematika" progress={67} meta="5/8 Bab selesai" />
+        <MobileProgram badge="Kelas Kelompok" title="TKA Matematika" progress={50} meta="2/4 bab selesai" cheap />
       </div>
 
       <div className="mt-3 flex items-start gap-2 rounded-xl border border-white/10 bg-white/[0.05] p-3 text-[10px] font-semibold leading-4 text-slate-300">

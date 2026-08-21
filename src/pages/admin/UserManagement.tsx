@@ -91,26 +91,26 @@ export default function UserManagement() {
       
       {/* MODAL POPUP LIHAT DATA */}
       {modalOpen && selectedUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 relative">
+        <div className="fixed inset-0 z-[var(--layer-modal)] flex items-end justify-center bg-black/55 p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] animate-in fade-in sm:items-center sm:p-4">
+          <div className="relative flex max-h-[calc(100dvh-1.5rem)] w-full min-w-0 max-w-lg flex-col overflow-hidden rounded-[1.5rem] bg-white shadow-2xl animate-in slide-in-from-bottom-4 sm:rounded-2xl sm:zoom-in-95">
             
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-              <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+            <div className="flex min-w-0 shrink-0 items-center justify-between gap-3 border-b border-gray-100 bg-gray-50 px-4 py-4 sm:px-6">
+              <h3 className="flex min-w-0 items-center gap-2 break-words text-base font-bold text-gray-900 sm:text-lg">
                 {selectedUser.role === "student" ? <School size={20} className="text-blue-500"/> : <GraduationCap size={20} className="text-orange-500"/>}
                 Detail {selectedUser.role === 'student' ? 'Murid' : 'Tutor'}
               </h3>
               <button onClick={() => setModalOpen(false)}><X size={24} className="text-gray-400 hover:text-gray-600" /></button>
             </div>
 
-            <div className="p-6 overflow-y-auto max-h-[80dvh]">
+            <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6">
                {/* HEADER PROFIL */}
-               <div className="flex items-center gap-4 mb-6">
+               <div className="mb-6 flex min-w-0 items-center gap-3 sm:gap-4">
                   <div className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold border-2 border-white shadow-sm ${selectedUser.role === 'teacher' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>
                     {selectedUser.name.charAt(0).toUpperCase()}
                   </div>
-                  <div>
-                    <h4 className="text-xl font-bold text-gray-900">{selectedUser.name}</h4>
-                    <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
+                  <div className="min-w-0 flex-1">
+                    <h4 className="break-words text-lg font-bold text-gray-900 sm:text-xl">{selectedUser.name}</h4>
+                    <div className="mt-1 flex min-w-0 items-start gap-2 break-all text-sm text-gray-500">
                        <Mail size={14} /> {selectedUser.email}
                     </div>
                     <span className={`inline-block mt-2 px-2 py-0.5 rounded text-xs font-bold ${selectedUser.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
@@ -162,7 +162,7 @@ export default function UserManagement() {
                   {selectedUser.role === "teacher" && selectedUser.teacher_profile && (
                     <div className="space-y-4">
                       {/* Grid Keahlian & Metode */}
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 sm:gap-4">
                           <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                              <label className="text-xs text-gray-500 uppercase font-bold flex items-center gap-1 mb-1">
                                 <BookOpen size={14} /> Keahlian
@@ -181,7 +181,7 @@ export default function UserManagement() {
                       {selectedUser.teacher_profile.linkedin && (
                         <div>
                             <label className="text-xs text-gray-500 uppercase font-bold flex items-center gap-1 mb-1.5"><Linkedin size={14}/> LinkedIn</label>
-                            <a href={selectedUser.teacher_profile.linkedin} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline text-sm truncate block bg-gray-50 p-2 rounded-lg border border-gray-200">
+                            <a href={selectedUser.teacher_profile.linkedin} target="_blank" rel="noreferrer" className="block break-all rounded-lg border border-gray-200 bg-gray-50 p-2 text-sm text-blue-600 hover:underline">
                                 {selectedUser.teacher_profile.linkedin}
                             </a>
                         </div>
@@ -262,8 +262,18 @@ export default function UserManagement() {
            </div>
         </div>
 
-        {/* TABEL */}
-        <div className="overflow-x-auto">
+        {/* Kartu mobile */}
+        <div className="divide-y divide-gray-100 md:hidden">
+          {isLoading ? <div className="p-10 text-center text-sm text-gray-500"><Loader2 className="mr-2 inline animate-spin" />Memuat data...</div> : filteredUsers.length > 0 ? filteredUsers.map((u) => (
+            <article key={u.id} className={`p-4 ${u.status === "banned" ? "bg-red-50/50" : "bg-white"}`}>
+              <div className="flex min-w-0 items-start gap-3"><div className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-bold ${u.role === "teacher" ? "bg-orange-100 text-orange-700" : "bg-blue-100 text-blue-700"}`}>{u.name.charAt(0).toUpperCase()}</div><div className="min-w-0 flex-1"><p className="break-words font-black text-gray-900">{u.name}</p><p className="mt-1 break-all text-xs text-gray-500">{u.email}</p></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${u.status === "active" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{u.status === "active" ? "Aktif" : "Diblokir"}</span></div>
+              <div className="mt-4 grid grid-cols-2 gap-2"><button type="button" onClick={() => openModal(u)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gray-100 px-3 text-xs font-black text-gray-700"><Eye size={14} />Detail</button><button type="button" onClick={() => toggleStatus(u)} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-black ${u.status === "active" ? "border-red-200 text-red-600" : "border-green-200 text-green-700"}`}>{u.status === "active" ? <><Ban size={14} />Blokir</> : <><CheckCircle size={14} />Aktifkan</>}</button></div>
+            </article>
+          )) : <div className="p-10 text-center text-sm text-gray-500">Data tidak ditemukan.</div>}
+        </div>
+
+        {/* Tabel desktop */}
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-[760px] w-full text-left">
             <thead className="bg-gray-50 text-xs uppercase text-gray-500 font-semibold">
               <tr>

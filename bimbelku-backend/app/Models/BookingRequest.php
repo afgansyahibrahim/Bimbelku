@@ -7,14 +7,14 @@ use Illuminate\Database\Eloquent\Model;
 
 class BookingRequest extends Model
 {
-    protected $hidden = ['attachment', 'latitude', 'longitude'];
+    protected $hidden = ['latitude', 'longitude'];
 
     protected $fillable = [
-        'student_id', 'matched_teacher_id', 'subject_name', 'curriculum_subject_id', 'education_level', 'grade', 'topic',
+        'student_id', 'matched_teacher_id', 'subject_name', 'curriculum_subject_id', 'education_level', 'grade',
         'learning_mode', 'class_type', 'scheduled_date', 'start_time', 'end_time', 'duration_hours',
         'address', 'maps_link', 'latitude', 'longitude', 'status', 'matching_attempts', 'hourly_rate',
-        'total_amount', 'teacher_response_deadline', 'payment_due_at', 'group_pool_id', 'chapter',
-        'subtopic', 'learning_goal', 'attachment', 'search_radius_km', 'search_started_at',
+        'total_amount', 'teacher_response_deadline', 'payment_due_at', 'chapter',
+        'learning_goal', 'search_radius_km', 'search_started_at',
         'search_expires_at', 'teacher_decision_deadline', 'teacher_rejection_reason', 'booking_id',
         'package_subject_id',
     ];
@@ -37,18 +37,7 @@ class BookingRequest extends Model
 
     public function scopeMatchingAnchors(Builder $query): Builder
     {
-        return $query->where(function (Builder $unique) {
-            $unique
-                ->whereNull('group_pool_id')
-                ->orWhereRaw(
-                    "booking_requests.id = (
-                        SELECT MIN(grouped_requests.id)
-                        FROM booking_requests AS grouped_requests
-                        WHERE grouped_requests.group_pool_id = booking_requests.group_pool_id
-                          AND grouped_requests.status IN ('matching', 'teacher_pending', 'no_teacher', 'expired')
-                    )"
-                );
-        });
+        return $query;
     }
 
     public function student()
@@ -74,16 +63,6 @@ class BookingRequest extends Model
     public function primaryBooking()
     {
         return $this->hasOne(Booking::class);
-    }
-
-    public function groupPool()
-    {
-        return $this->belongsTo(GroupPool::class);
-    }
-
-    public function groupMember()
-    {
-        return $this->hasOne(GroupMember::class);
     }
 
     public function participant()

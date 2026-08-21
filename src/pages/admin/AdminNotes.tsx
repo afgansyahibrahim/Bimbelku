@@ -247,7 +247,7 @@ export default function AdminNotes() {
 
         {/* MODAL FORM */}
         {isModalOpen && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="fixed inset-0 z-[var(--layer-modal)] flex items-center justify-center p-3 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 sm:p-4">
                 <div className={`w-full max-w-lg rounded-[2rem] shadow-2xl p-6 relative animate-in zoom-in-95 duration-200 transition-colors ${COLORS.find(c => c.id === color)?.bg || 'bg-white'}`}>
                     
                     {/* Toolbar Atas */}

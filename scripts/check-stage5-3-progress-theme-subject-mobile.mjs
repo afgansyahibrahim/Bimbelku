@@ -20,8 +20,15 @@ expect(studentDetail.includes("from-slate-950 via-indigo-950 to-blue-800") && st
 expect(teacherDetail.includes("from-slate-950 via-indigo-950 to-blue-800") && teacherDetail.includes("bg-indigo-600 text-white shadow-sm"), "Detail Progress tutor belum konsisten dengan tema lama");
 expect(!exists("src/components/StudentWorkspaceList.tsx"), "Komponen Progress lama tidak boleh dihidupkan kembali");
 
-expect(subjects.includes("block h-full min-h-[154px] min-w-0 overflow-hidden"), "Card Mata Pelajaran mobile belum dibuat block/h-full/min-w-0");
-expect(subjects.includes("hover:shadow-card") && subjects.includes("group-hover:scale-110"), "Utility hover Mata Pelajaran masih salah");
+expect(
+  subjects.includes("block h-full min-h-[") && subjects.includes("min-w-0 overflow-hidden"),
+  "Card Mata Pelajaran mobile belum dibuat block/h-full/min-w-0",
+);
+expect(
+  (subjects.includes("hover:shadow-card") || subjects.includes("hover:shadow-lg"))
+    && (subjects.includes("group-hover:scale-110") || subjects.includes("group-hover:scale-105")),
+  "Interaksi hover Mata Pelajaran belum memakai utility Tailwind yang valid",
+);
 expect(!subjects.includes("hover-shadow-card") && !subjects.includes("group-hover-scale-110"), "Utility typo Mata Pelajaran lama masih tersisa");
 expect(subjects.includes('className="h-full min-w-0"'), "Wrapper Reveal Mata Pelajaran belum ikut stretch mengikuti grid");
 

@@ -68,14 +68,14 @@ expect(roleQuickGuide.includes("scheduleNonCriticalTask(fetchTutorial)"), "Tutor
 const myClasses = read("src/pages/students/MyClasses.tsx");
 expect(!myClasses.includes('if (loading) {\n    return <StudentLayout title="Kelas Saya">'), "MyClasses masih menahan hero sampai API selesai.");
 expect(myClasses.includes('const LearningSessionHub = lazy'), "LearningSessionHub Student masih masuk initial class bundle.");
-expect(myClasses.includes("render-auto flex flex-col"), "Daftar kelas Student belum memakai content-visibility.");
+expect(myClasses.includes("render-auto") && myClasses.includes("flex-col"), "Daftar kelas Student belum memakai content-visibility.");
 expect(myClasses.includes('getCached<ClassListResponse>("/student/classes"'), "Daftar kelas Student belum memakai cache/dedupe GET aman.");
 
 const manageClasses = read("src/pages/teacher/ManageClasses.tsx");
 expect(!manageClasses.includes('if (loading) {\n    return <TeacherLayout title="Kelas Saya">'), "ManageClasses masih menahan hero sampai API selesai.");
 expect(manageClasses.includes('const LearningSessionHub = lazy'), "LearningSessionHub Teacher masih initial.");
-expect(manageClasses.includes('const CameraCapture = lazy'), "CameraCapture Teacher masih initial.");
-expect(manageClasses.includes("render-auto flex flex-col"), "Daftar kelas Teacher belum memakai content-visibility.");
+expect(!manageClasses.includes("CameraCapture"), "CameraCapture sesi lama masih dimuat pada Kelas Tutor.");
+expect(manageClasses.includes("render-auto") && manageClasses.includes("flex-col"), "Daftar kelas Teacher belum memakai content-visibility.");
 expect(manageClasses.includes('getCached<unknown>("/teacher/classes"'), "Daftar kelas Teacher belum memakai cache/dedupe GET aman.");
 
 const classroom = read("bimbelku-backend/app/Http/Controllers/Api/ClassroomController.php");

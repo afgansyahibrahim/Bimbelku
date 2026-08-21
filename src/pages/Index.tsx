@@ -2,19 +2,19 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import Navbar from "@/components/Navbar";
 import HeroSection from "@/components/HeroSection";
 
-const FeaturesSection = lazy(() => import("@/components/FeaturesSection"));
-const HowItWorksSection = lazy(() => import("@/components/HowItWorksSection"));
 const SubjectsSection = lazy(() => import("@/components/SubjectsSection"));
+const HowItWorksSection = lazy(() => import("@/components/HowItWorksSection"));
+const FeaturesSection = lazy(() => import("@/components/FeaturesSection"));
 const PackagePreviewSection = lazy(() => import("@/components/PackagePreviewSection"));
 const DashboardPreviewSection = lazy(() => import("@/components/DashboardPreviewSection"));
 const CTASection = lazy(() => import("@/components/CTASection"));
 const Footer = lazy(() => import("@/components/Footer"));
 
 const SectionLoader = () => (
-  <div className="w-full h-[400px] bg-gray-50/50 animate-pulse flex items-center justify-center my-8">
-    <div className="flex flex-col items-center gap-2 opacity-50">
-      <div className="w-10 h-10 border-4 border-gray-300 border-t-orange-500 rounded-full animate-spin"></div>
-      <span className="text-xs font-medium text-gray-400">Memuat Konten...</span>
+  <div className="my-8 flex h-[360px] w-full items-center justify-center bg-slate-50/60" role="status" aria-label="Memuat konten">
+    <div className="flex flex-col items-center gap-2 opacity-60">
+      <div className="h-9 w-9 animate-spin rounded-full border-4 border-slate-200 border-t-orange-500" />
+      <span className="text-xs font-bold text-slate-400">Memuat konten...</span>
     </div>
   </div>
 );
@@ -25,11 +25,7 @@ interface DeferredSectionProps {
   rootMargin?: string;
 }
 
-const DeferredSection = ({
-  children,
-  minHeight,
-  rootMargin = "900px 0px",
-}: DeferredSectionProps) => {
+const DeferredSection = ({ children, minHeight, rootMargin = "900px 0px" }: DeferredSectionProps) => {
   const markerRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
 
@@ -55,68 +51,48 @@ const DeferredSection = ({
   }, [ready, rootMargin]);
 
   return (
-    <div
-      ref={markerRef}
-      style={ready ? undefined : { minHeight }}
-      aria-hidden={ready ? undefined : true}
-    >
+    <div ref={markerRef} style={ready ? undefined : { minHeight }} aria-hidden={ready ? undefined : true}>
       {ready ? children : null}
     </div>
   );
 };
 
-const Index = () => {
-  return (
-    <div className="min-h-screen bg-background">
-      {/* Navbar + hero tetap critical agar FCP yang sudah bagus tidak dikorbankan. */}
-      <Navbar />
-      <main>
-        <HeroSection />
+const Index = () => (
+  <div className="min-h-screen bg-background">
+    <Navbar />
+    <main>
+      <HeroSection />
 
-        <DeferredSection minHeight={560}>
-          <Suspense fallback={<SectionLoader />}>
-            <HowItWorksSection />
-          </Suspense>
-        </DeferredSection>
-
-        <DeferredSection minHeight={620}>
-          <Suspense fallback={<SectionLoader />}>
-            <FeaturesSection />
-          </Suspense>
-        </DeferredSection>
-
-        <DeferredSection minHeight={560}>
-          <Suspense fallback={<SectionLoader />}>
-            <SubjectsSection />
-          </Suspense>
-        </DeferredSection>
-
-        <DeferredSection minHeight={620}>
-          <Suspense fallback={<SectionLoader />}>
-            <PackagePreviewSection />
-          </Suspense>
-        </DeferredSection>
-
-        <DeferredSection minHeight={560}>
-          <Suspense fallback={<SectionLoader />}>
-            <DashboardPreviewSection />
-          </Suspense>
-        </DeferredSection>
-
-        <DeferredSection minHeight={440}>
-          <Suspense fallback={<SectionLoader />}>
-            <CTASection />
-          </Suspense>
-        </DeferredSection>
-      </main>
-
-      <DeferredSection minHeight={420} rootMargin="1200px 0px">
-        <Suspense fallback={<div className="h-32 bg-gray-100 animate-pulse" />}>
-          <Footer />
-        </Suspense>
+      <DeferredSection minHeight={560}>
+        <Suspense fallback={<SectionLoader />}><HowItWorksSection /></Suspense>
       </DeferredSection>
-    </div>
-  );
-};
+
+      <DeferredSection minHeight={560}>
+        <Suspense fallback={<SectionLoader />}><FeaturesSection /></Suspense>
+      </DeferredSection>
+
+      <DeferredSection minHeight={560}>
+        <Suspense fallback={<SectionLoader />}><SubjectsSection /></Suspense>
+      </DeferredSection>
+
+      {/* Dua preview produk lama tetap dipertahankan agar tidak ada capability landing yang hilang. */}
+      <DeferredSection minHeight={620}>
+        <Suspense fallback={<SectionLoader />}><PackagePreviewSection /></Suspense>
+      </DeferredSection>
+
+      <DeferredSection minHeight={560}>
+        <Suspense fallback={<SectionLoader />}><DashboardPreviewSection /></Suspense>
+      </DeferredSection>
+
+      <DeferredSection minHeight={420}>
+        <Suspense fallback={<SectionLoader />}><CTASection /></Suspense>
+      </DeferredSection>
+    </main>
+
+    <DeferredSection minHeight={420} rootMargin="1200px 0px">
+      <Suspense fallback={<div className="h-32 animate-pulse bg-slate-100" />}><Footer /></Suspense>
+    </DeferredSection>
+  </div>
+);
 
 export default Index;

@@ -31,7 +31,7 @@ interface Chapter {
 const grades = GRADES_BY_EDUCATION_LEVEL;
 const emptyForm = { curriculum_subject_id: 0, subject_name: "", education_level: "SD", grade: "Kelas 1", title: "", sort_order: "0", is_active: true };
 
-export default function LearningTopics() {
+export default function Chapters() {
   const confirm = useConfirmDialog();
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [subjects, setSubjects] = useState<SubjectOption[]>([]);

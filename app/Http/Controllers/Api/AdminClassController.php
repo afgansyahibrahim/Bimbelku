@@ -126,7 +126,6 @@ class AdminClassController extends Controller
         }
 
         $bookings = $query->paginate($perPage)->withQueryString();
-
         $bookings->getCollection()->transform(function (Booking $booking) {
             $request = $booking->bookingRequest;
             $isCompleted = in_array($booking->status, self::HISTORY_STATUSES, true);
@@ -253,25 +252,18 @@ class AdminClassController extends Controller
     private function actionForStatus(Booking $booking): ?array
     {
         return match ($booking->status) {
-            'refund_pending',
-            'emergency_refund_pending',
-            'partially_refunded' => [
+            'refund_pending', 'emergency_refund_pending', 'partially_refunded' => [
                 'label' => 'Kelola Refund',
                 'url' => '/admin/refunds',
             ],
-
             'disputed' => [
                 'label' => 'Review Kasus',
                 'url' => '/admin/cases',
             ],
-
-            'absence_review',
-            'admin_review_required',
-            'awaiting_student_approval' => [
+            'absence_review', 'admin_review_required', 'awaiting_student_approval' => [
                 'label' => 'Review Kelas',
-                'url' => '/admin/cases',
+                'url' => '/admin/classes/'.$booking->id,
             ],
-
             default => null,
         };
     }

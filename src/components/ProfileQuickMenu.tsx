@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ChevronDown, CircleHelp, Settings, UserRound } from "lucide-react";
@@ -62,7 +63,7 @@ export default function ProfileQuickMenu({
   }, [open]);
 
   return (
-    <div className="relative border-l border-slate-200 pl-1.5 sm:pl-4">
+    <div className="relative z-[120] border-l border-slate-200 pl-1.5 sm:pl-4">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -92,13 +93,13 @@ export default function ProfileQuickMenu({
           <button
             type="button"
             aria-label="Tutup menu profil"
-            className="fixed inset-0 z-[var(--layer-modal)] bg-slate-950/35 lg:z-[var(--layer-dropdown)] lg:bg-transparent"
+            className="fixed inset-0 z-[9998] bg-transparent"
             onClick={() => setOpen(false)}
           />
           <div
             role="menu"
             aria-label="Menu akun"
-            className="fixed inset-x-0 bottom-0 z-[var(--layer-modal-content)] max-h-[min(82dvh,38rem)] overflow-y-auto overscroll-contain rounded-t-[1.75rem] border-x border-t border-slate-200 bg-white px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-2 shadow-[0_-18px_55px_rgba(15,23,42,0.18)] animate-in slide-in-from-bottom-4 duration-200 lg:absolute lg:inset-x-auto lg:bottom-auto lg:right-0 lg:top-full lg:z-[var(--layer-dropdown)] lg:mt-3 lg:w-[min(22rem,calc(100vw-2rem))] lg:overflow-hidden lg:rounded-[1.5rem] lg:border lg:p-3 lg:shadow-[0_18px_50px_rgba(15,23,42,0.18)] lg:fade-in lg:slide-in-from-bottom-0 lg:zoom-in-95"
+            className="fixed right-4 top-20 z-[9999] w-[min(18rem,calc(100vw-2rem))] max-h-[calc(100dvh-6rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_18px_50px_rgba(15,23,42,0.18)] animate-in fade-in zoom-in-95 duration-150 lg:absolute lg:right-0 lg:top-full lg:mt-3 lg:w-[min(22rem,calc(100vw-2rem))] lg:max-h-none lg:overflow-hidden lg:rounded-[1.5rem] lg:border lg:p-3"
           >
             <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-slate-200 lg:hidden" aria-hidden="true" />
 

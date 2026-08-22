@@ -939,25 +939,13 @@ class AdminController extends Controller
         $monitoringNeedsAttention = $canClasses
             ? Booking::query()
                 ->where('class_type', 'private')
-                ->where(function ($attention) {
-                    $attention
-                        ->whereIn('status', [
-                            'disputed',
-                            'absence_review',
-                            'admin_review_required',
-                            'emergency_refund_pending',
-                            'refund_pending',
-                        ])
-                        ->orWhere(fn ($unfinished) => $unfinished
-                            ->whereIn('status', ['confirmed', 'in_progress'])
-                            ->where('end_at', '<=', now()))
-                        ->orWhere(fn ($studentDecision) => $studentDecision
-                            ->where('status', 'awaiting_student_approval')
-                            ->whereNotNull('objection_deadline')
-                            ->where('objection_deadline', '<=', now()->addHours(6)))
-                        ->orWhereHas('latestLearningProgressReport', fn ($report) => $report
-                            ->whereRaw('learning_progress_reports.actual_duration_minutes < (bookings.duration_hours * 36)'));
-                })
+                ->whereIn('status', [
+                    'disputed',
+                    'absence_review',
+                    'admin_review_required',
+                    'emergency_refund_pending',
+                    'refund_pending',
+                ])
                 ->count()
             : 0;
         $pendingRefunds = $canRefunds ? Refund::where('status', 'pending')->count() : 0;

@@ -83,7 +83,7 @@ expect(progressPage.includes('"/student/packages"') && progressPage.includes('sc
 expect(progressDetail.includes('initialTab="progress"') && progressDetail.includes("package_subject_id"), "detail Progress dapat membuka laporan tutor yang sesuai paket");
 expect(studentClassesController.includes("'latest_message'") && studentClassesController.includes("'latest_report'") && studentClassesController.includes("'package_subject_id'"), "daftar kelas menyediakan ringkasan laporan dan pengikat ke paket");
 expect(learningHub.includes('initialTab = "session"') && learningHub.includes("setTab(initialTab)"), "ruang belajar menerima tab awal dari halaman pemanggil");
-for (const item of ["Paket Saya", "Voucher Saya", "Riwayat Pembayaran", "Perkembangan Belajar", "Tutorial penggunaan", "Pusat Bantuan"]) {
+for (const item of ["Proses Pesanan Privat", "Kelas Saya", "Voucher Saya", "Riwayat Pembayaran", "Perkembangan Belajar", "Tutorial penggunaan", "Pusat Bantuan"]) {
   expect(account.includes(item), `halaman Saya memuat ${item}`);
 }
 expect(account.includes('to: "/student/progress"'), "tautan perkembangan tidak kembali ke daftar kelas umum");

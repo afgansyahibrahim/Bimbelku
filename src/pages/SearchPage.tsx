@@ -7,6 +7,7 @@ import {
   ArrowRight,
   BookOpen,
   CalendarDays,
+  ChevronDown,
   CheckCircle2,
   Clock3,
   CreditCard,
@@ -29,7 +30,7 @@ import StudentLayout from "@/components/StudentLayout";
 import SubjectCombobox, { SubjectOption } from "@/components/SubjectCombobox";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -462,7 +463,7 @@ export default function SearchPage() {
           maxAgeMs: 5 * 60_000,
         }),
         http.get("/student/booking-requests"),
-        getCached("/user", { maxAgeMs: 60_000 }),
+        getCached<{ phone?: string; address?: string; maps_link?: string; latitude?: number | string | null; longitude?: number | string | null }>("/user", { maxAgeMs: 60_000 }),
       ]);
       setCatalog(catalogResponse.data);
       applyRequestResponse(requestResponse.data);
@@ -481,13 +482,13 @@ export default function SearchPage() {
     }
   }, [applyRequestResponse]);
 
-  const refreshRequests = useCallback(async (notify = true) => {
+  const refreshRequests = useCallback(async (showNotice = true) => {
     try {
       const response = await http.get("/student/booking-requests");
       applyRequestResponse(response.data);
-      if (notify) notify.success("Status permintaan diperbarui.");
+      if (showNotice) notify.success("Status permintaan diperbarui.");
     } catch (error) {
-      if (notify) notify.error(getApiError(error));
+      if (showNotice) notify.error(getApiError(error));
     }
   }, [applyRequestResponse]);
 
@@ -959,10 +960,10 @@ export default function SearchPage() {
                     <Input type="date" min={today()} className="h-12 rounded-xl" value={form.scheduled_date} onChange={(event) => setForm((current) => ({ ...current, scheduled_date: event.target.value }))} />
                   </Field>
                   <Field label="Jam mulai" icon={Clock3}>
-                    <Select value={form.start_time} onValueChange={(value) => setForm((current) => ({ ...current, start_time: value }))}>
-                      <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="Pilih jam" /></SelectTrigger>
-                      <SelectContent>{FULL_HOUR_OPTIONS.map((time) => <SelectItem key={time} value={time}>{time.replace(":", ".")}</SelectItem>)}</SelectContent>
-                    </Select>
+                    <MobileTimePicker
+                      value={form.start_time}
+                      onChange={(value) => setForm((current) => ({ ...current, start_time: value }))}
+                    />
                   </Field>
                   <Field label="Durasi sesi" icon={Clock3}>
                     <div className="flex h-12 items-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-black text-slate-700">1 jam</div>
@@ -1234,6 +1235,72 @@ function RadarLoader({ label, compact = false }: { label: string; compact?: bool
       <p className={`${compact ? "mt-3 text-xs" : "mt-5 text-sm"} font-bold tracking-wide`}>{label}</p>
       {!compact && <p className="mt-1 text-xs text-indigo-200">Mencocokkan sinyal terbaik di sekitarmu</p>}
     </div>
+  );
+}
+
+function MobileTimePicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [open]);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="flex h-12 w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 text-left text-sm font-bold text-slate-700 shadow-sm transition hover:border-indigo-300 focus-visible:border-indigo-500"
+          aria-label="Pilih jam mulai"
+        >
+          <span className={value ? "text-slate-900" : "text-slate-400"}>{value ? value.replace(":", ".") : "Pilih jam"}</span>
+          <ChevronDown size={18} className="shrink-0 text-slate-400" aria-hidden="true" />
+        </button>
+      </DialogTrigger>
+      <DialogContent
+        hideCloseButton={false}
+        overlayClassName="!bg-slate-950/45 backdrop-blur-[2px]"
+        onPointerDownOutside={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
+        className="!fixed !left-1/2 !top-1/2 !flex !max-h-[min(78dvh,36rem)] !w-[calc(100%-2rem)] !max-w-lg !-translate-x-1/2 !-translate-y-1/2 !flex-col !gap-0 !rounded-3xl !p-0"
+      >
+        <DialogHeader className="shrink-0 border-b border-slate-100 px-5 pb-4 pt-5 text-left">
+          <DialogTitle className="!px-0 text-left text-xl font-black text-slate-900">Pilih jam mulai</DialogTitle>
+          <DialogDescription className="mt-1 text-left text-xs leading-5 text-slate-500">
+            Pilih waktu mulai. Scroll untuk melihat lebih banyak pilihan jam. Semua waktu menggunakan WIB.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="min-h-0 max-h-[min(40dvh,15rem)] flex-none overflow-y-auto overscroll-contain touch-pan-y px-5 py-4">
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {FULL_HOUR_OPTIONS.map((time) => {
+              const selected = value === time;
+              return (
+                <button
+                  key={time}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => {
+                    onChange(time);
+                    setOpen(false);
+                  }}
+                  className={`min-h-12 rounded-xl border px-3 py-3 text-sm font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                    selected
+                      ? "border-indigo-600 bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50"
+                  }`}
+                >
+                  {time.replace(":", ".")}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

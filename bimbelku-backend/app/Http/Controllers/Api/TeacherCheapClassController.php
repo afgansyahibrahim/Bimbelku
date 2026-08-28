@@ -59,6 +59,62 @@ class TeacherCheapClassController extends Controller
         return response()->json(['message' => 'Tautan Zoom Kelas Kelompok disimpan.']);
     }
 
+    public function startSession(Request $request, CheapClass $cheapClass)
+    {
+        CheapClassSchema::ensureReady();
+        abort_unless((int) $cheapClass->teacher_id === (int) $request->user()->id, 403);
+        abort_unless($cheapClass->status === 'confirmed', 422, 'Kelas belum siap untuk dimulai.');
+        abort_unless($cheapClass->meeting_link, 422, 'Isi tautan Zoom terlebih dahulu sebelum memulai kelas.');
+
+        [$session, $justStarted] = DB::transaction(function () use ($request, $cheapClass) {
+            $session = CheapClassSession::query()
+                ->where('cheap_class_id', $cheapClass->id)
+                ->where('starts_at', '<=', now()->addMinutes(10))
+                ->where('ends_at', '>', now())
+                ->orderBy('session_number')
+                ->lockForUpdate()
+                ->first();
+
+            abort_unless($session, 422, 'Belum ada sesi yang dapat dimulai saat ini.');
+
+            $justStarted = !$session->teacher_started_at;
+            if ($justStarted) {
+                $session->update([
+                    'status' => 'in_progress',
+                    'teacher_started_at' => now(),
+                    'teacher_started_by' => $request->user()->id,
+                ]);
+
+                $cheapClass->enrollments()
+                    ->where('status', 'confirmed')
+                    ->whereHas('order', fn ($orders) => $orders->where('status', 'paid'))
+                    ->pluck('student_id')
+                    ->each(function (int $studentId) use ($cheapClass, $session) {
+                        Notification::updateOrCreate(
+                            ['unique_key' => "cheap-class-session-started:{$session->id}:student:{$studentId}"],
+                            [
+                                'user_id' => $studentId,
+                                'title' => 'Kelas Kelompok sudah dimulai',
+                                'message' => "Tutor sudah hadir dan memulai sesi {$session->session_number}. Buka Kelas Saya untuk bergabung.",
+                                'type' => 'info',
+                                'target_url' => "/student/my-classes?class_kind=group&cheap_class={$cheapClass->id}&cheap_session={$session->id}&session_action=started",
+                                'is_read' => false,
+                            ]
+                        );
+                    });
+            }
+
+            return [$session->fresh(), $justStarted];
+        }, 3);
+
+        return response()->json([
+            'message' => $justStarted
+                ? 'Kehadiran tercatat. Kelas dimulai dan murid sudah diberi tahu.'
+                : 'Kehadiran sudah tercatat. Kelas masih berlangsung.',
+            'session' => $session,
+        ]);
+    }
+
     public function updateProgress(Request $request, CheapClass $cheapClass, CheapClassService $cheapClasses)
     {
         CheapClassSchema::ensureReady();

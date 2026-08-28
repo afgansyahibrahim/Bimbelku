@@ -261,7 +261,7 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
                   <NavItem to="/student/dashboard" icon={Home} label="Beranda" active={activeMenu === "home"} tour="student-home" attention={hasSidebarAttention("student", "/student/dashboard", attentionNotifications)} />
                   <NavItem to="/student/packages/new" icon={Search} label="Cari Les" active={activeMenu === "search"} tour="student-cari-les" attention={hasSidebarAttention("student", "/student/packages/new", attentionNotifications)} />
                   <NavItem to="/student/kelas-murah" icon={Users} label="Kelas Kelompok" active={activeMenu === "cheap-classes"} attention={hasSidebarAttention("student", "/student/kelas-murah", attentionNotifications)} />
-                  <NavItem to="/student/packages" icon={BookOpen} label="Kelas Saya" active={activeMenu === "classes"} tour="student-kelas" attention={hasSidebarAttention("student", "/student/packages", attentionNotifications)} />
+                  <NavItem to="/student/my-classes" icon={BookOpen} label="Kelas Saya" active={activeMenu === "classes"} tour="student-kelas" attention={hasSidebarAttention("student", "/student/my-classes", attentionNotifications)} />
                   <NavItem to="/student/messages" icon={MessageSquare} label="Pesan" active={activeMenu === "messages"} tour="student-pesan" attention={hasSidebarAttention("student", "/student/messages", attentionNotifications)} />
                   <NavItem to="/student/history" icon={CreditCard} label="Riwayat Pembayaran" active={activeMenu === "payments"} attention={hasSidebarAttention("student", "/student/history", attentionNotifications)} />
                   <NavItem to="/student/account" icon={User} label="Saya" active={activeMenu === "account"} tour="student-saya" attention={hasSidebarAttention("student", "/student/account", attentionNotifications)} />
@@ -283,7 +283,7 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
             <button type="button" aria-label="Buka menu" className="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 shadow-sm transition hover:bg-slate-50 xl:hidden" onClick={() => setSidebarOpen(true)}>
               <Menu size={20} />
             </button>
-            <h1 className="truncate text-sm font-black tracking-tight text-slate-800 sm:text-xl">{title}</h1>
+            <h1 className="truncate text-base font-black tracking-tight text-slate-800 sm:text-xl">{title}</h1>
           </div>
 
           <div className="flex shrink-0 items-center gap-1 sm:gap-3 xl:gap-5">
@@ -356,10 +356,10 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
           </div>
         </header>
 
-        <div id="student-scroll-container" className="flex-1 overflow-x-hidden overflow-y-auto scroll-smooth p-3 pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-24 xl:p-8 xl:pb-8">
+        <div id="student-scroll-container" className="mobile-app-content flex-1 overflow-x-hidden overflow-y-auto scroll-smooth p-4 pb-[calc(7.25rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-24 xl:p-8 xl:pb-8">
           <div className="mx-auto w-full min-w-0 max-w-7xl pb-6 sm:pb-10">{children}</div>
         </div>
-        {!isDesktop && (
+        {!isDesktop && !sidebarOpen && (
           <Suspense fallback={null}>
             <MobileBottomNav role="student" attentionNotifications={attentionNotifications} />
           </Suspense>

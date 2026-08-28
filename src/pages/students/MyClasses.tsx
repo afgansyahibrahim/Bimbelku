@@ -5,6 +5,7 @@ import {
   AlertCircle,
   ArrowLeft,
   ArrowUpDown,
+  BarChart3,
   BookOpen,
   CalendarDays,
   CheckCircle2,
@@ -14,6 +15,7 @@ import {
   FileCheck2,
   Filter,
   GraduationCap,
+  History,
   Loader2,
   MapPin,
   MessageCircle,
@@ -24,6 +26,7 @@ import {
   Star,
   UserRound,
   Users,
+  Video,
   WifiOff,
 } from "lucide-react";
 import axios from "axios";
@@ -39,9 +42,19 @@ import http, { getApiError, getCached } from "@/lib/http";
 import { validateUpload } from "@/lib/validation";
 
 const LearningSessionHub = lazy(() => import("@/components/LearningSessionHub"));
+const PackageProcessList = lazy(() => import("./MyPackages"));
 
 interface ClassItem {
   id: number;
+  class_key?: string;
+  class_kind?: "private" | "group";
+  cheap_class_id?: number;
+  cheap_class_session_id?: number;
+  session_number?: number;
+  session_count?: number;
+  teacher_started_at?: string | null;
+  group_sessions?: GroupSession[];
+  progress_url?: string;
   title: string;
   subject: string;
   education_level?: string;
@@ -86,16 +99,32 @@ interface ClassItem {
   order?: { id: number; order_id: string; status: string; payment_rejection_reason?: string };
 }
 
+type GroupSession = {
+  id: number;
+  session_number: number;
+  starts_at: string;
+  ends_at: string;
+  status: string;
+  teacher_started_at?: string | null;
+};
+
 const labels: Record<string, { label: string; className: string }> = {
   awaiting_payment: { label: "Menunggu pembayaran", className: "bg-orange-50 text-orange-700" },
   payment_submitted: { label: "Pembayaran diperiksa", className: "bg-sky-50 text-sky-700" },
   payment_collecting: { label: "Menunggu pembayaran", className: "bg-orange-50 text-orange-700" },
+  payment_rejected: { label: "Pembayaran ditolak", className: "bg-rose-50 text-rose-700" },
   confirmed: { label: "Terjadwal", className: "bg-indigo-50 text-indigo-700" },
   in_progress: { label: "Sedang berlangsung", className: "bg-emerald-50 text-emerald-700" },
+  scheduled: { label: "Terjadwal", className: "bg-indigo-50 text-indigo-700" },
+  report_required: { label: "Menunggu laporan", className: "bg-amber-50 text-amber-700" },
+  awaiting_admin_verification: { label: "Laporan diperiksa", className: "bg-violet-50 text-violet-700" },
+  revision_requested: { label: "Laporan diperbaiki", className: "bg-amber-50 text-amber-700" },
   awaiting_student_approval: { label: "Butuh keputusanmu", className: "bg-amber-50 text-amber-700" },
   disputed: { label: "Keberatan diperiksa", className: "bg-rose-50 text-rose-700" },
   admin_review_required: { label: "Diperiksa admin", className: "bg-violet-50 text-violet-700" },
   completed: { label: "Selesai", className: "bg-emerald-50 text-emerald-700" },
+  cancelled: { label: "Dibatalkan", className: "bg-slate-100 text-slate-700" },
+  payment_expired: { label: "Pembayaran berakhir", className: "bg-slate-100 text-slate-700" },
   refund_pending: { label: "Refund diproses", className: "bg-amber-50 text-amber-700" },
   emergency_refund_pending: { label: "Refund darurat", className: "bg-amber-50 text-amber-700" },
   refunded: { label: "Refund selesai", className: "bg-slate-100 text-slate-700" },
@@ -104,6 +133,60 @@ const labels: Record<string, { label: string; className: string }> = {
 
 type ClassListResponse = ClassItem[] | { data?: ClassItem[] };
 type ScheduleSort = "nearest" | "farthest";
+type KindFilter = "all" | "private" | "group";
+type ClassTab = "process" | "schedule" | "history";
+
+const processClassStatuses = new Set([
+  "awaiting_payment",
+  "payment_submitted",
+  "payment_collecting",
+  "payment_rejected",
+  "disputed",
+  "admin_review_required",
+  "refund_pending",
+  "emergency_refund_pending",
+  "absence_review",
+]);
+const historyClassStatuses = new Set(["completed", "cancelled", "payment_expired", "refunded"]);
+const activePastStatuses = new Set([
+  "in_progress",
+  "report_required",
+  "awaiting_admin_verification",
+  "revision_requested",
+  "awaiting_student_approval",
+]);
+
+const classTabFor = (item: ClassItem): ClassTab => {
+  if (processClassStatuses.has(item.status)) return "process";
+  if (historyClassStatuses.has(item.status)) return "history";
+
+  const endAt = validDate(item.end_at)?.getTime();
+  if (endAt && endAt < Date.now() && !activePastStatuses.has(item.status) && !item.attention) return "history";
+  return "schedule";
+};
+
+type GroupClassResponse = Array<{
+  id: number;
+  package_code?: string | null;
+  subject_name: string;
+  education_level?: string;
+  grade?: string;
+  chapter?: string;
+  price_per_student: number;
+  session_count: number;
+  meeting_link?: string | null;
+  status: string;
+  enrollment?: {
+    id: number;
+    status: string;
+    seat_expires_at?: string | null;
+    order_id?: number | null;
+    order_number?: string | null;
+    order_status?: string | null;
+  } | null;
+  teacher?: { name?: string; photo?: string | null } | null;
+  sessions: GroupSession[];
+}>;
 
 const presenceProblemOptions = [
   "Tutor tidak mengajar selama durasi yang seharusnya.",
@@ -141,6 +224,81 @@ const readClassRows = (payload: ClassListResponse): ClassItem[] | null => {
   return Array.isArray(payload?.data) ? payload.data : null;
 };
 
+const groupClassRows = (groups: GroupClassResponse): ClassItem[] => groups.map((group) => {
+    const sessions = [...group.sessions].sort((left, right) => left.session_number - right.session_number);
+    const liveSession = sessions.find((session) => session.status === "in_progress" || (
+      Boolean(session.teacher_started_at) && (validDate(session.ends_at)?.getTime() ?? 0) > Date.now()
+    ));
+    const referenceSession = liveSession
+      || sessions.find((session) => (validDate(session.ends_at)?.getTime() ?? 0) > Date.now())
+      || sessions[sessions.length - 1];
+    const orderStatus = group.enrollment?.order_status || undefined;
+    const enrollmentStatus = group.enrollment?.status || "unknown";
+    const enrollmentDisplayStatus: Record<string, string> = {
+      seat_held: "awaiting_payment",
+      payment_submitted: "payment_submitted",
+      payment_rejected: "payment_rejected",
+      cancellation_pending: "refund_pending",
+      refund_pending: "refund_pending",
+      refunded: "refunded",
+      payment_expired: "payment_expired",
+      cancelled: "cancelled",
+    };
+    const displayStatus = liveSession
+      ? "in_progress"
+      : orderStatus === "pending"
+        ? "awaiting_payment"
+        : orderStatus === "submitted"
+          ? "payment_submitted"
+          : orderStatus === "rejected"
+            ? "payment_rejected"
+            : orderStatus === "refund_pending"
+              ? "refund_pending"
+              : orderStatus === "refunded"
+                ? "refunded"
+                : enrollmentDisplayStatus[enrollmentStatus] || group.status;
+    const hasLearningAccess = group.enrollment?.status === "confirmed" && orderStatus === "paid";
+    return {
+      id: group.id,
+      class_key: `group-${group.id}`,
+      class_kind: "group",
+      cheap_class_id: group.id,
+      cheap_class_session_id: referenceSession?.id,
+      session_number: referenceSession?.session_number,
+      session_count: group.session_count,
+      teacher_started_at: liveSession?.teacher_started_at || referenceSession?.teacher_started_at,
+      group_sessions: sessions,
+      title: `${group.subject_name} · Paket ${group.session_count} sesi`,
+      subject: group.subject_name,
+      education_level: group.education_level,
+      grade: group.grade,
+      chapter: group.chapter,
+      mentor: group.teacher?.name || "Tutor BimbelKu",
+      mentor_avatar: group.teacher?.photo || undefined,
+      type: "Kelompok" as const,
+      method: "online" as const,
+      status: displayStatus,
+      participant_status: enrollmentStatus,
+      start_at: referenceSession?.starts_at || "",
+      end_at: referenceSession?.ends_at || "",
+      meeting_link: group.meeting_link || undefined,
+      amount: Number(group.price_per_student || 0),
+      payment_due_at: group.enrollment?.seat_expires_at || undefined,
+      order: group.enrollment?.order_id ? {
+        id: group.enrollment.order_id,
+        order_id: group.enrollment.order_number || "",
+        status: orderStatus || "unknown",
+      } : undefined,
+      can_rate: false,
+      can_approve: false,
+      can_dispute: false,
+      can_report_teacher_absence: false,
+      progress_url: hasLearningAccess && ["confirmed", "completed"].includes(group.status)
+        ? `/student/progress/cheap-class/${group.id}`
+        : undefined,
+    };
+});
+
 export default function MyClasses() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -165,6 +323,53 @@ export default function MyClasses() {
   const [hubReturnClass, setHubReturnClass] = useState<ClassItem | null>(null);
   const [subjectFilter, setSubjectFilter] = useState("all");
   const [scheduleSort, setScheduleSort] = useState<ScheduleSort>("nearest");
+  const [activeTab, setActiveTab] = useState<ClassTab>(() => {
+    const requested = searchParams.get("tab");
+    return requested === "process" || requested === "history" ? requested : "schedule";
+  });
+  const [kindFilter, setKindFilter] = useState<KindFilter>(() => {
+    const requested = searchParams.get("class_kind");
+    return requested === "group" || requested === "private" ? requested : "all";
+  });
+
+  const changeKindFilter = (value: KindFilter) => {
+    setKindFilter(value);
+    const next = new URLSearchParams(searchParams);
+    if (value !== "all") next.set("class_kind", value);
+    else next.delete("class_kind");
+    if (value !== "group") {
+      next.delete("cheap_class");
+      next.delete("cheap_session");
+    }
+    next.delete("session_action");
+    setSearchParams(next, { replace: true });
+  };
+
+  const changeTab = (value: ClassTab) => {
+    setActiveTab(value);
+    setSubjectFilter("all");
+    setKindFilter("all");
+    const next = new URLSearchParams(searchParams);
+    if (value === "schedule") next.delete("tab");
+    else next.set("tab", value);
+    next.delete("class_kind");
+    next.delete("cheap_class");
+    next.delete("cheap_session");
+    next.delete("session_action");
+    setSearchParams(next, { replace: true });
+  };
+
+  useEffect(() => {
+    const requestedTab = searchParams.get("tab");
+    const nextTab: ClassTab = requestedTab === "process" || requestedTab === "history" ? requestedTab : "schedule";
+    setActiveTab((current) => current === nextTab ? current : nextTab);
+
+    const requested = searchParams.get("class_kind");
+    const nextFilter: KindFilter = requested === "group" || requested === "private"
+      ? requested
+      : "all";
+    setKindFilter((current) => current === nextFilter ? current : nextFilter);
+  }, [searchParams]);
 
   const subjectOptions = useMemo(() => {
     return Array.from(
@@ -176,13 +381,31 @@ export default function MyClasses() {
     ).sort((left, right) => left.localeCompare(right, "id-ID"));
   }, [classes]);
 
+  const phaseClasses = useMemo(() => classes.filter((item) => {
+    const tab = classTabFor(item);
+    if (activeTab === "process") return tab === "process" && item.class_kind === "group";
+    if (activeTab === "history") return tab === "history" && item.class_kind === "group";
+    return tab === activeTab;
+  }), [activeTab, classes]);
+
   const visibleClasses = useMemo(() => {
     const now = Date.now();
+    const byKind = phaseClasses.filter((item) => {
+      if (kindFilter === "group") return item.class_kind === "group";
+      if (kindFilter === "private") return item.class_kind !== "group";
+      return true;
+    });
     const filtered = subjectFilter === "all"
-      ? classes
-      : classes.filter((item) => item.subject === subjectFilter);
+      ? byKind
+      : byKind.filter((item) => item.subject === subjectFilter);
 
     return [...filtered].sort((left, right) => {
+      const leftInProgress = left.status === "in_progress";
+      const rightInProgress = right.status === "in_progress";
+
+      // Kelas yang sedang berjalan selalu harus paling mudah ditemukan.
+      if (leftInProgress !== rightInProgress) return leftInProgress ? -1 : 1;
+
       const leftTime = validDate(left.start_at)?.getTime();
       const rightTime = validDate(right.start_at)?.getTime();
 
@@ -202,7 +425,7 @@ export default function MyClasses() {
 
       return leftUpcoming ? rightTime - leftTime : leftTime - rightTime;
     });
-  }, [classes, scheduleSort, subjectFilter]);
+  }, [kindFilter, phaseClasses, scheduleSort, subjectFilter]);
 
   useEffect(() => { void loadClasses(); }, []);
 
@@ -224,7 +447,7 @@ export default function MyClasses() {
     const sessionId = Number(searchParams.get("session"));
     const action = searchParams.get("session_action");
     if (!Number.isFinite(sessionId) || !action || classes.length === 0) return;
-    const item = classes.find((row) => row.id === sessionId);
+    const item = classes.find((row) => row.class_kind === "private" && row.id === sessionId);
     if (!item) return;
 
     if (action === "presence") {
@@ -237,13 +460,39 @@ export default function MyClasses() {
 
     if (action === "review" || action === "late") {
       setSelected(item);
+      return;
+    }
+
+    if (action === "started") {
+      setActiveTab("schedule");
+      setSelected(item);
     }
   }, [classes, searchParams]);
 
+  useEffect(() => {
+    const cheapSessionId = Number(searchParams.get("cheap_session"));
+    const cheapClassId = Number(searchParams.get("cheap_class"));
+    if (classes.length === 0 || (!cheapSessionId && !cheapClassId)) return;
+    const item = classes.find((row) => row.class_kind === "group" && (
+      (cheapSessionId && (row.cheap_class_session_id === cheapSessionId || row.group_sessions?.some((session) => session.id === cheapSessionId)))
+      || (!cheapSessionId && row.cheap_class_id === cheapClassId)
+    ));
+    if (!item) return;
+    const sessionAction = searchParams.get("session_action");
+    setActiveTab(classTabFor(item));
+    if (searchParams.get("class_kind") === "group" || sessionAction === "started") {
+      setKindFilter("group");
+    }
+    setSelected(item);
+    window.setTimeout(() => document.getElementById(item.class_key || "")?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+  }, [classes, searchParams]);
+
   const clearSessionActionQuery = () => {
-    if (!searchParams.get("session")) return;
     const next = new URLSearchParams(searchParams);
     next.delete("session");
+    next.delete("cheap_class");
+    next.delete("cheap_session");
+    next.delete("class_kind");
     next.delete("session_action");
     setSearchParams(next, { replace: true });
   };
@@ -262,10 +511,16 @@ export default function MyClasses() {
       setError(null);
     }
     try {
-      const response = await getCached<ClassListResponse>("/student/classes", { maxAgeMs: 2_000, force: true });
-      const rows = readClassRows(response.data);
-      if (!rows) throw new Error("Format daftar kelas tidak dikenali.");
-      setClasses(rows);
+      const [privateResponse, groupResponse] = await Promise.all([
+        getCached<ClassListResponse>("/student/classes", { maxAgeMs: 2_000, force: true }),
+        getCached<GroupClassResponse>("/student/cheap-classes?scope=owned", { maxAgeMs: 2_000, force: true }),
+      ]);
+      const privateRows = readClassRows(privateResponse.data);
+      if (!privateRows || !Array.isArray(groupResponse.data)) throw new Error("Format daftar kelas tidak dikenali.");
+      setClasses([
+        ...privateRows.map((item) => ({ ...item, class_key: `private-${item.id}`, class_kind: "private" as const })),
+        ...groupClassRows(groupResponse.data),
+      ]);
     } catch (err) {
       if (!silent) {
         if (axios.isAxiosError(err)) {
@@ -433,35 +688,41 @@ export default function MyClasses() {
     });
   };
 
-  if (error) {
-    return (
-      <StudentLayout title="Kelas Saya">
-        <ErrorState error={error} onRetry={retry} />
-      </StudentLayout>
-    );
-  }
-
   return (
     <StudentLayout title="Kelas Saya">
-      <div className="mx-auto max-w-7xl space-y-7 pb-12">
-        <div>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => navigate("/student/packages")}
-            className="-ml-3 rounded-xl text-slate-600 hover:bg-white hover:text-indigo-700"
-          >
-            <ArrowLeft size={16} className="mr-2" />
-            Kembali ke Kelas Saya
-          </Button>
-        </div>
-
+      <div className="mx-auto max-w-7xl space-y-5 pb-4 sm:space-y-7 sm:pb-12">
         <section data-tour="student-classes-hero" className="flex flex-col justify-between gap-5 rounded-[1.75rem] bg-gradient-to-br from-indigo-950 to-violet-900 p-5 text-white shadow-xl sm:rounded-[2rem] sm:p-7 md:flex-row md:items-end">
-          <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Sesi belajar</p><h1 className="mt-3 text-2xl font-black sm:text-3xl">Jadwal dan penyelesaian</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Tautan atau alamat, bukti pelaksanaan, persetujuan, keberatan, serta refund tersedia dalam satu tempat.</p></div>
-          <Button variant="outline" onClick={() => void loadClasses()} className="w-full rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white md:w-auto"><RefreshCw size={16} className="mr-2" />Muat ulang</Button>
+          <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Pusat belajar</p><h1 className="mt-3 text-2xl font-black sm:text-3xl">Kelas Saya</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Pantau pesanan, buka jadwal belajar, dan lihat riwayat kelas privat maupun kelompok dalam satu halaman.</p></div>
+          <div className="grid w-full grid-cols-2 gap-2 md:flex md:w-auto">
+            <Button asChild className="min-h-11 rounded-xl bg-white font-black text-indigo-950 hover:bg-indigo-50"><Link to="/student/packages/new">Cari les privat</Link></Button>
+            <Button asChild variant="outline" className="min-h-11 rounded-xl border-white/25 bg-white/10 font-black text-white hover:bg-white/20 hover:text-white"><Link to="/student/kelas-murah">Kelas kelompok</Link></Button>
+          </div>
         </section>
 
-        {classes.length > 0 && (
+        <nav aria-label="Bagian Kelas Saya" className="rounded-[1.5rem] border border-slate-100 bg-white p-1.5 shadow-sm">
+          <div className="grid grid-cols-3 gap-1.5">
+            {([
+              ["process", "Dalam Proses", Clock3],
+              ["schedule", "Jadwal Aktif", CalendarDays],
+              ["history", "Riwayat", History],
+            ] as const).map(([value, label, Icon]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={activeTab === value}
+                onClick={() => changeTab(value)}
+                className={`flex min-h-12 min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 text-xs font-black transition sm:text-sm ${activeTab === value ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`}
+              >
+                <Icon className="shrink-0" size={16} />
+                <span className="truncate">{label}</span>
+              </button>
+            ))}
+          </div>
+        </nav>
+
+        {activeTab === "process" && <Suspense fallback={<InlineLoader label="Memuat proses paket…" />}><PackageProcessList scope="active" /></Suspense>}
+
+        {activeTab !== "process" && phaseClasses.length > 0 && (
           <section className="rounded-[1.7rem] border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2">
@@ -470,12 +731,27 @@ export default function MyClasses() {
                 </span>
                 <div className="min-w-0">
                   <p className="font-black text-slate-900">Filter kelas</p>
-                  <p className="truncate text-xs text-slate-500">{visibleClasses.length} dari {classes.length} kelas ditampilkan</p>
+                  <p className="truncate text-xs text-slate-500">{visibleClasses.length} dari {phaseClasses.length} kelas ditampilkan</p>
                 </div>
               </div>
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2 sm:items-end">
+              <div className="min-w-0 max-w-full">
+                <Label className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-500">
+                  <Users size={14} /> Jenis kelas
+                </Label>
+                <Select value={kindFilter} onValueChange={(value) => changeKindFilter(value as KindFilter)}>
+                  <SelectTrigger className="h-12 w-full rounded-xl border-slate-200 bg-white text-left font-bold">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="max-w-[calc(100vw-2rem)]">
+                    <SelectItem value="all">Semua kelas</SelectItem>
+                    <SelectItem value="private">Kelas privat</SelectItem>
+                    <SelectItem value="group">Kelas kelompok</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div>
                 <Label className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-500">
                   <GraduationCap size={14} /> Mata pelajaran
@@ -495,15 +771,15 @@ export default function MyClasses() {
 
               <div>
                 <Label className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-500">
-                  <ArrowUpDown size={14} /> Urutan jadwal
+                  <ArrowUpDown size={14} /> Urutan waktu
                 </Label>
                 <Select value={scheduleSort} onValueChange={(value) => setScheduleSort(value as ScheduleSort)}>
                   <SelectTrigger className="h-12 w-full rounded-xl border-slate-200 bg-white text-left font-bold">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent align="end" className="max-w-[calc(100vw-2rem)]">
-                    <SelectItem value="nearest">Jadwal paling dekat</SelectItem>
-                    <SelectItem value="farthest">Jadwal paling jauh</SelectItem>
+                    <SelectItem value="nearest">{activeTab === "history" ? "Paling baru" : "Jadwal paling dekat"}</SelectItem>
+                    <SelectItem value="farthest">{activeTab === "history" ? "Paling lama" : "Jadwal paling jauh"}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -511,29 +787,51 @@ export default function MyClasses() {
           </section>
         )}
 
-        {loading ? (
+        {activeTab === "process" && phaseClasses.length > 0 && (
+          <div>
+            <p className="text-xs font-black uppercase tracking-[.18em] text-indigo-600">Kelas kelompok</p>
+            <h2 className="mt-1 text-lg font-black text-slate-900">Pembayaran dan pemeriksaan</h2>
+          </div>
+        )}
+
+        {activeTab !== "process" && (activeTab !== "history" || phaseClasses.length > 0) && (error ? (
+          <ErrorState error={error} onRetry={retry} />
+        ) : loading ? (
           <div role="status" aria-live="polite" className="grid min-h-56 place-items-center rounded-[2rem] border border-slate-100 bg-white shadow-sm">
             <div className="text-center"><Loader2 className="mx-auto h-9 w-9 animate-spin text-indigo-600" /><p className="mt-3 text-sm font-bold text-slate-500">Memuat jadwal kelas…</p></div>
           </div>
-        ) : classes.length === 0 ? (
-          <div className="rounded-[2rem] border-2 border-dashed border-slate-200 bg-white px-5 py-16 text-center sm:py-20"><BookOpen className="mx-auto h-11 w-11 text-slate-300" /><p className="mt-4 font-black text-slate-800">Belum ada kelas</p><Button asChild className="mt-5 rounded-xl bg-indigo-600"><Link to="/student/packages/new">Pilih paket belajar</Link></Button></div>
+        ) : phaseClasses.length === 0 ? (
+          <div className="rounded-[2rem] border-2 border-dashed border-slate-200 bg-white px-5 py-12 text-center sm:py-16">
+            {activeTab === "history" ? <History className="mx-auto h-11 w-11 text-slate-300" /> : <BookOpen className="mx-auto h-11 w-11 text-slate-300" />}
+            <p className="mt-4 font-black text-slate-800">{activeTab === "history" ? "Belum ada riwayat kelas" : "Belum ada jadwal belajar"}</p>
+            <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-slate-500">{activeTab === "history" ? "Kelas yang selesai, dibatalkan, atau sudah melewati waktunya akan tersimpan di bagian ini." : "Kelas akan masuk ke Jadwal setelah pembayaran dan pencarian tutor selesai."}</p>
+            {activeTab === "schedule" && <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row"><Button asChild className="rounded-xl bg-indigo-600"><Link to="/student/packages/new">Cari les privat</Link></Button><Button asChild variant="outline" className="rounded-xl"><Link to="/student/kelas-murah">Lihat kelas kelompok</Link></Button></div>}
+          </div>
         ) : visibleClasses.length === 0 ? (
           <div className="rounded-[2rem] border-2 border-dashed border-slate-200 bg-white px-5 py-14 text-center">
             <Filter className="mx-auto h-10 w-10 text-slate-300" />
             <p className="mt-4 font-black text-slate-800">Tidak ada kelas sesuai filter</p>
-            <p className="mt-1 text-sm text-slate-500">Pilih mata pelajaran lain atau tampilkan seluruh kelas.</p>
-            <Button type="button" variant="outline" className="mt-5 rounded-xl" onClick={() => setSubjectFilter("all")}>Tampilkan semua kelas</Button>
+            <p className="mt-1 text-sm text-slate-500">Ubah jenis kelas atau pilih mata pelajaran lain.</p>
+            <Button type="button" variant="outline" className="mt-5 rounded-xl" onClick={() => { setSubjectFilter("all"); changeKindFilter("all"); }}>Tampilkan semua kelas</Button>
           </div>
         ) : (
           <div data-tour="student-class-list" className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             {visibleClasses.map((item) => {
               const status = labels[item.status] || { label: item.status, className: "bg-slate-100 text-slate-600" };
               return (
-                <article key={item.id} className="render-auto flex min-w-0 max-w-full flex-col overflow-hidden rounded-[1.6rem] border border-slate-100 bg-white p-4 shadow-sm transition hover-rise hover-shadow-xl sm:rounded-[2rem] sm:p-5">
+                <article id={item.class_key} key={item.class_key || item.id} className="render-auto scroll-mt-28 flex min-w-0 max-w-full flex-col overflow-hidden rounded-[1.6rem] border border-slate-100 bg-white p-4 shadow-sm transition hover-rise hover-shadow-xl sm:rounded-[2rem] sm:p-5">
                   <div className="flex items-start justify-between gap-3"><div className="grid h-12 w-12 place-items-center rounded-2xl bg-indigo-50 text-indigo-600">{item.method === "online" ? <Monitor /> : <MapPin />}</div><span className={`rounded-full px-3 py-1.5 text-[11px] font-bold ${status.className}`}>{status.label}</span></div>
                   <p className="mt-5 min-w-0 break-words text-xs font-bold uppercase tracking-[.14em] text-indigo-500 sm:tracking-widest">{item.subject} · {item.type}</p><h2 className="mt-1 min-w-0 break-words text-lg font-black leading-snug text-slate-900 sm:line-clamp-2 sm:text-xl">{item.title}</h2>
                   <div className="mt-4 flex min-w-0 items-center gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-slate-100 text-slate-500">{item.mentor_avatar ? <img src={item.mentor_avatar} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <UserRound size={18} />}</div><div className="min-w-0"><p className="text-xs text-slate-400">Tutor</p><p className="break-words text-sm font-bold text-slate-800">{item.mentor}</p></div></div>
-                  <div className="mt-4 space-y-2 text-xs text-slate-600"><Info icon={CalendarDays} text={dateTime(item.start_at)} /><Info icon={Clock3} text={`${timeOnly(item.start_at)}–${timeOnly(item.end_at)}`} /><Info icon={Users} text={rupiah(item.amount)} /></div>
+                  {item.class_kind === "group" ? (
+                    <div className="mt-4 rounded-2xl bg-slate-50 p-3">
+                      <div className="flex items-center justify-between gap-3"><p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Jadwal paket</p><span className="text-xs font-black text-indigo-700">{item.group_sessions?.length || item.session_count || 0} sesi</span></div>
+                      <div className="mt-2 space-y-2">
+                        {item.group_sessions?.map((session) => <div key={session.id} className={`flex items-start justify-between gap-3 rounded-xl bg-white px-3 py-2 text-xs ${session.status === "in_progress" ? "ring-2 ring-emerald-200" : ""}`}><span className="font-black text-slate-700">Sesi {session.session_number}</span><span className="text-right font-semibold text-slate-500">{dateTime(session.starts_at)}<br />{timeOnly(session.starts_at)}–{timeOnly(session.ends_at)}</span></div>)}
+                      </div>
+                      <div className="mt-3"><Info icon={Users} text={`${rupiah(item.amount)} untuk seluruh paket`} /></div>
+                    </div>
+                  ) : <div className="mt-4 space-y-2 text-xs text-slate-600"><Info icon={CalendarDays} text={dateTime(item.start_at)} /><Info icon={Clock3} text={`${timeOnly(item.start_at)}–${timeOnly(item.end_at)}`} /><Info icon={Users} text={rupiah(item.amount)} /></div>}
                   {item.attention && (
                     <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
                       <div className="flex items-start gap-3">
@@ -550,7 +848,9 @@ export default function MyClasses() {
                     </div>
                   )}
                   <div className="mt-auto pt-5">
+                    {item.status === "in_progress" && item.method === "online" && item.meeting_link && <Button asChild className="mb-2 w-full rounded-xl bg-emerald-600 font-black hover:bg-emerald-700"><a href={item.meeting_link} target="_blank" rel="noreferrer"><Video size={16} className="mr-2" />Gabung Zoom sekarang</a></Button>}
                     <Button onClick={() => setSelected(item)} variant="outline" className="w-full rounded-xl">Lihat detail</Button>
+                    {item.class_kind === "group" && item.progress_url && <Button asChild variant="outline" className="mt-2 w-full rounded-xl border-violet-200 text-violet-700"><Link to={item.progress_url}><BarChart3 size={16} className="mr-2" />Lihat progress</Link></Button>}
                     {["pending", "rejected"].includes(item.order?.status || "") && <Button onClick={() => openPayment(item)} className="mt-2 w-full rounded-xl bg-orange-500 hover:bg-orange-600"><CreditCard size={16} className="mr-2" />{item.order?.status === "rejected" ? "Unggah ulang bukti" : "Bayar sekarang"}</Button>}
                     {item.can_rate && <Button onClick={() => setRatingClass(item)} className="mt-2 w-full rounded-xl bg-amber-400 text-slate-950 hover:bg-amber-500"><Star size={16} className="mr-2 fill-current" />Beri ulasan</Button>}
                   </div>
@@ -558,7 +858,9 @@ export default function MyClasses() {
               );
             })}
           </div>
-        )}
+        ))}
+
+        {activeTab === "history" && <Suspense fallback={<InlineLoader label="Memuat riwayat paket…" />}><PackageProcessList scope="history" /></Suspense>}
       </div>
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => { if (!open) { setSelected(null); clearSessionActionQuery(); } }}>
@@ -574,9 +876,12 @@ export default function MyClasses() {
             </Button>
             <DialogHeader><DialogTitle className="text-2xl">{selected.title}</DialogTitle><DialogDescription>{selected.mentor} · {dateTime(selected.start_at)}</DialogDescription></DialogHeader>
             <div className="grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm sm:grid-cols-2"><Info icon={GraduationCap} text={`${selected.education_level || ""} ${selected.grade || ""}`} /><Info icon={Users} text={`${selected.type} · ${rupiah(selected.amount)}`} /><Info icon={selected.method === "online" ? Monitor : MapPin} text={selected.method === "online" ? "Kelas online" : selected.address || "Alamat dibuka setelah pembayaran"} /><Info icon={Clock3} text={`${timeOnly(selected.start_at)}–${timeOnly(selected.end_at)}`} /></div>
+            {selected.class_kind === "group" && <div className="rounded-2xl border border-slate-200 bg-white p-4"><p className="text-xs font-black uppercase tracking-wider text-slate-500">Seluruh jadwal pertemuan</p><div className="mt-3 space-y-2">{selected.group_sessions?.map((session) => <div key={session.id} className={`flex items-start justify-between gap-3 rounded-xl p-3 text-sm ${session.status === "in_progress" ? "bg-emerald-50 text-emerald-900 ring-1 ring-emerald-200" : "bg-slate-50 text-slate-700"}`}><div><p className="font-black">Sesi {session.session_number}</p><p className="mt-1 text-xs font-semibold">{labels[session.status]?.label || session.status}</p></div><p className="text-right text-xs font-semibold leading-5">{dateTime(session.starts_at)}<br />{timeOnly(session.starts_at)}–{timeOnly(session.ends_at)}</p></div>)}</div></div>}
             {["pending", "rejected"].includes(selected.order?.status || "") && <Button onClick={() => openPayment(selected)} className="rounded-xl bg-orange-500 hover:bg-orange-600"><CreditCard size={16} className="mr-2" />{selected.order?.status === "rejected" ? "Unggah ulang bukti pembayaran" : "Bayar kelas sekarang"}</Button>}
-            {(selected.meeting_link || selected.maps_link) && <Button asChild className="rounded-xl bg-indigo-600"><a href={selected.meeting_link || selected.maps_link} target="_blank" rel="noreferrer"><ExternalLink size={16} className="mr-2" />{selected.method === "online" ? "Buka ruang kelas" : "Buka lokasi"}</a></Button>}
-            {selected.order?.status === "paid" && <Button variant="outline" className="rounded-xl border-indigo-200 text-indigo-700" onClick={() => { setHubReturnClass(selected); setHubBookingId(selected.id); setSelected(null); }}><MessageCircle size={16} className="mr-2" />Buka ruang belajar</Button>}
+            {selected.class_kind === "group" && selected.status !== "in_progress" && <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4 text-sm font-bold leading-6 text-indigo-800">{selected.teacher_started_at ? "Sesi ini sudah berakhir. Progress tetap dapat dilihat di bawah." : "Tautan Zoom aktif setelah tutor menekan Saya Hadir & Mulai Mengajar. Kamu akan mendapat popup saat kelas dimulai."}</div>}
+            {(selected.maps_link || (selected.class_kind === "group" ? selected.status === "in_progress" && selected.meeting_link : selected.meeting_link)) && <Button asChild className={`rounded-xl ${selected.class_kind === "group" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-indigo-600"}`}><a href={selected.meeting_link || selected.maps_link} target="_blank" rel="noreferrer"><ExternalLink size={16} className="mr-2" />{selected.class_kind === "group" ? "Gabung Zoom sekarang" : selected.method === "online" ? "Buka ruang kelas" : "Buka lokasi"}</a></Button>}
+            {selected.class_kind === "group" && selected.progress_url && <Button asChild variant="outline" className="rounded-xl border-violet-200 text-violet-700"><Link to={selected.progress_url}><BarChart3 size={16} className="mr-2" />Lihat progress kelas</Link></Button>}
+            {selected.class_kind !== "group" && selected.order?.status === "paid" && <Button variant="outline" className="rounded-xl border-indigo-200 text-indigo-700" onClick={() => { setHubReturnClass(selected); setHubBookingId(selected.id); setSelected(null); }}><MessageCircle size={16} className="mr-2" />Buka ruang belajar</Button>}
             {selected.can_report_teacher_absence && <Button variant="outline" className="rounded-xl border-rose-200 text-rose-700" onClick={() => setAbsenceReport(selected)}><ShieldAlert size={16} className="mr-2" />Tutor belum hadir setelah 15 menit</Button>}
             {selected.completion_notes && <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4"><div className="flex items-center gap-2 font-black text-emerald-900"><FileCheck2 size={18} />Hasil belajar dari tutor</div><div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-emerald-800">Durasi aktual {selected.actual_duration_minutes ?? "-"} menit</span>{selected.scheduled_duration_minutes ? <span className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-slate-600">Jadwal {selected.scheduled_duration_minutes} menit</span> : null}</div><p className="mt-3 text-sm leading-6 text-emerald-800">{selected.completion_notes}</p>{selected.objection_deadline && <p className="mt-2 text-xs font-bold text-emerald-700">Batas keputusan: {dateTime(selected.objection_deadline)}</p>}</div>}
             {selected.dispute && <div className="flex gap-3 rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm text-rose-800"><MessageSquareWarning className="shrink-0" /><div><p className="font-black">Keberatan {selected.dispute.status}</p><p className="mt-1 leading-6">{selected.dispute.reason}</p></div></div>}
@@ -658,6 +963,10 @@ export default function MyClasses() {
 
 function Info({ icon: Icon, text }: { icon: typeof Clock3; text: string }) {
   return <div className="flex min-w-0 items-start gap-2 rounded-xl bg-white/70 px-3 py-2.5"><Icon size={15} className="mt-0.5 shrink-0 text-indigo-500" /><span className="min-w-0 break-words leading-5">{text}</span></div>;
+}
+
+function InlineLoader({ label }: { label: string }) {
+  return <div role="status" className="grid min-h-40 place-items-center rounded-[1.5rem] border border-slate-100 bg-white"><div className="text-center"><Loader2 className="mx-auto animate-spin text-indigo-600" size={28} /><p className="mt-2 text-sm font-bold text-slate-500">{label}</p></div></div>;
 }
 
 function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {

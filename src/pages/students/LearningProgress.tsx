@@ -138,7 +138,7 @@ export default function LearningProgress() {
             <GraduationCap className="mx-auto text-indigo-300" size={42} />
             <h2 className="mt-4 text-lg font-black text-slate-800">Belum ada program yang memiliki progress</h2>
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">Progress mulai tersedia setelah pembayaran diterima dan program belajar masuk tahap pencocokan atau sudah aktif.</p>
-            <Button asChild className="mt-5 rounded-xl bg-indigo-600 hover:bg-indigo-700"><Link to="/student/packages">Buka Kelas Saya</Link></Button>
+            <Button asChild className="mt-5 rounded-xl bg-indigo-600 hover:bg-indigo-700"><Link to="/student/my-classes?tab=process">Lihat proses paket</Link></Button>
           </div>
         ) : (
           <div className="grid gap-4">

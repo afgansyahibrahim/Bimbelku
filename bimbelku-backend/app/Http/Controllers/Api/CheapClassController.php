@@ -16,6 +16,7 @@ class CheapClassController extends Controller
         CheapClassSchema::ensureReady();
         $cheapClasses->refreshLifecycle();
         $progressScope = $request->query('scope') === 'progress';
+        $ownedScope = $request->query('scope') === 'owned';
 
         $classes = CheapClass::query()
             ->with([
@@ -40,7 +41,14 @@ class CheapClassController extends Controller
                         ->where('student_id', $request->user()->id)
                         ->where('status', 'confirmed')
                         ->whereHas('order', fn ($orders) => $orders->where('status', 'paid')));
-            }, function ($query) use ($request) {
+            }, function ($query) use ($request, $ownedScope) {
+                if ($ownedScope) {
+                    $query->whereHas('enrollments', fn ($items) => $items
+                        ->where('student_id', $request->user()->id));
+
+                    return;
+                }
+
                 $query
                     ->whereIn('status', ['waiting_teacher', 'open', 'registration_closed', 'awaiting_verification', 'confirmed', 'completed', 'cancelled'])
                     ->where(function ($visibility) use ($request) {

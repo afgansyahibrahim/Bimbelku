@@ -127,6 +127,7 @@ type HubData = {
     tutor_ready_at?: string | null;
     student_confirmed_at?: string | null;
     session_focus_note?: string | null;
+    meeting_link?: string | null;
   };
   messages: HubMessage[];
   progress_reports: ProgressReport[];
@@ -171,6 +172,7 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
   const [hub, setHub] = useState<HubData | null>(null);
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [confirmCheckout, setConfirmCheckout] = useState(false);
   const [tab, setTab] = useState<LearningSessionHubTab>(initialTab);
   const [message, setMessage] = useState("");
   const [focusNote, setFocusNote] = useState("");
@@ -413,7 +415,8 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
   }, [hub, reportSaved, sessionLive, waitingForStudent]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent layer="detail" hideCloseButton className="max-h-[calc(100dvh-0.5rem)] w-[calc(100vw-0.5rem)] max-w-5xl overflow-x-hidden overflow-y-auto rounded-[1.35rem] p-3 sm:max-h-[92dvh] sm:w-[calc(100vw-2rem)] sm:rounded-[2rem] sm:p-6">
         <DialogHeader>
           <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-start gap-2">
@@ -477,7 +480,8 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
                   <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
                     <div className="flex items-center gap-2 font-black text-emerald-950"><CheckCircle2 size={19} />Kehadiran sudah terkonfirmasi</div>
                     <p className="mt-2 text-sm leading-6 text-emerald-800">Sesi resmi dimulai {dateTime(hub.booking.session_started_at || hub.booking.student_confirmed_at)}. Selama belajar, BimbelKu tidak meminta langkah administrasi tambahan.</p>
-                    {hub.role === "teacher" && hub.permissions.can_check_out && <Button type="button" variant="outline" onClick={() => void checkOut()} disabled={processing} className="mt-4 w-full rounded-xl border-emerald-300 bg-white text-emerald-800">Akhiri Sesi</Button>}
+                    {hub.role === "student" && hub.booking.learning_mode === "online" && hub.booking.meeting_link && (<Button asChild className="mt-4 w-full rounded-xl bg-emerald-600 font-black hover:bg-emerald-700"><a href={hub.booking.meeting_link} target="_blank" rel="noreferrer">Masuk ke Zoom</a></Button>)} 
+                    {hub.role === "teacher" && hub.permissions.can_check_out && <Button type="button" variant="outline" onClick={() => setConfirmCheckout(true)} disabled={processing} className="mt-4 w-full rounded-xl border-emerald-300 bg-white text-emerald-800">Akhiri Sesi</Button>}
                   </section>
                 )}
 
@@ -539,6 +543,19 @@ export default function LearningSessionHub({ bookingId, open, onOpenChange, init
         )}
       </DialogContent>
     </Dialog>
+    <Dialog open={confirmCheckout} onOpenChange={setConfirmCheckout}>
+      <DialogContent overlayClassName="!z-[6000] !bg-slate-950/60" onPointerDownOutside={(event) => event.preventDefault()} onInteractOutside={(event) => event.preventDefault()} className="!z-[6001] max-w-md rounded-2xl">
+        <DialogHeader>
+          <DialogTitle>Yakin ingin mengakhiri sesi?</DialogTitle>
+          <DialogDescription>Pastikan pembelajaran sudah selesai. Setelah sesi diakhiri, kamu akan mengisi kehadiran dan hasil belajar murid.</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" className="rounded-xl" onClick={() => setConfirmCheckout(false)}>Batal</Button>
+          <Button type="button" className="rounded-xl bg-emerald-600 hover:bg-emerald-700" onClick={() => { setConfirmCheckout(false); void checkOut(); }}>Ya, Akhiri Sesi</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 

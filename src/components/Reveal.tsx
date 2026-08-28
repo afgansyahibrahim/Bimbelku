@@ -8,6 +8,7 @@ interface RevealProps {
   duration?: number;
   className?: string;
   threshold?: number;
+  eager?: boolean;
 }
 
 export default function Reveal({
@@ -18,11 +19,14 @@ export default function Reveal({
   duration = 0.8,
   className = "",
   threshold = 0.2,
+  eager = false,
 }: RevealProps) {
-  const [isVisible, setIsVisible] = useState(false);
+  const [isVisible, setIsVisible] = useState(eager);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (eager) return;
+
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -44,7 +48,7 @@ export default function Reveal({
         observer.unobserve(element);
       }
     };
-  }, [threshold]);
+  }, [eager, threshold]);
 
   const getTransform = () => {
     if (isVisible) return "translate(0, 0)";
@@ -65,7 +69,7 @@ export default function Reveal({
           transform: getTransform(),
           opacity: isVisible ? 1 : 0,
           filter: isVisible ? "blur(0px)" : "blur(4px)",
-          transition: `all ${duration}s cubic-bezier(0.17, 0.55, 0.55, 1) ${delay}s`,
+          transition: eager ? "none" : `transform ${duration}s cubic-bezier(0.17, 0.55, 0.55, 1) ${delay}s, opacity ${duration}s ease ${delay}s, filter ${duration}s ease ${delay}s`,
         }}
       >
         {children}

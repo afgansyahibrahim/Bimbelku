@@ -45,6 +45,6 @@ expect(
   "bukti pembayaran menyalakan indikator Pembayaran admin",
 );
 expect(matching.includes("Permintaan bimbel baru") && matching.includes("'/guru/permintaan'"), "permintaan baru menyalakan indikator Permintaan Bimbel tutor");
-expect(checkout.includes("Pembayaran diterima") && checkout.includes("'/student/packages'"), "perubahan paket menyalakan indikator Kelas Saya murid");
+expect(checkout.includes("Pembayaran diterima") && checkout.includes("'/student/my-classes?tab=process'"), "perubahan paket menyalakan indikator Kelas Saya murid");
 
 console.log("Navigation attention Revisi 7 lulus pemeriksaan source-level.");

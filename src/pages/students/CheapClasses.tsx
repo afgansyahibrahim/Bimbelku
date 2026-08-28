@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { AlertCircle, ArrowRight, BarChart3, BookOpen, CalendarDays, CheckCircle2, Clock3, CreditCard, Loader2, Users, Video } from "lucide-react";
+import { AlertCircle, ArrowRight, BookOpen, CalendarDays, CheckCircle2, Clock3, CreditCard, Loader2, Users } from "lucide-react";
 import StudentLayout from "@/components/StudentLayout";
 import { Button } from "@/components/ui/button";
 import http, { getApiError } from "@/lib/http";
@@ -203,7 +203,6 @@ function ClassCard({ item, working, onJoin, onCancel }: { item: CheapClass; work
   const payable = enrollment && ["seat_held", "payment_rejected"].includes(enrollment.status) && ["pending", "rejected"].includes(enrollment.order_status || "");
   const needsProofReview = enrollment?.status === "payment_submitted";
   const hasAcceptedPayment = enrollment?.status === "confirmed" && enrollment?.order_status === "paid";
-  const isConfirmed = item.status === "confirmed" && hasAcceptedPayment;
   const hasLearningAccess = ["confirmed", "completed"].includes(item.status) && hasAcceptedPayment;
   const waitingForClassConfirmation = hasAcceptedPayment && !["confirmed", "completed"].includes(item.status);
   const sessions = item.sessions.length ? item.sessions : [{ id: item.id, session_number: 1, starts_at: item.starts_at, ends_at: item.ends_at, status: "scheduled" }];
@@ -255,13 +254,12 @@ function ClassCard({ item, working, onJoin, onCancel }: { item: CheapClass; work
 
       {waitingForClassConfirmation && <div className="rounded-xl bg-emerald-50 p-3 text-xs font-bold leading-5 text-emerald-800">Pembayaranmu sudah diverifikasi. Kelas akan dikonfirmasi setelah syarat minimum peserta terpenuhi dan seluruh bukti yang relevan selesai diperiksa.</div>}
       {enrollment?.status === "cancellation_pending" && <div className="rounded-xl bg-amber-50 p-3 text-xs font-bold leading-5 text-amber-800">Kelas sudah dibatalkan, tetapi bukti yang telanjur dikirim tetap diperiksa admin. Jika transfer valid, dana masuk antrean refund penuh.</div>}
-      {isConfirmed && <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4"><p className="font-black text-emerald-900">Tutor: {item.teacher?.name || "Tutor BimbelKu"}</p>{item.meeting_link ? <a className="mt-2 inline-flex items-center gap-2 text-sm font-black text-emerald-700 underline" href={item.meeting_link} target="_blank" rel="noreferrer"><Video size={16} />Buka Zoom</a> : <p className="mt-2 text-xs font-bold text-emerald-700">Tutor sedang melengkapi tautan Zoom.</p>}</div>}
+      {hasLearningAccess && <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2 text-sm font-black text-slate-600"><CheckCircle2 size={17} />Telah bergabung</div><Link to={`/student/my-classes?cheap_class=${item.id}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-indigo-700 shadow-sm ring-1 ring-slate-200 hover:bg-indigo-50">Buka di Kelas Saya <ArrowRight size={15} /></Link></div>}
       {item.status === "completed" && hasAcceptedPayment && <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4 text-xs font-bold leading-5 text-violet-800">Seluruh sesi sudah diverifikasi admin. Kelas masuk Riwayat dan progress akhir tetap bisa kamu lihat.</div>}
 
       {hasActions && <div className="flex flex-col gap-2 sm:flex-row">
         {item.can_join && <Button disabled={working} onClick={onJoin} className="h-11 flex-1 rounded-xl bg-indigo-600 font-black hover:bg-indigo-700">{working && <Loader2 className="mr-2 animate-spin" size={16} />}{enrollment && ["cancelled", "payment_expired"].includes(enrollment.status) ? "Gabung Lagi" : "Gabung Kelas Kelompok"}</Button>}
         {payable && enrollment && <Link to="/payment" state={{ orderId: enrollment.order_id, invoiceId: enrollment.order_number, tutorName: "Tutor diumumkan setelah kelas dikonfirmasi", subject: item.subject_name, type: "Online - Kelas Kelompok", price: item.price_per_student, date: item.starts_at, paymentDueAt: enrollment.seat_expires_at, durationHours: 1, totalLearningHours: item.session_count, orderKind: "cheap_class", enrollmentStatus: enrollment.status, cheapClassStatus: item.status, cheapClassCancellationReason: item.cancellation_reason, canCancel: enrollment.can_cancel }} className="inline-flex h-11 flex-1 items-center justify-center rounded-xl bg-indigo-600 px-4 text-sm font-black text-white hover:bg-indigo-700">Bayar paket ini</Link>}
-        {hasLearningAccess && <Link to={`/student/progress/cheap-class/${item.id}`} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 text-sm font-black text-violet-700 hover:bg-violet-100"><BarChart3 size={16} />Lihat Progress</Link>}
         {enrollment?.can_cancel && <Button disabled={working} onClick={onCancel} variant="outline" className="h-11 rounded-xl text-rose-600 hover:bg-rose-50">Batalkan keikutsertaan</Button>}
         {!item.can_join && !payable && !needsProofReview && !hasAcceptedPayment && item.status !== "cancelled" && !["cancellation_pending", "refund_pending", "refunded", "cancelled", "payment_expired"].includes(enrollment?.status || "") && <div className="flex flex-1 items-center justify-center rounded-xl bg-slate-100 px-4 text-sm font-bold text-slate-500">Pendaftaran tidak tersedia</div>}
       </div>}

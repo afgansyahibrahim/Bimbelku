@@ -84,13 +84,13 @@ class NotificationController extends Controller
         // navigasi diperkenalkan. Notifikasi baru selalu menyimpan target_url langsung.
         $targets = match ($role) {
             'student' => [
-                'Tutor belum ditemukan' => '/student/packages',
-                'Tutor paket ditemukan' => '/student/packages',
-                'Tutor menerima permintaan' => '/student/packages',
-                'Pembayaran paket ditolak' => '/student/packages',
-                'Tagihan paket tersedia' => '/student/packages',
-                'Pembayaran kelompok dibuka' => '/student/packages',
-                'Keputusan kelompok berakhir' => '/student/packages',
+                'Tutor belum ditemukan' => '/student/my-classes?tab=process',
+                'Tutor paket ditemukan' => '/student/my-classes?tab=process',
+                'Tutor menerima permintaan' => '/student/my-classes?tab=process',
+                'Pembayaran paket ditolak' => '/student/my-classes?tab=process',
+                'Tagihan paket tersedia' => '/student/my-classes?tab=process',
+                'Pembayaran kelompok dibuka' => '/student/my-classes?tab=process',
+                'Keputusan kelompok berakhir' => '/student/my-classes?tab=process',
                 'Semua tutor ditemukan' => '/student/my-classes',
                 'Bukti sesi telah dikirim' => '/student/my-classes',
                 'Ketidakhadiran dilaporkan' => '/student/my-classes',

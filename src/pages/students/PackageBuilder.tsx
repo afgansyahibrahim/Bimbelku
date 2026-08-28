@@ -14,6 +14,7 @@ import {
   Minus,
   Plus,
   RefreshCw,
+  Sparkles,
   Tag,
   Trash2,
   WifiOff,
@@ -35,6 +36,27 @@ type Plan = {
   maximum_subjects: number;
 };
 type TimeSlot = { id: number; start_time: string; label?: string | null };
+type BookingRules = {
+  booking_lead_hours: number;
+  renewal_booking_lead_hours: number;
+  maximum_search_hours: number;
+  matching_cutoff_hours: number;
+  teacher_response_minutes: number;
+  teacher_offer_wave_size: number;
+};
+type ScheduleRecommendation = {
+  time: string;
+  candidate_count: number;
+  availability: "very_high" | "high" | "limited" | "unavailable";
+  schedules: string[];
+};
+type ScheduleRecommendationResponse = {
+  mode: "preserve_days";
+  weekdays: number[];
+  lead_hours: number;
+  recommendations: ScheduleRecommendation[];
+  message: string;
+};
 type Voucher = {
   id: number;
   status: string;
@@ -115,7 +137,7 @@ const dateInput = (date: Date) => {
   return local.toISOString().slice(0, 10);
 };
 
-const earliestScheduleDate = (time: string, leadHours = 72) => {
+const earliestScheduleDate = (time: string, leadHours = 24) => {
   const threshold = new Date(Date.now() + leadHours * 60 * 60 * 1000);
   const [hour] = time.split(":").map(Number);
   const candidate = new Date(threshold);
@@ -189,7 +211,7 @@ const nextSlots = (count: number, time = "18:00", startDate?: string, weekdays: 
   return result;
 };
 
-const createSubject = (sessionCount = 1, time = "", offsetDays = 0, withSchedule = false, leadHours = 72): DraftSubject => {
+const createSubject = (sessionCount = 1, time = "", offsetDays = 0, withSchedule = false, leadHours = 24): DraftSubject => {
   const scheduleBase = withSchedule ? new Date(`${earliestScheduleDate(time || "18:00", leadHours)}T00:00:00`) : null;
   if (scheduleBase && offsetDays > 0) scheduleBase.setDate(scheduleBase.getDate() + offsetDays);
   const scheduleStartDate = scheduleBase ? dateInput(scheduleBase) : "";
@@ -270,6 +292,14 @@ export default function PackageBuilder() {
   const [materialsLoading, setMaterialsLoading] = useState<Record<number, boolean>>({});
   const [renewalBaselines, setRenewalBaselines] = useState<Record<number, RenewalMaterialBaseline>>({});
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
+  const [bookingRules, setBookingRules] = useState<BookingRules>({
+    booking_lead_hours: 24,
+    renewal_booking_lead_hours: 12,
+    maximum_search_hours: 12,
+    matching_cutoff_hours: 2,
+    teacher_response_minutes: 60,
+    teacher_offer_wave_size: 3,
+  });
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [planId, setPlanId] = useState<number | "">("");
   const [level, setLevel] = useState("");
@@ -282,6 +312,8 @@ export default function PackageBuilder() {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
+  const [scheduleRecommendations, setScheduleRecommendations] = useState<Record<string, ScheduleRecommendationResponse>>({});
+  const [recommendationLoading, setRecommendationLoading] = useState<Record<string, boolean>>({});
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
   const [draftRestored, setDraftRestored] = useState(false);
@@ -308,7 +340,9 @@ export default function PackageBuilder() {
   const renewalKeepsSameTutor = Boolean(renewalId)
     && subjects.length > 0
     && subjects.every((item) => Number(item.preferred_teacher_id || 0) > 0);
-  const bookingLeadHours = renewalKeepsSameTutor ? 24 : 72;
+  const bookingLeadHours = renewalKeepsSameTutor
+    ? bookingRules.renewal_booking_lead_hours
+    : bookingRules.booking_lead_hours;
   const selectedSessions = subjects.reduce((sum, item) => sum + item.session_count, 0);
   const selectedSubjectIds = subjects.map((item) => item.curriculum_subject_id).filter(Boolean);
   const subjectsAreUnique = new Set(selectedSubjectIds).size === selectedSubjectIds.length;
@@ -404,10 +438,11 @@ export default function PackageBuilder() {
       setTutorialStatusLoaded(false);
       try {
         const { default: http, getCached } = await import("@/lib/http");
-        const [plansResponse, catalogResponse, slotsResponse, renewalResponse] = await Promise.all([
+        const [plansResponse, catalogResponse, slotsResponse, rulesResponse, renewalResponse] = await Promise.all([
           getCached<Plan[]>("/package-plans", { maxAgeMs: 5 * 60_000 }),
           getCached<{ subject_options: SubjectOption[] }>("/learning-catalog", { params: { compact: 1 }, maxAgeMs: 5 * 60_000 }),
           getCached<TimeSlot[]>("/learning-time-slots", { maxAgeMs: 5 * 60_000 }),
+          getCached<BookingRules>("/package-booking-rules", { maxAgeMs: 5 * 60_000 }),
           renewalId ? http.get(`/student/packages/${renewalId}`) : Promise.resolve(null),
         ]);
         if (!active) return;
@@ -417,6 +452,7 @@ export default function PackageBuilder() {
         setCatalog(activeCatalog);
         const fullHourSlots = slotsResponse.data.filter((slot) => slot.start_time.slice(3, 5) === "00");
         setTimeSlots(fullHourSlots);
+        setBookingRules(rulesResponse.data);
         const defaultPlan = plansResponse.data.find((item) => item.session_count === 4) || plansResponse.data[0];
 
         if (renewalResponse) {
@@ -458,7 +494,15 @@ export default function PackageBuilder() {
                 };
               }
               return {
-                ...createSubject(count, renewalDefaultTime, index, true, item.teacher?.id ? 24 : 72),
+                ...createSubject(
+                  count,
+                  renewalDefaultTime,
+                  index,
+                  true,
+                  item.teacher?.id
+                    ? rulesResponse.data.renewal_booking_lead_hours
+                    : rulesResponse.data.booking_lead_hours,
+                ),
                 curriculum_subject_id: item.curriculum_subject_id,
                 subject_name: item.subject_name || item.name || "",
                 preferred_teacher_id: item.teacher?.id,
@@ -705,6 +749,13 @@ export default function PackageBuilder() {
     setQuote(null);
   };
   const updateSubject = (key: string, patch: Partial<DraftSubject>) => {
+    if (patch.schedule_start_date !== undefined || patch.schedule_time !== undefined || patch.weekdays !== undefined) {
+      setScheduleRecommendations((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+    }
     setSubjects((current) => current.map((item) => {
       if (item.key !== key) return item;
       const normalizedPatch = patch.weekdays !== undefined
@@ -716,6 +767,43 @@ export default function PackageBuilder() {
       }
       return next;
     }));
+  };
+  const recommendSchedule = async (item: DraftSubject) => {
+    if (!item.curriculum_subject_id || !level || !grade || !mode || !durationHours || !item.schedule_start_date || !item.weekdays.length) {
+      notify.error("Pilih mapel, jenjang, mode, tanggal mulai, dan hari belajar terlebih dahulu.");
+      return;
+    }
+    setRecommendationLoading((current) => ({ ...current, [item.key]: true }));
+    const { default: http, getApiError } = await import("@/lib/http");
+    try {
+      const response = await http.post<ScheduleRecommendationResponse>("/student/schedule-recommendations", {
+        curriculum_subject_id: item.curriculum_subject_id,
+        education_level: level,
+        grade,
+        learning_mode: mode,
+        duration_hours: durationHours,
+        schedule_start_date: item.schedule_start_date,
+        weekdays: item.weekdays,
+        session_count: item.session_count,
+        current_time: item.schedule_time || undefined,
+      });
+      setScheduleRecommendations((current) => ({ ...current, [item.key]: response.data }));
+    } catch (error) {
+      notify.error(getApiError(error, "Rekomendasi jadwal belum dapat dihitung."));
+    } finally {
+      setRecommendationLoading((current) => ({ ...current, [item.key]: false }));
+    }
+  };
+  const applyScheduleRecommendation = (key: string, recommendation: ScheduleRecommendation) => {
+    setSubjects((current) => current.map((item) => item.key === key
+      ? { ...item, schedule_time: recommendation.time, schedules: recommendation.schedules }
+      : item));
+    setScheduleRecommendations((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    notify.success(`Jadwal ${recommendation.time} diterapkan tanpa mengubah hari belajar.`);
   };
   const distribute = () => {
     if (!plan) return;
@@ -1159,9 +1247,7 @@ export default function PackageBuilder() {
                 <div className="mt-5 rounded-2xl border border-indigo-100 bg-white p-4">
                   <p className="mb-1 flex items-center gap-2 text-sm font-black text-slate-700"><CalendarPlus size={17} /> Atur pola jadwal sekali</p>
                   <p className="mb-3 text-xs font-semibold leading-5 text-slate-500">
-                    {bookingLeadHours === 24
-                      ? "Perpanjangan dengan tutor yang sama dapat dimulai minimal 24 jam dari sekarang."
-                      : "Pesanan baru atau perpanjangan tanpa tutor lama dapat dimulai minimal 72 jam dari sekarang."}
+                    Jadwal pertama dapat dimulai minimal {bookingLeadHours} jam dari sekarang. Setelah pembayaran manual diverifikasi, pencarian tutor berlangsung maksimal {bookingRules.maximum_search_hours} jam dan dihentikan {bookingRules.matching_cutoff_hours} jam sebelum kelas.
                   </p>
                   <div className="grid gap-4 md:grid-cols-2">
                     <Field label="Mulai belajar">
@@ -1210,6 +1296,57 @@ export default function PackageBuilder() {
                       </div>
                       <p className="mt-1 text-xs font-medium text-slate-500">Jam yang dipilih berlaku sama pada seluruh hari. Tanggal tertentu dapat digeser sebelum tutor dicari.</p>
                     </div>
+                  </div>
+                  <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="flex items-center gap-2 text-sm font-black text-violet-950"><Sparkles size={17} /> Rekomendasikan jadwal terbaik</p>
+                        <p className="mt-1 text-xs font-semibold leading-5 text-violet-700">Hari pilihanmu tetap. Sistem hanya membandingkan jam dan memastikan guru yang sama berpotensi tersedia untuk seluruh sesi.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void recommendSchedule(item)}
+                        disabled={Boolean(recommendationLoading[item.key]) || !item.curriculum_subject_id || !level || !grade || !mode || !durationHours || !item.schedule_start_date || !item.weekdays.length}
+                        className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 py-2.5 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {recommendationLoading[item.key] ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                        {recommendationLoading[item.key] ? "Menghitung..." : "Cari jam terbaik"}
+                      </button>
+                    </div>
+                    {scheduleRecommendations[item.key] && (
+                      <div className="mt-4 space-y-2">
+                        <p className="text-xs font-semibold leading-5 text-violet-800">{scheduleRecommendations[item.key].message}</p>
+                        {scheduleRecommendations[item.key].recommendations.map((recommendation) => {
+                          const label = recommendation.availability === "very_high"
+                            ? "Sangat tinggi"
+                            : recommendation.availability === "high"
+                              ? "Tinggi"
+                              : recommendation.availability === "limited"
+                                ? "Terbatas"
+                                : "Belum tersedia";
+                          return (
+                            <div key={recommendation.time} className="flex flex-col gap-2 rounded-xl border border-violet-100 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="text-sm font-black text-slate-900">{recommendation.time} WIB <span className="text-violet-700">· Peluang {label}</span></p>
+                                <p className="mt-0.5 text-xs font-semibold text-slate-500">
+                                  {recommendation.candidate_count > 0
+                                    ? `Sekitar ${recommendation.candidate_count} guru berpotensi memenuhi seluruh sesi.`
+                                    : "Belum terlihat guru untuk seluruh rangkaian sesi pada jam ini."}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                disabled={recommendation.candidate_count < 1}
+                                onClick={() => applyScheduleRecommendation(item.key, recommendation)}
+                                className="min-h-10 rounded-xl border border-violet-200 px-3 text-xs font-black text-violet-800 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                Gunakan jam ini
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                   <div className="mt-4 rounded-2xl bg-indigo-50 p-4 text-sm text-indigo-900">
                     <p className="font-black">{item.subject_name || `Mapel ${subjectIndex + 1}`} · {item.schedules.length} pertemuan otomatis</p>
@@ -1393,12 +1530,11 @@ function ScheduleTimePicker({ value, options, disabled = false, onChange }: { va
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
     };
-    const isMobile = !window.matchMedia("(min-width: 1024px)").matches;
     const previousOverflow = document.body.style.overflow;
-    if (isMobile) document.body.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
     window.addEventListener("keydown", closeOnEscape);
     return () => {
-      if (isMobile) document.body.style.overflow = previousOverflow;
+      document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeOnEscape);
     };
   }, [open]);
@@ -1424,44 +1560,26 @@ function ScheduleTimePicker({ value, options, disabled = false, onChange }: { va
       </button>
 
       {open && (
-        <>
-          {/* Desktop: picker terasa sebagai bagian dari field, bukan modal/notifikasi. */}
-          <button type="button" aria-label="Tutup pilihan jam" onClick={() => setOpen(false)} className="fixed inset-0 z-[var(--layer-dropdown)] hidden cursor-default bg-transparent lg:block" />
-          <div className="absolute right-0 top-[calc(100%+0.55rem)] z-[var(--layer-dropdown)] hidden w-[min(30rem,calc(100dvw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.16)] lg:block">
-            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3.5">
-              <div className="min-w-0"><p className="text-sm font-black text-slate-900">Pilih jam belajar</p><p className="mt-1 text-xs font-semibold text-slate-500">Pilih waktu yang paling sesuai dengan jadwalmu.</p></div>
-              <button type="button" onClick={() => setOpen(false)} aria-label="Tutup pilihan jam" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={17} /></button>
+        <div
+          className="fixed inset-0 z-[var(--layer-modal)] flex min-h-0 items-center justify-center overflow-hidden bg-slate-950/45 p-4"
+        >
+          <section role="dialog" aria-modal="true" aria-label="Pilih jam belajar" className="flex max-h-[min(72dvh,36rem)] min-h-0 w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200">
+            <header className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-4 pb-4 pt-4 sm:px-5">
+              <div className="absolute left-1/2 top-2 h-1.5 w-12 -translate-x-1/2 rounded-full bg-slate-200 lg:hidden" aria-hidden="true" />
+              <div className="min-w-0"><p className="text-base font-black text-slate-900">Pilih jam belajar</p><p className="mt-1 text-xs font-semibold leading-5 text-slate-500">Pilih waktu yang paling sesuai. Scroll untuk melihat lebih banyak pilihan jam. Setelah dipilih, kamu langsung kembali ke form.</p></div>
+              <button type="button" onClick={() => setOpen(false)} aria-label="Tutup pilihan jam" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200"><X size={18} /></button>
+            </header>
+            <div className="min-h-0 max-h-[min(40dvh,15rem)] flex-none overflow-y-auto overscroll-contain px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-4 sm:px-5">
+              <TimeSlotOptions value={value} options={options} onChoose={choose} />
             </div>
-            <div className="max-h-[min(28rem,calc(100dvh-9rem))] overflow-y-auto p-4">
-              <TimeSlotOptions value={value} options={options} onChoose={choose} desktop />
-            </div>
-          </div>
-
-          {/* Mobile: bottom sheet solid dengan dim ringan, tanpa blur gelap. */}
-          <div
-            className="fixed inset-0 z-[var(--layer-modal)] flex items-end justify-center bg-slate-950/25 p-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] lg:hidden"
-            onMouseDown={(event) => {
-              if (event.target === event.currentTarget) setOpen(false);
-            }}
-          >
-            <section role="dialog" aria-modal="true" aria-label="Pilih jam belajar" className="flex max-h-[82dvh] w-full flex-col overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_-12px_40px_rgba(15,23,42,0.18)] animate-in slide-in-from-bottom-4 duration-200">
-              <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-slate-200" aria-hidden="true" />
-              <header className="flex shrink-0 items-start justify-between gap-3 px-4 pb-3 pt-2.5">
-                <div className="min-w-0"><p className="text-base font-black text-slate-900">Pilih jam belajar</p><p className="mt-1 text-xs font-semibold leading-5 text-slate-500">Pilih waktu yang paling sesuai. Setelah dipilih, kamu langsung kembali ke form.</p></div>
-                <button type="button" onClick={() => setOpen(false)} aria-label="Tutup pilihan jam" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500"><X size={18} /></button>
-              </header>
-              <div className="min-h-0 overflow-y-auto overscroll-contain border-t border-slate-100 px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-4">
-                <TimeSlotOptions value={value} options={options} onChoose={choose} />
-              </div>
-            </section>
-          </div>
-        </>
+          </section>
+        </div>
       )}
     </div>
   );
 }
 
-function TimeSlotOptions({ value, options, onChoose, desktop = false }: { value: string; options: TimeSlot[]; onChoose: (value: string) => void; desktop?: boolean }) {
+function TimeSlotOptions({ value, options, onChoose }: { value: string; options: TimeSlot[]; onChoose: (value: string) => void }) {
   return (
     <div className="space-y-4" role="listbox" aria-label="Daftar jam belajar">
       {["Pagi", "Siang", "Sore & malam"].map((period) => {
@@ -1470,7 +1588,7 @@ function TimeSlotOptions({ value, options, onChoose, desktop = false }: { value:
         return (
           <div key={period}>
             <p className="mb-2 text-[10px] font-black uppercase tracking-[.16em] text-slate-400">{period}</p>
-            <div className={`grid grid-cols-3 gap-2 ${desktop ? "sm:grid-cols-4" : ""}`}>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {periodOptions.map((slot) => {
                 const slotValue = slot.start_time.slice(0, 5);
                 const active = slotValue === value;
@@ -1483,7 +1601,7 @@ function TimeSlotOptions({ value, options, onChoose, desktop = false }: { value:
                     onClick={() => onChoose(slotValue)}
                     className={`relative min-h-11 min-w-0 rounded-xl border px-2 py-2 text-center text-xs font-black transition ${active ? "border-indigo-600 bg-indigo-600 text-white shadow-sm" : "border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50"}`}
                   >
-                    <span className="block truncate">{timeSlotLabel(slot)}</span>
+                    <span className="block whitespace-normal break-words leading-tight">{timeSlotLabel(slot)}</span>
                     {active && <Check className="absolute right-1.5 top-1.5" size={11} aria-hidden="true" />}
                   </button>
                 );

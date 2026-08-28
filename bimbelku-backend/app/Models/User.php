@@ -26,7 +26,8 @@ class User extends Authenticatable
         'email',
         'email_verified_at',
         'phone',
-        'password', 
+        'password',
+        'payment_pin_hash',
         'profile_cover',
         'password_updated_at',
         'role',
@@ -62,6 +63,7 @@ class User extends Authenticatable
 
     protected $hidden = [
         'password',
+        'payment_pin_hash',
         'remember_token',
         'phone',
         'address',

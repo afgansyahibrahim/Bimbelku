@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\NoteController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PasswordResetController;
+use App\Http\Controllers\Api\PaymentPinController;
 use App\Http\Controllers\Api\ProtectedFileController;
 use App\Http\Controllers\Api\PublicController;
 use App\Http\Controllers\Api\PublicMediaController;
@@ -37,6 +38,7 @@ use App\Http\Controllers\Api\TeacherController;
 use App\Http\Controllers\Api\TeacherCheapClassController;
 use App\Http\Controllers\Api\TeacherDocumentController;
 use App\Http\Controllers\Api\TeacherOfferController;
+use App\Http\Controllers\Api\ScheduleRecommendationController;
 use App\Http\Controllers\Api\TeacherOperationsController;
 use App\Http\Controllers\Api\TeacherScheduleController;
 use App\Http\Controllers\Api\TicketController;
@@ -55,6 +57,7 @@ Route::get('/socials', [AdminController::class, 'getSocials']);
 Route::get('/settings/teacher-cover', [AdminSettingController::class, 'getTeacherCover']);
 Route::get('/package-plans', [StudentPackageController::class, 'plans']);
 Route::get('/learning-time-slots', [StudentPackageController::class, 'timeSlots']);
+Route::get('/package-booking-rules', [StudentPackageController::class, 'bookingRules']);
 Route::get('/content/banners', [StageFiveContentController::class, 'banners']);
 Route::get('/content/tutorials', [StageFiveContentController::class, 'tutorials']);
 Route::get('/content/promotions', [StageFiveContentController::class, 'promotions']);
@@ -117,6 +120,8 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
             ->middleware('throttle:student-cheap-class-cancel');
         Route::post('/student/tutor-availability', [TutorAvailabilityController::class, 'check'])
             ->middleware('throttle:student-tutor-availability');
+        Route::post('/student/schedule-recommendations', ScheduleRecommendationController::class)
+            ->middleware('throttle:student-tutor-availability');
         Route::post('/student/bookings/{booking}/approve', [SessionWorkflowController::class, 'studentApprove']);
         Route::post('/student/bookings/{booking}/dispute', [SessionWorkflowController::class, 'studentDispute']);
         Route::post('/student/bookings/{booking}/teacher-absence', [SessionWorkflowController::class, 'reportTeacherAbsence']);
@@ -125,6 +130,8 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
 
         Route::get('/student/orders/{id}/status', [StudentController::class, 'checkOrderStatus']);
         Route::get('/student/wallet', [CustomerWalletController::class, 'show']);
+        Route::get('/student/payment-pin/status', [PaymentPinController::class, 'status']);
+        Route::post('/student/payment-pin', [PaymentPinController::class, 'set'])->middleware('throttle:student-payment-pin-set');
         Route::post('/student/refunds/{refund}/destination', [StudentRefundController::class, 'selectDestination'])
             ->middleware(['throttle:student-refund-destination', 'idempotency', 'finance.audit:refund_destination_select']);
         Route::get('/student/orders/{order}/wallet-quote', [CustomerWalletController::class, 'quote']);
@@ -160,6 +167,8 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         Route::get('/cheap-classes', [TeacherCheapClassController::class, 'index']);
         Route::put('/cheap-classes/{cheapClass}/meeting-link', [TeacherCheapClassController::class, 'updateMeetingLink'])
             ->middleware('throttle:teacher-cheap-class-meeting-link');
+        Route::post('/cheap-classes/{cheapClass}/start-session', [TeacherCheapClassController::class, 'startSession'])
+            ->middleware('throttle:teacher-cheap-class-start-session');
         Route::put('/cheap-classes/{cheapClass}/progress', [TeacherCheapClassController::class, 'updateProgress'])
             ->middleware('throttle:teacher-cheap-class-progress');
         Route::get('/offers', [TeacherOfferController::class, 'index']);

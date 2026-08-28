@@ -21,7 +21,7 @@ add("student completed popup is informational", controller.includes("cheap_stude
 add("informational popup is marked read on dismiss or CTA", reminder.includes("dismissInformational") && reminder.includes("/notifications/${action.notification_id}/read"));
 add("required cheap-class reminders remain minimizable", reminder.includes("Minimalkan pengingat sesi") && reminder.includes("Boleh diminimalkan, tetapi pengingat tetap tersedia"));
 add("one global queue prevents popup stacking", controller.includes("concat($this->cheapClassReminderActions($user))") && controller.includes("$actions->first()"));
-add("teacher CTA deep-links to exact cheap class report", controller.includes("cheap_action=\".($isRevision ? 'revision' : 'report')") && teacherPage.includes('params.get("cheap_class")') && teacherPage.includes("setOpenProgressId(requestedClassId)"));
+add("teacher CTA deep-links to exact cheap class report", controller.includes('/guru/kelas?class_kind=group&cheap_class=') && controller.includes("$session->id") && controller.includes("$isRevision ? 'revision' : 'report'") && teacherPage.includes('params.get("cheap_class")') && teacherPage.includes("setOpenProgressId(requestedClassId)"));
 add("demo test covers teacher admin revision and student popup states", demoTest.includes("cheap_teacher_report_required") && demoTest.includes("cheap_admin_verify_report") && demoTest.includes("cheap_teacher_revision_requested") && demoTest.includes("cheap_student_class_completed"));
 
 let failed = 0;

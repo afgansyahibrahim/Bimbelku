@@ -196,15 +196,14 @@ class PackageCheckoutService
     public function acceptPackageOffer(TeacherOffer $teacherOffer, User $teacher): array
     {
         return DB::transaction(function () use ($teacherOffer, $teacher) {
+            $request = BookingRequest::query()
+                ->with('packageSubject.sessions')
+                ->lockForUpdate()
+                ->findOrFail($teacherOffer->booking_request_id);
             $offer = TeacherOffer::query()->lockForUpdate()->findOrFail($teacherOffer->id);
             abort_unless($offer->teacher_id === $teacher->id, 403);
             abort_unless($offer->status === 'pending', 422, 'Penawaran ini sudah diproses.');
             abort_if($offer->expires_at->isPast(), 422, 'Batas waktu jawaban sudah berakhir.');
-
-            $request = BookingRequest::query()
-                ->with('packageSubject.sessions')
-                ->lockForUpdate()
-                ->findOrFail($offer->booking_request_id);
             $subject = PackageSubject::query()
                 ->with(['sessions', 'package.subjects'])
                 ->lockForUpdate()
@@ -212,10 +211,9 @@ class PackageCheckoutService
             $package = LearningPackage::query()->lockForUpdate()->findOrFail($subject->learning_package_id);
 
             abort_unless(
-                $request->status === 'teacher_pending'
-                    && (int) $request->matched_teacher_id === (int) $teacher->id,
+                $request->status === 'teacher_pending',
                 422,
-                'Permintaan sudah dialihkan atau dibatalkan.'
+                'Permintaan sudah diterima tutor lain, dialihkan, atau dibatalkan.'
             );
             abort_unless(in_array($package->status, ['matching', 'teacher_pending', 'no_teacher'], true), 422, 'Paket tidak lagi menunggu tutor.');
 
@@ -261,13 +259,26 @@ class PackageCheckoutService
             }
 
             $offer->update(['status' => 'accepted', 'responded_at' => now()]);
+            $closedTeacherIds = $request->offers()
+                ->whereKeyNot($offer->id)
+                ->where('status', 'pending')
+                ->pluck('teacher_id');
             $request->offers()->whereKeyNot($offer->id)->where('status', 'pending')->update([
                 'status' => 'cancelled',
                 'responded_at' => now(),
             ]);
+            $closedTeacherIds->each(fn (int $teacherId) => Notification::create([
+                'user_id' => $teacherId,
+                'title' => 'Permintaan sudah diambil tutor lain',
+                'message' => "Permintaan {$request->subject_name} sudah diterima tutor lain. Tidak ada tindakan yang perlu dilakukan.",
+                'type' => 'info',
+                'target_url' => '/guru/permintaan?scope=history',
+            ]));
             $request->update([
                 'status' => 'teacher_selected',
                 'matched_teacher_id' => $teacher->id,
+                'teacher_response_deadline' => null,
+                'next_matching_at' => null,
                 'teacher_decision_deadline' => null,
             ]);
             $subject->update([
@@ -293,7 +304,7 @@ class PackageCheckoutService
                     'title' => 'Tutor paket ditemukan',
                     'message' => "{$teacher->name} menerima {$subject->subject_name}. Pencarian mapel lain masih berjalan.",
                     'type' => 'success',
-                    'target_url' => '/student/packages',
+                    'target_url' => '/student/my-classes?tab=process',
                 ]);
 
                 return ['package' => $package->fresh('subjects.assignedTeacher'), 'package_activated' => false];
@@ -407,7 +418,7 @@ class PackageCheckoutService
                 'title' => 'Pembayaran diterima',
                 'message' => "Pembayaran {$package->package_code} diterima. Sistem mulai mencari tutor untuk setiap mata pelajaran.",
                 'type' => 'success',
-                'target_url' => '/student/packages',
+                'target_url' => '/student/my-classes?tab=process',
             ]);
 
             return $package->subjects->pluck('id')->all();
@@ -458,7 +469,7 @@ class PackageCheckoutService
                 'title' => 'Pembayaran paket ditolak',
                 'message' => 'Bukti pembayaran ditolak: '.$reason,
                 'type' => 'warning',
-                'target_url' => '/student/packages',
+                'target_url' => '/student/my-classes?tab=process',
             ]);
         }, 3);
     }
@@ -475,7 +486,7 @@ class PackageCheckoutService
             'Rekening pembayaran belum dikonfigurasi admin.'
         );
 
-        $package->load(['plan', 'subjects.sessions', 'promotionClaims']);
+        $package->load(['plan', 'promotion', 'subjects.sessions', 'promotionClaims']);
         $firstSessionAt = $package->subjects
             ->flatMap->sessions
             ->sortBy('scheduled_start_at')
@@ -483,7 +494,17 @@ class PackageCheckoutService
             ?->scheduled_start_at;
         $paymentDueAt = now()->addHours(48);
         if ($firstSessionAt) {
-            $paymentDueAt = $paymentDueAt->min(Carbon::parse($firstSessionAt)->subHours(2));
+            $usesPreferredTutors = $package->renewal_of_id
+                && $package->subjects->isNotEmpty()
+                && $package->subjects->every(fn (PackageSubject $subject) => $subject->preferred_teacher_id);
+            $reservedMatchingHours = $usesPreferredTutors
+                ? $this->matchingService->matchingCutoffHours()
+                    + max(1, (int) ceil($this->matchingService->teacherResponseMinutes() / 60))
+                : $this->matchingService->maximumSearchHours()
+                    + $this->matchingService->matchingCutoffHours();
+            $paymentDueAt = $paymentDueAt->min(
+                Carbon::parse($firstSessionAt)->subHours($reservedMatchingHours)
+            );
         }
         abort_if($paymentDueAt->lte(now()), 422, 'Jadwal terlalu dekat untuk membuka tagihan paket.');
 
@@ -501,6 +522,8 @@ class PackageCheckoutService
             'total_learning_hours' => $package->total_sessions * (int) ($package->duration_hours ?? 1),
             'subtotal_amount' => (float) $package->subtotal_amount,
             'discount_amount' => (float) $package->discount_amount,
+            'promotion_title' => $package->promotion?->title,
+            'promotion_code' => $package->promotion?->code,
             'start_at' => $firstSessionAt?->toIso8601String(),
         ];
 
@@ -537,7 +560,7 @@ class PackageCheckoutService
             'title' => 'Tagihan paket tersedia',
             'message' => "Periksa dan bayar paket {$package->package_code}. Pencarian tutor dimulai setelah pembayaran diterima.",
             'type' => 'success',
-            'target_url' => '/student/packages',
+            'target_url' => '/student/my-classes?tab=process',
         ]);
 
         return $order->fresh(['booking', 'learningPackage']);

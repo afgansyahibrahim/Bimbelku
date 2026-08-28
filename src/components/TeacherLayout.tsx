@@ -7,7 +7,7 @@ import { usePersistentSidebarScroll } from "@/hooks/usePersistentSidebarScroll";
 import { hasSidebarAttention, NAVIGATION_ATTENTION_CHANGED_EVENT, unreadIdsForCurrentPage, type AttentionNotification } from "@/lib/navigationAttention";
 import {
   LayoutDashboard, BookOpen, Menu, X, Settings, Wallet, Banknote, 
-  GraduationCap, CalendarClock, HelpCircle, Bell, MessageSquare, ClipboardCheck, BarChart3, Users
+  GraduationCap, CalendarClock, HelpCircle, Bell, MessageSquare, ClipboardCheck, BarChart3
 } from "lucide-react";
 
 const RoleQuickGuide = lazy(() => import("@/components/RoleQuickGuide"));
@@ -231,7 +231,6 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
                 <div className="space-y-1">
                     <NavItem to="/guru/permintaan" icon={ClipboardCheck} label="Permintaan Bimbel" active={isActive('/guru/permintaan')} attention={hasSidebarAttention("teacher", "/guru/permintaan", attentionNotifications)} />
                     <NavItem to="/guru/kelas" icon={BookOpen} label="Kelas Saya" active={isActive('/guru/kelas')} attention={hasSidebarAttention("teacher", "/guru/kelas", attentionNotifications)} />
-                    <NavItem to="/guru/kelas-murah" icon={Users} label="Kelas Kelompok" active={isActive('/guru/kelas-murah')} attention={hasSidebarAttention("teacher", "/guru/kelas-murah", attentionNotifications)} />
                     <NavItem to="/guru/pesan" icon={MessageSquare} label="Pesan" active={isActive('/guru/pesan')} attention={hasSidebarAttention("teacher", "/guru/pesan", attentionNotifications)} />
                     <NavItem to="/guru/jadwal" icon={CalendarClock} label="Jadwal Mengajar" active={isActive('/guru/jadwal')} attention={hasSidebarAttention("teacher", "/guru/jadwal", attentionNotifications)} />
                 </div>
@@ -263,9 +262,9 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
       {/* MAIN CONTENT */}
       <main id="main-content" tabIndex={-1} className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-hidden">
         <header className="h-16 sm:h-20 bg-white/80 backdrop-blur-xl border-b border-slate-200/50 flex items-center justify-between px-3 sm:px-6 xl:px-10 sticky top-0 z-20 transition-all">
-          <div className="flex items-center gap-2 sm:gap-4">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-4">
             <button aria-label="Buka menu" className="xl:hidden p-2.5 bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 rounded-xl shadow-sm transition" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button>
-            <div className="min-w-0"><h1 className="max-w-[8.5rem] truncate text-sm font-black tracking-tight text-slate-800 sm:max-w-none sm:text-xl">{title}</h1></div>
+            <div className="min-w-0"><h1 className="max-w-[9.5rem] truncate text-base font-black tracking-tight text-slate-800 sm:max-w-none sm:text-xl">{title}</h1></div>
           </div>
           
           <div className="flex items-center gap-2 sm:gap-5">
@@ -309,10 +308,10 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
           </div>
         </header>
 
-        <div className="flex-1 overflow-x-hidden overflow-y-auto p-3 pb-24 scroll-smooth sm:p-6 sm:pb-24 xl:p-10 xl:pb-10">
+        <div className="mobile-app-content flex-1 overflow-x-hidden overflow-y-auto scroll-smooth p-4 pb-[calc(7.25rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-24 xl:p-10 xl:pb-10">
           <div className="mx-auto w-full min-w-0 max-w-7xl pb-10">{children}</div>
         </div>
-        {!isDesktop && (
+        {!isDesktop && !sidebarOpen && (
           <Suspense fallback={null}>
             <MobileBottomNav role="teacher" attentionNotifications={attentionNotifications} />
           </Suspense>

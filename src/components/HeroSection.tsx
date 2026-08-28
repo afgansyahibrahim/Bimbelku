@@ -24,26 +24,26 @@ export default function HeroSection() {
 
       <div className="container relative z-10 mx-auto grid max-w-7xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-[1.05fr_.95fr] lg:gap-14">
         <div className="text-center lg:text-left">
-          <Reveal delay={0.05}>
+          <Reveal eager>
             <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-bold text-white sm:text-sm">
               <ShieldCheck size={16} /> Tutor diperiksa admin · Jadwal sejak awal
             </div>
           </Reveal>
 
-          <Reveal delay={0.12}>
+          <Reveal eager>
             <h1 className="mx-auto mt-6 max-w-3xl text-balance text-4xl font-black leading-[1.05] tracking-tight text-white sm:text-5xl md:text-6xl lg:mx-0">
               Tentukan kebutuhanmu,
               <span className="mt-2 block text-orange-100">biarkan BimbelKu mencari tutor.</span>
             </h1>
           </Reveal>
 
-          <Reveal delay={0.2}>
+          <Reveal eager>
             <p className="mx-auto mt-6 max-w-2xl text-base font-medium leading-7 text-white/85 sm:text-lg sm:leading-8 lg:mx-0">
               Pilih mata pelajaran, Bab, durasi 1 atau 2 jam, mode belajar, dan jadwal. Lihat harga sejak awal, bayar, lalu sistem mencari tutor yang sesuai.
             </p>
           </Reveal>
 
-          <Reveal delay={0.28}>
+          <Reveal eager>
             <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row lg:justify-start">
               <StudentPackageLink to="/student/packages/new">
                 <Button type="button" size="xl" className="h-14 w-full rounded-2xl bg-white px-7 font-black text-primary shadow-xl shadow-orange-900/15 hover:bg-orange-50 sm:w-auto">
@@ -62,7 +62,7 @@ export default function HeroSection() {
             </div>
           </Reveal>
 
-          <Reveal delay={0.36}>
+          <Reveal eager>
             <div className="mt-8 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs font-bold text-white/75 lg:justify-start">
               <span className="inline-flex items-center gap-1.5"><CheckCircle2 size={14} /> Harga terlihat sejak awal</span>
               <span className="inline-flex items-center gap-1.5"><CheckCircle2 size={14} /> Online & offline</span>
@@ -71,7 +71,7 @@ export default function HeroSection() {
           </Reveal>
         </div>
 
-        <Reveal direction="left" delay={0.2} width="100%">
+        <Reveal eager direction="left" width="100%">
           <div className="relative mx-auto w-full max-w-xl">
             <div className="absolute inset-8 rounded-full border border-white/20" aria-hidden="true" />
             <div className="absolute inset-20 rounded-full border border-white/20" aria-hidden="true" />

@@ -12,16 +12,14 @@ import {
   GraduationCap,
   LockKeyhole,
   MessageSquareText,
-  RefreshCw,
   ShieldCheck,
-  Star,
   UserRound,
   WalletCards,
 } from "lucide-react";
 
 import StudentLayout from "@/components/StudentLayout";
 import { getCached } from "@/lib/http";
-import { NAVIGATION_ATTENTION_CHANGED_EVENT, pageGroupForPath, type AttentionNotification } from "@/lib/navigationAttention";
+import { NAVIGATION_ATTENTION_CHANGED_EVENT, normalizeAttentionPath, pageGroupForPath, type AttentionNotification } from "@/lib/navigationAttention";
 
 type Student = {
   name?: string;
@@ -108,8 +106,16 @@ export default function Account() {
     return Boolean(group && groupKeys.includes(group.key));
   }).length;
 
-  const packageAttention = attentionCountFor("student-packages");
-  const classAttention = attentionCountFor("student-classes");
+  const packageAttention = attentionNotifications.filter((notification) => {
+    if (notification.is_read) return false;
+    const path = normalizeAttentionPath(notification.target_url);
+    return path === "/payment" || path === "/student/packages" || path.startsWith("/student/packages/");
+  }).length;
+  const classAttention = attentionNotifications.filter((notification) => {
+    if (notification.is_read) return false;
+    const path = normalizeAttentionPath(notification.target_url);
+    return path === "/student/my-classes" || path.startsWith("/student/my-classes/");
+  }).length;
   const progressAttention = attentionCountFor("student-progress");
   const historyAttention = attentionCountFor("student-history");
   const voucherAttention = attentionCountFor("student-vouchers");
@@ -144,11 +150,9 @@ export default function Account() {
 
         <div className="grid gap-5 lg:grid-cols-2">
           <Group title="Belajar dan paket" items={[
-            { label: "Paket Saya", description: "Pantau pembayaran, pencarian tutor, dan paket aktif.", to: "/student/packages", icon: BookOpenCheck, attention: packageAttention > 0, attentionCount: packageAttention },
-            { label: "Jadwal dan riwayat sesi", description: "Lihat sesi mendatang serta pembelajaran yang selesai.", to: "/student/my-classes", icon: CalendarDays, attention: classAttention > 0, attentionCount: classAttention },
+            { label: "Proses Pesanan Privat", description: "Pantau pembayaran, pencarian tutor, dan perubahan jadwal.", to: "/student/my-classes?tab=process", icon: BookOpenCheck, attention: packageAttention > 0, attentionCount: packageAttention },
+            { label: "Kelas Saya", description: "Lihat jadwal, detail kelas, dan seluruh riwayat belajar.", to: "/student/my-classes", icon: CalendarDays, attention: classAttention > 0, attentionCount: classAttention },
             { label: "Perkembangan Belajar", description: "Lihat progress per paket, lalu buka perkembangan setiap Bab.", to: "/student/progress", icon: GraduationCap, attention: progressAttention > 0, attentionCount: progressAttention },
-            { label: "Tutor Saya", description: "Lihat tutor pada paket yang sudah aktif.", to: "/student/packages", icon: Star },
-            { label: "Perpanjang Paket", description: "Paket selesai bisa langsung diperpanjang. Paket aktif tersedia menjelang masa berlaku berakhir.", to: "/student/packages", icon: RefreshCw },
           ]} />
           <Group title="Transaksi dan penawaran" items={[
             { label: "Voucher Saya", description: "Lihat voucher yang sudah diklaim dan masa berlakunya.", to: "/student/vouchers", icon: BadgePercent, attention: voucherAttention > 0, attentionCount: voucherAttention },

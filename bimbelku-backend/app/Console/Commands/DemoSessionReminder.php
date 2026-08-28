@@ -200,6 +200,8 @@ class DemoSessionReminder extends Command
                 'total_amount' => $amount,
                 'status' => 'confirmed',
                 'session_flow_version' => 'presence_confirmation_v2',
+                // Fixture demo menyediakan URL agar alur Zoom dapat diuji end-to-end.
+                'meeting_link' => 'https://zoom.us/j/12345678901',
                 'commission_percent' => 20,
                 'gross_amount' => $amount,
                 'teacher_net_amount' => $amount * 0.8,

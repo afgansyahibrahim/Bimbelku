@@ -2,8 +2,6 @@ import { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router-dom";
 
 // --- IMPORT KOMPONEN KEAMANAN & GLOBAL (Tetap Import Biasa) ---
-import PrivateRoute from "./components/PrivateRoute"; 
-import StudentPackageRoute from "./components/StudentPackageRoute";
 import { ConfirmDialogProvider } from "./components/ConfirmDialogProvider";
 import SessionLifecycle from "./components/SessionLifecycle";
 import DeferredToaster from "./components/DeferredToaster";
@@ -29,8 +27,14 @@ const routeLazy = <T extends React.ComponentType<any>>(
   return lazy(() => preloadedModule ?? importer());
 };
 
-// 1. Halaman Umum
 const Index = routeLazy(exactPath("/"), () => import("./pages/Index"));
+
+// Guard role tidak diperlukan oleh halaman publik. Muat hanya ketika kelompok
+// rute terlindungi tersebut benar-benar dirender.
+const PrivateRoute = lazy(() => import("./components/PrivateRoute"));
+const StudentPackageRoute = lazy(() => import("./components/StudentPackageRoute"));
+
+// 1. Halaman Umum
 const NotFound = lazy(() => import("./pages/NotFound"));
 const WhyUs = routeLazy(exactPath("/why-us"), () => import("./pages/WhyUs"));
 const AccessDenied = routeLazy(exactPath("/access-denied"), () => import("./pages/AccessDenied"));
@@ -85,7 +89,6 @@ const TeacherMessages = routeLazy(exactPath("/guru/pesan"), () => import("./page
 const TeacherAccount = routeLazy(exactPath("/guru/saya"), () => import("./pages/teacher/TeacherAccount"));
 const TeacherPerformance = routeLazy(exactPath("/guru/performa"), () => import("./pages/teacher/TeacherPerformance"));
 const TeacherNotifications = routeLazy(exactPath("/guru/notifikasi"), () => import("./pages/teacher/TeacherNotifications"));
-const TeacherCheapClasses = routeLazy(exactPath("/guru/kelas-murah"), () => import("./pages/teacher/CheapClasses"));
 const TeacherLearningProgressDetail = routeLazy(pathPattern(/^\/guru\/progress\/package-subject\/[^/]+$/), () => import("./pages/teacher/TeacherLearningProgressDetail"));
 
 // 6. Halaman Murid
@@ -96,7 +99,6 @@ const Profile = routeLazy(exactPath("/student/profile"), () => import("./pages/s
 const Account = routeLazy(exactPath("/student/account"), () => import("./pages/students/Account"));
 const PackageBuilder = routeLazy(exactPath("/student/packages/new", "/search", "/student/find"), () => import("./pages/students/PackageBuilder"));
 const PackageReschedule = routeLazy(pathPattern(/^\/student\/packages\/[^/]+\/reschedule$/), () => import("./pages/students/PackageReschedule"));
-const MyPackages = routeLazy(exactPath("/student/packages"), () => import("./pages/students/MyPackages"));
 const Vouchers = routeLazy(exactPath("/student/vouchers"), () => import("./pages/students/Vouchers"));
 const PromotionDetail = routeLazy(pathPattern(/^\/student\/offers\/[^/]+$/), () => import("./pages/students/PromotionDetail"));
 const Messages = routeLazy(exactPath("/student/messages"), () => import("./pages/students/Messages"));
@@ -120,11 +122,9 @@ const DeferredFilePreviewProvider = () => {
 
   useEffect(() => {
     const activate = () => setReady(true);
-    const cancelScheduledActivation = scheduleNonCriticalTask(activate);
     window.addEventListener("bimbelku:file-preview-needed", activate, { once: true });
 
     return () => {
-      cancelScheduledActivation();
       window.removeEventListener("bimbelku:file-preview-needed", activate);
     };
   }, []);
@@ -146,6 +146,13 @@ const LegacyPackageRedirect = () => {
 
   const query = legacyParams.toString();
   return <Navigate to={`/student/packages/new${query ? `?${query}` : ""}`} replace />;
+};
+
+const LegacyTeacherCheapClassRedirect = () => {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  params.set("class_kind", "group");
+  return <Navigate to={`/guru/kelas?${params.toString()}`} replace />;
 };
 
 const StudentRuntime = () => {
@@ -301,7 +308,7 @@ const App = () => (
               <Route path="/guru/saya" element={<TeacherAccount />} />
               <Route path="/guru/performa" element={<TeacherPerformance />} />
               <Route path="/guru/notifikasi" element={<TeacherNotifications />} />
-              <Route path="/guru/kelas-murah" element={<TeacherCheapClasses />} />
+              <Route path="/guru/kelas-murah" element={<LegacyTeacherCheapClassRedirect />} />
               <Route path="/guru/progress/package-subject/:id" element={<TeacherLearningProgressDetail />} />
               
               <Route path="/guru/bantuan" element={<TeacherHelp />} />
@@ -334,7 +341,7 @@ const App = () => (
               <Route path="/student/history" element={<TransactionHistory />} />
               <Route path="/student/profile" element={<Profile />} />
               <Route path="/student/account" element={<Account />} />
-              <Route path="/student/packages" element={<MyPackages />} />
+              <Route path="/student/packages" element={<Navigate to="/student/my-classes?tab=process" replace />} />
               <Route path="/student/packages/:id/reschedule" element={<PackageReschedule />} />
               <Route path="/student/vouchers" element={<Vouchers />} />
               <Route path="/student/offers/:id" element={<PromotionDetail />} />

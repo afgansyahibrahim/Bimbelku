@@ -8,13 +8,14 @@ class TeacherOffer extends Model
 {
     protected $fillable = [
         'booking_request_id', 'teacher_id', 'status', 'distance_km', 'offered_at',
-        'expires_at', 'responded_at', 'rejection_reason', 'no_response_penalty_applied',
+        'expires_at', 'reminder_sent_at', 'responded_at', 'rejection_reason', 'no_response_penalty_applied',
     ];
 
     protected $casts = [
         'distance_km' => 'float',
         'offered_at' => 'datetime',
         'expires_at' => 'datetime',
+        'reminder_sent_at' => 'datetime',
         'responded_at' => 'datetime',
         'no_response_penalty_applied' => 'boolean',
     ];

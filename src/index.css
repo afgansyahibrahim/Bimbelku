@@ -184,6 +184,10 @@
     overflow-x: clip;
   }
 
+  html {
+    font-size: 100%;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: 'Plus Jakarta Sans', Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -232,6 +236,14 @@
   .break-anywhere {
     overflow-wrap: anywhere;
     word-break: break-word;
+  }
+}
+
+/* Tablet/desktop density (±80% dari skala lama). Breakpoint ini sengaja
+ * dimulai setelah aturan mobile agar layout sentuh tidak berubah. */
+@media (min-width: 640px) {
+  html {
+    font-size: 80%;
   }
 }
 
@@ -291,6 +303,42 @@
   [data-sonner-toast] {
     width: 100% !important;
     max-width: 100% !important;
+  }
+
+  /* Sistem visual halaman aplikasi di layar kecil. Aturan ini sengaja hanya
+     hidup di area konten layout agar landing page dan tampilan desktop tidak
+     ikut berubah. */
+  .mobile-app-content {
+    overscroll-behavior-y: contain;
+  }
+
+  .mobile-app-content [class~="space-y-7"] > :not([hidden]) ~ :not([hidden]),
+  .mobile-app-content [class~="space-y-8"] > :not([hidden]) ~ :not([hidden]),
+  .mobile-app-content [class~="space-y-10"] > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 1.25rem;
+  }
+
+  .mobile-app-content :where(section, article, div, [role="status"])[class*="rounded-[2rem]"],
+  .mobile-app-content :where(section, article, div, [role="status"])[class*="rounded-[2.5rem]"] {
+    border-radius: 1.375rem;
+  }
+
+  .mobile-app-content :where(section, article, div)[class~="p-8"],
+  .mobile-app-content :where(section, article, div)[class~="p-10"],
+  .mobile-app-content :where(section, article, div)[class~="p-12"] {
+    padding: 1.25rem;
+  }
+
+  .mobile-app-content :where(section, article, div)[class~="py-16"],
+  .mobile-app-content :where(section, article, div)[class~="py-20"] {
+    padding-top: 3rem;
+    padding-bottom: 3rem;
+  }
+
+  .mobile-app-content :where(h1, h2)[class~="text-3xl"],
+  .mobile-app-content :where(h1, h2)[class~="text-4xl"] {
+    font-size: 1.5rem;
+    line-height: 2rem;
   }
 }
 

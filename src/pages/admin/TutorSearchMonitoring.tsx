@@ -66,6 +66,8 @@ interface SearchItem {
   search_started_at?: string | null;
   search_expires_at?: string | null;
   teacher_response_deadline?: string | null;
+  next_matching_at?: string | null;
+  active_offer_count: number;
   search_age_minutes: number;
   needs_attention: boolean;
   attention_reason?: string | null;
@@ -75,6 +77,7 @@ interface SearchItem {
   can_assign_manually: boolean;
   matched_teacher?: PersonSummary | null;
   active_offer?: ActiveOffer | null;
+  active_offers?: ActiveOffer[];
   offer_totals: {
     total: number;
     rejected: number;
@@ -167,6 +170,10 @@ interface SearchResponse {
     per_page: number;
     total: number;
   };
+  system_health: {
+    scheduler_healthy: boolean;
+    last_heartbeat_at?: string | null;
+  };
 }
 
 type StatusFilter = "all" | "attention" | SearchItem["status"];
@@ -177,6 +184,7 @@ const emptyResponse: SearchResponse = {
   data: [],
   summary: { all: 0, matching: 0, teacher_pending: 0, no_teacher: 0, expired: 0, attention: 0 },
   meta: { current_page: 1, last_page: 1, per_page: 20, total: 0 },
+  system_health: { scheduler_healthy: false, last_heartbeat_at: null },
 };
 
 const activeStatusOptions: { value: StatusFilter; label: string }[] = [
@@ -482,6 +490,9 @@ export default function TutorSearchMonitoring() {
             <SummaryBox label="Menunggu" value={result.summary.teacher_pending} />
             <SummaryBox label="Tidak ditemukan" value={result.summary.no_teacher} alert />
             <SummaryBox label="Berakhir" value={result.summary.expired} />
+          </div>
+          <div className={`mt-4 rounded-2xl border px-4 py-3 text-xs font-bold ${result.system_health.scheduler_healthy ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100" : "border-rose-400/30 bg-rose-400/10 text-rose-100"}`}>
+            Scheduler pencarian: {result.system_health.scheduler_healthy ? "aktif" : "belum terdeteksi"} · heartbeat terakhir {formatDateTime(result.system_health.last_heartbeat_at)}
           </div>
         </section>
 
@@ -853,7 +864,7 @@ export default function TutorSearchMonitoring() {
                   type="button"
                   onClick={() => void expandRadius()}
                   disabled={expanding || expandReason.trim().length < 10}
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-orange-600 px-5 text-sm font-black text-white hover:bg-orange-700 disabled:opacity-50"
+                  className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-orange-600 px-5 text-sm font-black text-white hover:bg-orange-700 disabled:opacity-50"
                 >
                   {expanding ? <Loader2 className="animate-spin" size={17} /> : <Radar size={17} />}
                   Perluas dan cari ulang
@@ -1024,7 +1035,7 @@ function SearchCard({ item, onOpen }: { item: SearchItem; onOpen: () => void }) 
           {item.attention_reason && <p className="mt-3 text-sm font-bold text-rose-700">{item.attention_reason}</p>}
         </div>
         <div className="grid gap-2 sm:grid-cols-3 xl:w-[27rem]">
-          <MiniStat label="Tutor aktif" value={item.active_offer?.teacher_name || "Belum ada"} />
+          <MiniStat label="Penawaran aktif" value={item.active_offer_count ? `${item.active_offer_count} tutor dihubungi` : "Belum ada"} />
           <MiniStat label="Batas jawaban" value={formatDateTime(item.teacher_response_deadline)} />
           <MiniStat label="Lama mencari" value={formatDuration(item.search_age_minutes)} />
         </div>

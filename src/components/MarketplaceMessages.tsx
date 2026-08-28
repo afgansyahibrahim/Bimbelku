@@ -119,7 +119,7 @@ export default function MarketplaceMessages({ role }: { role: "student" | "teach
     if (!quiet) setChatLoading(true);
     setChatError(false);
     try {
-      const response = await http.get<ChatData>(`/bookings/${bookingId}/learning-session`);
+      const response = await http.get<ChatData>(`/bookings/${bookingId}/learning-session?conversation=1`);
       setChat(response.data);
       setConversations((current) => current.map((item) => item.booking_id === bookingId
         ? { ...item, unread_count: 0 }

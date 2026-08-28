@@ -106,6 +106,7 @@ class AppServiceProvider extends ServiceProvider
 
         // Shared authenticated actions.
         $registerIsolatedLimiter('account-password-change', 5, 'Perubahan kata sandi dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+        $registerIsolatedLimiter('student-payment-pin-set', 5, 'Pengaturan PIN dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');
         $registerIsolatedLimiter('support-ticket-create', 10, 'Pembuatan tiket dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');
         $registerIsolatedLimiter('support-ticket-reply', 20, 'Balasan tiket dikirim terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['id']);
         $registerIsolatedLimiter('session-action-poll', 60, 'Pemeriksaan status sesi terlalu sering. Tunggu :seconds detik lalu coba lagi.');
@@ -150,6 +151,7 @@ class AppServiceProvider extends ServiceProvider
 
         // Teacher actions. Financial actions intentionally use an actor-wide action bucket.
         $registerIsolatedLimiter('teacher-cheap-class-meeting-link', 10, 'Tautan pertemuan diperbarui terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['cheapClass']);
+        $registerIsolatedLimiter('teacher-cheap-class-start-session', 10, 'Konfirmasi kehadiran kelas dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['cheapClass']);
         $registerIsolatedLimiter('teacher-cheap-class-progress', 20, 'Progress kelas diperbarui terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['cheapClass']);
         $registerIsolatedLimiter('teacher-offer-action', 10, 'Respons tawaran dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['teacherOffer']);
         $registerIsolatedLimiter('teacher-bank-change', 5, 'Perubahan rekening dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');

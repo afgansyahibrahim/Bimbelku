@@ -16,6 +16,7 @@ use App\Services\PackageCheckoutService;
 use App\Services\CustomerWalletService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
@@ -31,6 +32,7 @@ class OrderController extends Controller
         $walletInput = $request->validate([
             'use_wallet' => ['sometimes', 'boolean'],
             'wallet_expected_amount' => ['nullable', 'numeric', 'min:0'],
+            'payment_pin' => ['nullable', 'digits:6'],
         ]);
 
         $order = Order::query()
@@ -46,6 +48,16 @@ class OrderController extends Controller
         $clientWalletExpected = $useWallet && array_key_exists('wallet_expected_amount', $walletInput)
             ? round((float) $walletInput['wallet_expected_amount'], 2)
             : null;
+        if ($useWallet) {
+            $paymentPin = (string) ($walletInput['payment_pin'] ?? '');
+            if (!filled($request->user()->payment_pin_hash)) {
+                return $this->paymentError('Buat PIN pembayaran terlebih dahulu untuk menggunakan Saldo BimbelKu.', 409, 'payment_pin_setup_required');
+            }
+            if ($paymentPin === '' || !Hash::check($paymentPin, (string) $request->user()->payment_pin_hash)) {
+                return $this->paymentError('PIN pembayaran tidak sesuai.', 422, 'payment_pin_invalid');
+            }
+        }
+
         $walletQuote = $wallets->quoteForOrder($order, (int) $request->user()->id);
         if ($useWallet && !$walletQuote['supported']) {
             return $this->paymentError(
@@ -88,6 +100,7 @@ class OrderController extends Controller
             'sender_account_number' => [$required, 'string', 'min:8', 'max:20', 'regex:/^[0-9]+$/'],
             'use_wallet' => ['sometimes', 'boolean'],
             'wallet_expected_amount' => ['nullable', 'numeric', 'min:0'],
+            'payment_pin' => ['nullable', 'digits:6'],
         ], [
             'sender_name.regex' => 'Nama pemilik rekening wajib mengandung huruf.',
             'sender_name.not_regex' => 'Nama pemilik rekening tidak boleh memuat angka.',

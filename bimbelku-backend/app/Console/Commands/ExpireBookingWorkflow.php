@@ -29,6 +29,7 @@ class ExpireBookingWorkflow extends Command
             'cheap_classes' => CheapClassSchema::status()['ready']
                 ? collect($cheapClassService->maintain())->sum()
                 : 0,
+            'offer_reminders' => $this->sendOfferReminders(),
             'offers' => $this->expireOffers($matchingService),
             'matching' => $this->resumeMatching($matchingService),
             'matching_history' => $this->archivePastMatching(),
@@ -37,9 +38,49 @@ class ExpireBookingWorkflow extends Command
             'reviews' => $this->queueCompletionReviews(),
         ];
 
+        Setting::query()->updateOrCreate(
+            ['key' => 'booking_workflow_last_heartbeat_at'],
+            ['value' => now()->toIso8601String()]
+        );
         $this->info(collect($stats)->map(fn ($value, $key) => "{$key}: {$value}")->implode('; '));
 
         return self::SUCCESS;
+    }
+
+    private function sendOfferReminders(): int
+    {
+        $reminderMinutes = min(55, max(5, (int) (
+            Setting::query()->where('key', 'teacher_offer_reminder_minutes')->value('value') ?? 30
+        )));
+        $count = 0;
+
+        TeacherOffer::query()
+            ->where('status', 'pending')
+            ->whereNull('reminder_sent_at')
+            ->where('offered_at', '<=', now()->subMinutes($reminderMinutes))
+            ->where('expires_at', '>', now())
+            ->with('bookingRequest')
+            ->chunkById(100, function ($offers) use (&$count) {
+                foreach ($offers as $offer) {
+                    DB::transaction(function () use ($offer, &$count) {
+                        $locked = TeacherOffer::query()->lockForUpdate()->find($offer->id);
+                        if (!$locked || $locked->status !== 'pending' || $locked->reminder_sent_at || $locked->expires_at->isPast()) {
+                            return;
+                        }
+                        $locked->update(['reminder_sent_at' => now()]);
+                        Notification::create([
+                            'user_id' => $locked->teacher_id,
+                            'title' => 'Pengingat permintaan bimbel',
+                            'message' => 'Penawaran masih menunggu jawabanmu. Pilih Terima atau Tolak sebelum batas waktu agar murid mendapat kepastian.',
+                            'type' => 'warning',
+                            'target_url' => '/guru/permintaan',
+                        ]);
+                        $count++;
+                    }, 3);
+                }
+            });
+
+        return $count;
     }
 
     private function expireOffers(TeacherMatchingService $matchingService): int
@@ -64,10 +105,14 @@ class ExpireBookingWorkflow extends Command
     {
         $count = 0;
         BookingRequest::query()
-            ->where('status', 'matching')
-            ->whereDoesntHave('offers', fn ($query) => $query
-                ->where('status', 'pending')
-                ->where('expires_at', '>', now()))
+            ->where(function ($statuses) {
+                $statuses->whereIn('status', ['matching', 'teacher_pending'])
+                    ->orWhere(function ($waiting) {
+                        $waiting->where('status', 'no_teacher')
+                            ->whereNotNull('next_matching_at')
+                            ->where('next_matching_at', '<=', now());
+                    });
+            })
             ->orderBy('id')
                 ->chunkById(100, function ($requests) use ($matchingService, &$count) {
                 foreach ($requests as $bookingRequest) {

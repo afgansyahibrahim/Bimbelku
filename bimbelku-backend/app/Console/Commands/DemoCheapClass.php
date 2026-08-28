@@ -365,7 +365,8 @@ class DemoCheapClass extends Command
             ]);
         });
 
-        $this->info('Sesi demo sekarang sedang berlangsung. Tunjukkan Kelas Kelompok dari sisi murid/tutor dan link Zoom.');
+        $this->info('Jadwal sesi demo sekarang aktif. Masuk sebagai tutor lalu tekan "Saya Hadir & Mulai Mengajar".');
+        $this->comment('Setelah tutor menekan tombol, cek popup murid dan bergabung dari Kelas Saya.');
         $this->comment('Saat siap menutup sesi: php artisan demo:cheap-class session-ended');
         return $this->status();
     }
@@ -630,7 +631,9 @@ class DemoCheapClass extends Command
         } elseif ($class->status === 'confirmed' && $session?->status === 'scheduled' && $session?->starts_at?->isFuture()) {
             $this->comment('Berikutnya: php artisan demo:cheap-class session-live');
         } elseif ($session?->status === 'scheduled') {
-            $this->comment('Berikutnya: php artisan demo:cheap-class session-ended');
+            $this->comment('Berikutnya: tutor tekan "Saya Hadir & Mulai Mengajar", lalu cek popup murid di Kelas Saya.');
+        } elseif ($session?->status === 'in_progress') {
+            $this->comment('Kehadiran tutor sudah tercatat. Berikutnya: php artisan demo:cheap-class session-ended');
         } elseif ($session?->status === 'report_required') {
             $this->comment('Berikutnya: tutor kirim laporan dari /guru/kelas-murah.');
         } elseif ($session?->status === 'awaiting_admin_verification') {

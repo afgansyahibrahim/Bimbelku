@@ -21,6 +21,7 @@ class AdminStageFiveController extends Controller
     private const INTERNAL_DESTINATIONS = [
         '/student/dashboard',
         '/student/packages',
+        '/student/my-classes?tab=process',
         '/student/packages/new',
         '/student/vouchers',
         '/student/offers',

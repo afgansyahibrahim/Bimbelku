@@ -23,7 +23,7 @@ class DemoPackageRenewalCommandTest extends TestCase
 
     public function test_completed_package_can_be_renewed_and_demo_reaches_second_package_final_session(): void
     {
-        Carbon::setTestNow(Carbon::parse('2026-08-15 16:00:00', 'Asia/Jakarta'));
+        Carbon::setTestNow(Carbon::parse('2026-08-15 04:00:00', 'Asia/Jakarta'));
 
         $this->artisan('demo:package-renewal setup')->assertExitCode(0);
 
@@ -48,7 +48,7 @@ class DemoPackageRenewalCommandTest extends TestCase
             ->firstOrFail();
         $plan = PackagePlan::query()->where('is_active', true)->where('session_count', 4)->firstOrFail();
 
-        $starts = collect([1, 3, 5, 7])->map(
+        $starts = collect([0, 2, 4, 6])->map(
             fn (int $days) => now()->addDays($days)->setTime(18, 0)->format('Y-m-d H:i:s')
         )->all();
 
@@ -68,22 +68,22 @@ class DemoPackageRenewalCommandTest extends TestCase
             'subjects' => [$subjectPayload],
         ];
 
-        // Jadwal pertama hanya sekitar 26 jam dari testNow: pesanan baru tetap
-        // harus ditolak oleh rule 72 jam.
-        $this->postJson('/api/student/packages', $basePayload, ['Idempotency-Key' => 'demo-new-package-under-72h'])
+        // Jadwal pertama sekitar 14 jam dari testNow: pesanan baru tetap
+        // harus ditolak oleh lead time 24 jam.
+        $this->postJson('/api/student/packages', $basePayload, ['Idempotency-Key' => 'demo-new-package-under-24h'])
             ->assertStatus(422)
-            ->assertJsonPath('message', 'Jadwal paket paling cepat dimulai 72 jam dari sekarang.');
+            ->assertJsonPath('message', 'Jadwal paket paling cepat dimulai 24 jam dari sekarang.');
 
         // Renewal tanpa memilih tutor lama juga tetap dianggap matching biasa,
-        // sehingga masih membutuhkan lead time 72 jam.
+        // sehingga masih membutuhkan lead time 24 jam.
         $renewalWithoutSameTutor = $basePayload;
         $renewalWithoutSameTutor['renewal_of_id'] = $source->id;
         $this->postJson('/api/student/packages', $renewalWithoutSameTutor, ['Idempotency-Key' => 'demo-renewal-without-old-tutor'])
             ->assertStatus(422)
-            ->assertJsonPath('message', 'Jadwal paket paling cepat dimulai 72 jam dari sekarang.');
+            ->assertJsonPath('message', 'Jadwal paket paling cepat dimulai 24 jam dari sekarang.');
 
         // Saat tutor lama dipilih pada mapel yang sama, renewal boleh memakai
-        // lead time 24 jam dan jadwal di bawah 72 jam ini harus lolos.
+        // lead time 12 jam dan jadwal di bawah 24 jam ini harus lolos.
         $renewalPayload = $basePayload;
         $renewalPayload['renewal_of_id'] = $source->id;
         $renewalPayload['subjects'][0]['preferred_teacher_id'] = $teacher->id;
@@ -104,11 +104,20 @@ class DemoPackageRenewalCommandTest extends TestCase
 
         $this->artisan('demo:package-renewal payment-paid')->assertExitCode(0);
 
-        $offer = TeacherOffer::query()
+        $offers = TeacherOffer::query()
             ->where('teacher_id', $teacher->id)
             ->where('status', 'pending')
             ->whereHas('bookingRequest.packageSubject', fn ($query) => $query->where('learning_package_id', $renewalId))
-            ->firstOrFail();
+            ->get();
+        $this->assertNotEmpty($offers, json_encode(
+            $renewal->fresh('subjects.bookingRequest.matchingOperationLogs')->subjects
+                ->map(fn ($item) => [
+                    'subject_status' => $item->status,
+                    'request_status' => $item->bookingRequest?->status,
+                    'logs' => $item->bookingRequest?->matchingOperationLogs?->pluck('action'),
+                ])
+        ));
+        $offer = $offers->first();
 
         Sanctum::actingAs($teacher);
         $this->postJson("/api/teacher/offers/{$offer->id}/accept")

@@ -385,15 +385,21 @@ function OfferCard({
       </div>
 
       {isPending && (
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <Button variant="outline" className="h-12 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700" onClick={onReject} disabled={processing}>
-            <X size={17} className="mr-2" /> Tolak
-          </Button>
-          <Button className="h-12 rounded-xl bg-indigo-600 hover:bg-indigo-700 font-bold shadow-lg shadow-indigo-200" onClick={onAccept} disabled={processing}>
-            {processing ? <Loader2 size={17} className="mr-2 animate-spin" /> : <Check size={17} className="mr-2" />}
-            Terima
-          </Button>
-        </div>
+        <>
+          <div className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-900">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+            <span>Menolak secara langsung tidak mengurangi poin. Satu kali terlambat merespons belum menangguhkan akun, tetapi pola tidak merespons pada beberapa permintaan berbeda dapat memberi jeda sementara.</span>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <Button variant="outline" className="h-12 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700" onClick={onReject} disabled={processing}>
+              <X size={17} className="mr-2" /> Tolak
+            </Button>
+            <Button className="h-12 rounded-xl bg-indigo-600 hover:bg-indigo-700 font-bold shadow-lg shadow-indigo-200" onClick={onAccept} disabled={processing}>
+              {processing ? <Loader2 size={17} className="mr-2 animate-spin" /> : <Check size={17} className="mr-2" />}
+              Terima
+            </Button>
+          </div>
+        </>
       )}
     </article>
   );

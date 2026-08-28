@@ -23,8 +23,7 @@ type PageGroup = {
 const STUDENT_GROUPS: PageGroup[] = [
   { key: "student-dashboard", paths: ["/student/dashboard"], mobileKey: "home" },
   { key: "student-search", paths: ["/student/packages/new", "/student/find", "/search"], mobileKey: "search" },
-  { key: "student-packages", paths: ["/student/packages", "/payment"], mobileKey: "classes" },
-  { key: "student-classes", paths: ["/student/my-classes"], mobileKey: "classes" },
+  { key: "student-classes", paths: ["/student/my-classes", "/student/packages", "/payment"], mobileKey: "classes" },
   { key: "student-progress", paths: ["/student/progress"], mobileKey: "classes" },
   { key: "student-messages", paths: ["/student/messages"], mobileKey: "messages" },
   { key: "student-account", paths: ["/student/account"], mobileKey: "account" },
@@ -168,7 +167,7 @@ export const attentionTargetLabel = (
   if (!path) return "Informasi saja";
 
   if (role === "student") {
-    if (pathMatches(path, "/student/packages")) return "Paket Saya";
+    if (pathMatches(path, "/student/packages")) return "Kelas Saya · Proses";
     if (pathMatches(path, "/student/my-classes")) return "Kelas Saya";
     if (pathMatches(path, "/student/progress")) return "Perkembangan Belajar";
     if (pathMatches(path, "/student/messages")) return "Pesan";

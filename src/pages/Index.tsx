@@ -25,7 +25,7 @@ interface DeferredSectionProps {
   rootMargin?: string;
 }
 
-const DeferredSection = ({ children, minHeight, rootMargin = "900px 0px" }: DeferredSectionProps) => {
+const DeferredSection = ({ children, minHeight, rootMargin = "300px 0px" }: DeferredSectionProps) => {
   const markerRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
 
@@ -89,7 +89,7 @@ const Index = () => (
       </DeferredSection>
     </main>
 
-    <DeferredSection minHeight={420} rootMargin="1200px 0px">
+    <DeferredSection minHeight={420} rootMargin="600px 0px">
       <Suspense fallback={<div className="h-32 animate-pulse bg-slate-100" />}><Footer /></Suspense>
     </DeferredSection>
   </div>

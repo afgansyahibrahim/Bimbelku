@@ -17,6 +17,7 @@ class CheapClassSession extends Model
         'attended_participants_count' => 'integer',
         'report_submitted_at' => 'datetime',
         'admin_reviewed_at' => 'datetime',
+        'teacher_started_at' => 'datetime',
         'report_revision_count' => 'integer',
     ];
 

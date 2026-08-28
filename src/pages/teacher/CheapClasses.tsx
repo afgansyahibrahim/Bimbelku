@@ -35,6 +35,8 @@ type ClassSession = {
   admin_review_notes?: string | null;
   admin_reviewed_at?: string | null;
   report_revision_count?: number;
+  teacher_started_at?: string | null;
+  teacher_started_by?: number | null;
 };
 
 type ChapterProgress = {
@@ -94,14 +96,33 @@ const progressStatusLabel = (status?: string, needsReview = false) => {
   return "Belum dimulai";
 };
 
-export default function TeacherCheapClasses() {
+export default function TeacherCheapClasses({
+  embedded = false,
+  controlledScope,
+  onScopeChange,
+  refreshToken = 0,
+}: {
+  embedded?: boolean;
+  controlledScope?: Scope;
+  onScopeChange?: (scope: Scope) => void;
+  refreshToken?: number;
+}) {
   const location = useLocation();
   const [classes, setClasses] = useState<CheapClass[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<number | null>(null);
   const [links, setLinks] = useState<Record<number, string>>({});
-  const [scope, setScope] = useState<Scope>("active");
+  const [localScope, setLocalScope] = useState<Scope>("active");
   const [openProgressId, setOpenProgressId] = useState<number | null>(null);
+
+  const openProgressForm = useCallback((classId: number) => {
+    setOpenProgressId(classId);
+    window.setTimeout(() => {
+      const form = document.getElementById("cheap-class-report-" + classId);
+      form?.scrollIntoView({ behavior: "smooth", block: "start" });
+      form?.focus({ preventScroll: true });
+    }, 80);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -113,25 +134,39 @@ export default function TeacherCheapClasses() {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); }, [load, refreshToken]);
+
+  const changeScope = useCallback((nextScope: Scope) => {
+    setLocalScope(nextScope);
+    onScopeChange?.(nextScope);
+  }, [onScopeChange]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const requestedClassId = Number(params.get("cheap_class"));
     const requestedAction = params.get("cheap_action");
-    if (!requestedClassId || !["report", "revision"].includes(requestedAction || "")) return;
+    if (!requestedClassId || !["start", "live", "report", "revision"].includes(requestedAction || "")) return;
     if (!classes.some((item) => item.id === requestedClassId)) return;
 
-    setScope("active");
-    setOpenProgressId(requestedClassId);
+    changeScope("active");
+    if (["report", "revision"].includes(requestedAction || "")) setOpenProgressId(requestedClassId);
     window.setTimeout(() => {
       document.getElementById(`cheap-class-${requestedClassId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 80);
-  }, [classes, location.search]);
+  }, [changeScope, classes, location.search]);
 
   const activeClasses = useMemo(() => classes.filter((item) => !historyStatuses.has(item.status)), [classes]);
   const historyClasses = useMemo(() => classes.filter((item) => historyStatuses.has(item.status)), [classes]);
+  const scope = controlledScope ?? localScope;
   const visibleClasses = scope === "active" ? activeClasses : historyClasses;
+
+  const startSession = async (item: CheapClass) => {
+    try {
+      const response = await http.post(`/teacher/cheap-classes/${item.id}/start-session`);
+      notify.success(response.data.message);
+      await load();
+    } catch (error) { notify.error(getApiError(error)); }
+  };
 
   const saveLink = async (event: FormEvent, item: CheapClass) => {
     event.preventDefault();
@@ -144,32 +179,34 @@ export default function TeacherCheapClasses() {
     finally { setSaving(null); }
   };
 
-  return <TeacherLayout title="Kelas Kelompok">
-    <div className="mx-auto max-w-6xl space-y-7 pb-12">
-      <section data-tour="teacher-cheap-hero" className="rounded-[2rem] bg-gradient-to-br from-indigo-700 to-violet-800 px-6 py-8 text-white shadow-xl sm:px-7"><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-100">Kelas online bersama</p><h1 className="mt-3 text-3xl font-black">Kelas Kelompok yang ditugaskan</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-indigo-100">Kelas aktif dipisahkan dari riwayat. Setelah setiap sesi berakhir, kirim kehadiran, progress per bab, dan catatan. Sesi baru final setelah admin memverifikasi laporan.</p></section>
+  const content = <div data-tour="teacher-cheap-classes" className={`mx-auto space-y-7 ${embedded ? "w-full max-w-none" : "max-w-6xl pb-12"}`}>
+      {!embedded && <section data-tour="teacher-cheap-hero" className="rounded-[2rem] bg-gradient-to-br from-indigo-700 to-violet-800 px-6 py-8 text-white shadow-xl sm:px-7"><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-100">Kelas online bersama</p><h1 className="mt-3 text-3xl font-black">Kelas Kelompok yang ditugaskan</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-indigo-100">Kelas aktif dipisahkan dari riwayat. Setelah setiap sesi berakhir, kirim kehadiran, progress per bab, dan catatan. Sesi baru final setelah admin memverifikasi laporan.</p></section>}
 
-      {!loading && classes.length > 0 && <section className="rounded-[1.5rem] border border-slate-100 bg-white p-2 shadow-sm"><div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-slate-100 p-1.5"><button type="button" onClick={() => setScope("active")} className={`min-h-11 rounded-xl text-sm font-black ${scope === "active" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}>Aktif ({activeClasses.length})</button><button type="button" onClick={() => setScope("history")} className={`min-h-11 rounded-xl text-sm font-black ${scope === "history" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}>Riwayat ({historyClasses.length})</button></div></section>}
+      {!embedded && !loading && classes.length > 0 && <section className="rounded-[1.5rem] border border-slate-100 bg-white p-2 shadow-sm"><div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-slate-100 p-1.5"><button type="button" onClick={() => changeScope("active")} className={`min-h-11 rounded-xl text-sm font-black ${scope === "active" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}>Aktif ({activeClasses.length})</button><button type="button" onClick={() => changeScope("history")} className={`min-h-11 rounded-xl text-sm font-black ${scope === "history" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}>Riwayat ({historyClasses.length})</button></div></section>}
 
       {loading ? <div className="grid min-h-56 place-items-center rounded-[2rem] bg-white"><Loader2 className="animate-spin text-indigo-600" /></div> : classes.length === 0 ? <Empty title="Belum ada Kelas Kelompok yang ditugaskan." /> : visibleClasses.length === 0 ? <Empty title={scope === "history" ? "Riwayat Kelas Kelompok masih kosong." : "Tidak ada Kelas Kelompok aktif."} /> : <div data-tour="teacher-cheap-list" className="grid gap-5">{visibleClasses.map((item) => {
         const percent = Number(item.progress_summary?.progress_percent || 0);
         const actionSession = item.sessions.find((session) => session.status === "revision_requested") || item.sessions.find((session) => session.status === "report_required");
         const waitingSession = item.sessions.find((session) => session.status === "awaiting_admin_verification");
+        const liveSession = item.sessions.find((session) => session.status === "in_progress");
+        const startableSession = item.sessions.find((session) => session.status === "scheduled" && new Date(session.starts_at).getTime() <= Date.now() + 10 * 60_000 && new Date(session.ends_at).getTime() > Date.now());
         return <article id={`cheap-class-${item.id}`} key={item.id} className="scroll-mt-24 rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-widest text-indigo-600">Kelas Kelompok · {item.session_count} sesi</p><h2 className="mt-2 break-words text-xl font-black text-slate-900">{item.subject_name}</h2><p className="mt-1 break-words text-sm font-bold text-slate-500">{item.education_level} · {item.grade} · {item.chapter}</p></div><span className={`self-start rounded-full px-3 py-1.5 text-xs font-black ${item.status === "confirmed" ? "bg-emerald-100 text-emerald-700" : item.status === "completed" ? "bg-slate-100 text-slate-600" : item.status === "cancelled" ? "bg-rose-50 text-rose-600" : "bg-indigo-50 text-indigo-700"}`}>{statusText[item.status] || item.status}</span></div>
           <div className="mt-5 grid gap-3 text-sm"><div className="flex gap-2 text-slate-700"><CalendarDays className="mt-0.5 shrink-0 text-indigo-500" size={17} /><div className="space-y-1 font-semibold">{item.sessions.map((session) => <p key={session.id} className={session.status === "completed" ? "text-slate-400" : ""}>Sesi {session.session_number}: {new Date(session.starts_at).toLocaleString("id-ID", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}{` · ${sessionStatusLabel[session.status] || session.status}` }</p>)}</div></div><p className="flex gap-2 font-semibold text-slate-700"><Users className="text-indigo-500" size={17} />{item.confirmed_participants_count} peserta terkonfirmasi · minimum {item.minimum_participants}</p></div>
-          {actionSession && <div className={`mt-5 rounded-2xl border-2 p-4 ${actionSession.status === "revision_requested" ? "border-amber-200 bg-amber-50" : "border-indigo-200 bg-indigo-50"}`}><p className={`text-[11px] font-black uppercase tracking-wider ${actionSession.status === "revision_requested" ? "text-amber-600" : "text-indigo-600"}`}>{actionSession.status === "revision_requested" ? "Perlu perbaikan" : "Langkah setelah mengajar"}</p><p className="mt-1 font-black text-slate-950">{actionSession.status === "revision_requested" ? `Perbaiki laporan sesi ${actionSession.session_number}` : `Sesi ${actionSession.session_number} sudah berakhir`}</p><p className="mt-1 text-xs leading-5 text-slate-600">{actionSession.status === "revision_requested" ? (actionSession.admin_review_notes || "Admin meminta laporan diperbaiki lalu dikirim ulang.") : "Sebelum tugas pertemuan ini dianggap selesai, catat jumlah murid hadir, progress bab, dan catatan sesi."}</p><Button type="button" onClick={() => setOpenProgressId(item.id)} className="mt-3 h-10 rounded-xl bg-indigo-600 font-black hover:bg-indigo-700"><BarChart3 size={15} className="mr-2" />{actionSession.status === "revision_requested" ? "Perbaiki Laporan" : "Isi & Kirim Laporan"}</Button></div>}
+          {actionSession && <div className={`mt-5 rounded-2xl border-2 p-4 ${actionSession.status === "revision_requested" ? "border-amber-200 bg-amber-50" : "border-indigo-200 bg-indigo-50"}`}><p className={`text-[11px] font-black uppercase tracking-wider ${actionSession.status === "revision_requested" ? "text-amber-600" : "text-indigo-600"}`}>{actionSession.status === "revision_requested" ? "Perlu perbaikan" : "Langkah setelah mengajar"}</p><p className="mt-1 font-black text-slate-950">{actionSession.status === "revision_requested" ? `Perbaiki laporan sesi ${actionSession.session_number}` : `Sesi ${actionSession.session_number} sudah berakhir`}</p><p className="mt-1 text-xs leading-5 text-slate-600">{actionSession.status === "revision_requested" ? (actionSession.admin_review_notes || "Admin meminta laporan diperbaiki lalu dikirim ulang.") : "Sebelum tugas pertemuan ini dianggap selesai, catat jumlah murid hadir, progress bab, dan catatan sesi."}</p><Button type="button" onClick={() => openProgressForm(item.id)} className="mt-3 h-10 rounded-xl bg-indigo-600 font-black hover:bg-indigo-700"><BarChart3 size={15} className="mr-2" />{actionSession.status === "revision_requested" ? "Perbaiki Laporan" : "Isi & Kirim Laporan"}</Button></div>}
           {!actionSession && waitingSession && <div className="mt-5 rounded-2xl border border-indigo-100 bg-indigo-50 p-4 text-xs font-bold leading-5 text-indigo-800"><Clock3 size={16} className="mr-2 inline" />Laporan sesi {waitingSession.session_number} sudah dikirim. Admin sedang memeriksa; kamu tidak perlu melakukan apa-apa sampai ada hasil verifikasi.</div>}
 
           {["confirmed", "completed"].includes(item.status) && <div className="mt-5 rounded-2xl bg-violet-50 p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-wider text-violet-500">Progress bab</p><p className="mt-1 text-sm font-black text-violet-950">{item.progress_summary?.completed_chapters || 0}/{item.progress_summary?.total_chapters || 0} bab selesai</p></div><span className="text-xl font-black text-violet-700">{percent}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-violet-700" style={{ width: `${percent}%` }} /></div></div>}
 
-          {item.status === "confirmed" ? <form onSubmit={(event) => saveLink(event, item)} className="mt-5 rounded-2xl border border-indigo-100 bg-indigo-50 p-4"><Label className="text-sm font-black text-indigo-950">Tautan Zoom untuk seluruh sesi</Label><div className="mt-2 flex flex-col gap-2 sm:flex-row"><Input required type="url" value={links[item.id] || ""} onChange={(event) => setLinks((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="https://zoom.us/j/..." className="bg-white" /><Button disabled={saving === item.id} type="submit" className="rounded-xl bg-indigo-600 font-black hover:bg-indigo-700">{saving === item.id ? <Loader2 className="animate-spin" size={16} /> : <Video size={16} />}</Button></div><p className="mt-2 text-xs font-semibold text-indigo-700">Gunakan tautan resmi zoom.us. Satu tautan dipakai untuk seluruh sesi paket.</p>{item.meeting_link && <a href={item.meeting_link} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs font-black text-indigo-700 underline">Periksa tautan <ExternalLink size={13} /></a>}</form> : item.status === "completed" ? <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-600">Kelas telah selesai. Riwayat progress setiap sesi tetap dapat dilihat di bawah.</div> : null}
+          {item.status === "confirmed" ? <form onSubmit={(event) => saveLink(event, item)} className="mt-5 rounded-2xl border border-indigo-100 bg-indigo-50 p-4"><Label className="text-sm font-black text-indigo-950">Tautan Zoom untuk seluruh sesi</Label><div className="mt-2 flex flex-col gap-2 sm:flex-row"><Input required type="url" value={links[item.id] || ""} onChange={(event) => setLinks((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="https://zoom.us/j/..." className="bg-white" /><Button disabled={saving === item.id} type="submit" className="rounded-xl bg-indigo-600 font-black hover:bg-indigo-700">{saving === item.id ? <Loader2 className="animate-spin" size={16} /> : <Video size={16} />}</Button></div><p className="mt-2 text-xs font-semibold text-indigo-700">Gunakan tautan resmi zoom.us. Satu tautan dipakai untuk seluruh sesi paket.</p>{item.meeting_link && <a href={item.meeting_link} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs font-black text-indigo-700 underline">Periksa tautan <ExternalLink size={13} /></a>}{liveSession ? <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-100 px-4 py-3 text-sm font-black text-emerald-800">Kehadiran tercatat{liveSession.teacher_started_at ? ` ${new Date(liveSession.teacher_started_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}` : ""} · Kelas sedang berlangsung</div> : <><Button type="button" onClick={() => startSession(item)} disabled={!item.meeting_link || !startableSession} className="mt-4 min-h-11 w-full rounded-xl bg-emerald-600 font-black hover:bg-emerald-700">Saya Hadir &amp; Mulai Mengajar</Button>{!startableSession && <p className="mt-2 text-center text-xs font-bold text-slate-500">Absensi dibuka 10 menit sebelum jadwal sesi.</p>}</>}</form> : item.status === "completed" ? <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-600">Kelas telah selesai. Riwayat progress setiap sesi tetap dapat dilihat di bawah.</div> : null}
 
-          {["confirmed", "completed"].includes(item.status) && <Button type="button" variant="outline" onClick={() => setOpenProgressId((current) => current === item.id ? null : item.id)} className="mt-4 w-full rounded-xl border-violet-200 text-violet-700"><BarChart3 size={16} className="mr-2" />{openProgressId === item.id ? "Tutup Progress" : item.status === "completed" ? "Lihat Progress & Riwayat" : "Isi / Lihat Progress"}<ChevronDown size={16} className={`ml-2 transition ${openProgressId === item.id ? "rotate-180" : ""}`} /></Button>}
+          {["confirmed", "completed"].includes(item.status) && <Button type="button" variant="outline" onClick={() => openProgressId === item.id ? setOpenProgressId(null) : openProgressForm(item.id)} className="mt-4 w-full rounded-xl border-violet-200 text-violet-700"><BarChart3 size={16} className="mr-2" />{openProgressId === item.id ? "Tutup Progress" : item.status === "completed" ? "Lihat Progress & Riwayat" : "Isi / Lihat Progress"}<ChevronDown size={16} className={`ml-2 transition ${openProgressId === item.id ? "rotate-180" : ""}`} /></Button>}
           {openProgressId === item.id && ["confirmed", "completed"].includes(item.status) && <ChapterProgressEditor item={item} onSaved={load} />}
         </article>;
       })}</div>}
-    </div>
-  </TeacherLayout>;
+    </div>;
+
+  return embedded ? content : <TeacherLayout title="Kelas Kelompok">{content}</TeacherLayout>;
 }
 
 function ChapterProgressEditor({ item, onSaved }: { item: CheapClass; onSaved: () => Promise<void> }) {
@@ -208,7 +245,7 @@ function ChapterProgressEditor({ item, onSaved }: { item: CheapClass; onSaved: (
     setSessionNotes(selectedSession?.progress_notes || "");
     setAttendedCount(String(selectedSession?.attended_participants_count ?? item.confirmed_participants_count));
     setRows(rowsForSession(selectedSession));
-  }, [selectedSession?.id, selectedSession?.progress_notes, selectedSession?.attended_participants_count, item.confirmed_participants_count, rowsForSession]);
+  }, [selectedSession, item.confirmed_participants_count, rowsForSession]);
 
   const editable = Boolean(selectedSession && ["report_required", "revision_requested"].includes(selectedSession.status));
   const percent = useMemo(() => rows.length === 0 ? 0 : Math.round((rows.filter((row) => row.progress_status === "completed").length / rows.length) * 100), [rows]);
@@ -238,7 +275,7 @@ function ChapterProgressEditor({ item, onSaved }: { item: CheapClass; onSaved: (
 
   const history = [...item.sessions].filter((session) => session.progress_recorded_at).sort((a, b) => b.session_number - a.session_number);
 
-  return <section className="mt-4 rounded-2xl border border-violet-100 bg-violet-50/60 p-4 sm:p-5">
+  return <section id={"cheap-class-report-" + item.id} tabIndex={-1} className="scroll-mt-24 mt-4 rounded-2xl border border-violet-100 bg-violet-50/60 p-4 outline-none sm:p-5">
     <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><p className="flex items-center gap-2 text-sm font-black text-violet-950"><BarChart3 size={17} />Progress bab bersama</p><p className="mt-1 text-xs leading-5 text-violet-700">Setelah jadwal berakhir, isi kehadiran dan progress bab lalu kirim laporan ke admin. Sesi baru final setelah admin memverifikasi.</p></div><span className="self-start rounded-full bg-white px-3 py-1.5 text-xs font-black text-violet-700">{percent}% selesai</span></div>
     <div className="mt-4 rounded-xl bg-white p-3">
       <Label className="text-xs font-black text-slate-600">Sesi yang dilaporkan</Label><Select value={sessionId} onValueChange={setSessionId}><SelectTrigger className="mt-1 h-11 rounded-xl"><SelectValue placeholder="Pilih sesi" /></SelectTrigger><SelectContent>{reportableSessions.map((session) => <SelectItem key={session.id} value={String(session.id)}>Sesi {session.session_number} · {new Date(session.starts_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}{` · ${sessionStatusLabel[session.status] || session.status}`}</SelectItem>)}</SelectContent></Select>

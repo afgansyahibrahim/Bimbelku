@@ -540,7 +540,7 @@ class LearningSessionController extends Controller
         abort_unless($booking->class_type === 'private' && $this->isPresenceFlow($booking), 422, 'Sesi ini masih memakai alur verifikasi lama.');
         abort_unless($booking->status === 'confirmed', 422, 'Sesi ini sudah berubah status dan tidak dapat ditandai siap.');
         abort_unless($this->withinCheckInWindow($booking), 422, 'Tombol siap mengajar tersedia mendekati jadwal sesi.');
-
+        abort_unless($booking->learning_mode !== 'online' || filled($booking->meeting_link), 422, 'Simpan tautan Zoom terlebih dahulu di Kelola sesi sebelum menyatakan siap mengajar.');
         $rules = [
             'focus_note' => ['nullable', 'string', 'max:500'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
@@ -566,6 +566,7 @@ class LearningSessionController extends Controller
             abort_unless($this->isPresenceFlow($locked), 422, 'Sesi ini masih memakai alur verifikasi lama.');
             abort_unless($locked->status === 'confirmed', 422, 'Sesi ini sudah berubah status dan tidak dapat ditandai siap.');
             abort_if($locked->student_confirmed_at, 422, 'Murid sudah mengonfirmasi kehadiran dan sesi telah dimulai.');
+            abort_unless($locked->learning_mode !== 'online' || filled($locked->meeting_link), 422, 'Simpan tautan Zoom terlebih dahulu di Kelola sesi sebelum menyatakan siap mengajar.');
 
             $readyAt = $locked->tutor_ready_at ?: now();
             $locked->forceFill([
@@ -609,7 +610,6 @@ class LearningSessionController extends Controller
         abort_unless($booking->class_type === 'private' && $this->isPresenceFlow($booking), 422, 'Sesi ini masih memakai alur verifikasi lama.');
         abort_unless(in_array($booking->status, ['confirmed', 'in_progress'], true), 422, 'Sesi ini sudah berubah status dan tidak dapat dikonfirmasi.');
         abort_unless($this->withinCheckInWindow($booking), 422, 'Konfirmasi kehadiran tersedia mendekati jadwal sesi.');
-
         $payload = DB::transaction(function () use ($request, $booking) {
             $locked = Booking::query()->lockForUpdate()->findOrFail($booking->id);
             abort_unless($this->isPresenceFlow($locked), 422, 'Sesi ini masih memakai alur verifikasi lama.');
@@ -934,6 +934,18 @@ class LearningSessionController extends Controller
                     'target_url' => "/student/my-classes?session={$booking->id}&session_action=presence",
                 ];
             }
+
+            if ($booking->status === 'in_progress' && $booking->student_confirmed_at) {
+                return [
+                    ...$base,
+                    'action_key' => "student:{$booking->id}:session-started-v1",
+                    'kind' => 'student_session_started',
+                    'priority' => 78,
+                    'sort_at' => $booking->session_started_at?->getTimestamp() ?? $booking->start_at?->getTimestamp() ?? PHP_INT_MAX,
+                    'target_url' => "/student/my-classes?session={$booking->id}&session_action=started",
+                    'informational' => true,
+                ];
+            }
             return null;
         }
 
@@ -976,6 +988,12 @@ class LearningSessionController extends Controller
                 ->where(function ($sessions) {
                     $sessions
                         ->whereIn('status', ['report_required', 'revision_requested'])
+                        ->orWhere(function ($current) {
+                            $current
+                                ->whereIn('status', ['scheduled', 'in_progress'])
+                                ->where('starts_at', '<=', now()->addMinutes(10))
+                                ->where('ends_at', '>', now());
+                        })
                         ->orWhere(function ($endedScheduled) {
                             $endedScheduled
                                 ->where('status', 'scheduled')
@@ -992,12 +1010,16 @@ class LearningSessionController extends Controller
                 ->map(function (CheapClassSession $session) {
                     $isRevision = $session->status === 'revision_requested';
                     $class = $session->cheapClass;
-                    $actionKind = $isRevision ? 'cheap_teacher_revision_requested' : 'cheap_teacher_report_required';
+                    $isCurrent = $session->starts_at?->lte(now()->addMinutes(10)) && $session->ends_at?->isFuture();
+                    $isStarted = $isCurrent && (bool) $session->teacher_started_at;
+                    $actionKind = $isCurrent
+                        ? ($isStarted ? 'cheap_teacher_session_started' : 'cheap_teacher_mark_ready')
+                        : ($isRevision ? 'cheap_teacher_revision_requested' : 'cheap_teacher_report_required');
 
                     return [
                         'action_key' => "cheap-class:teacher:{$session->id}:{$actionKind}:".(int) ($session->report_revision_count ?? 0),
                         'kind' => $actionKind,
-                        'priority' => $isRevision ? 76 : 70,
+                        'priority' => $isCurrent ? ($isStarted ? 74 : 94) : ($isRevision ? 76 : 70),
                         'sort_at' => $session->ends_at?->getTimestamp() ?? PHP_INT_MAX,
                         'cheap_class_id' => (int) $session->cheap_class_id,
                         'cheap_class_session_id' => (int) $session->id,
@@ -1006,7 +1028,8 @@ class LearningSessionController extends Controller
                         'start_at' => $session->starts_at,
                         'end_at' => $session->ends_at,
                         'admin_review_notes' => $isRevision ? $session->admin_review_notes : null,
-                        'target_url' => "/guru/kelas-murah?cheap_class={$session->cheap_class_id}&cheap_session={$session->id}&cheap_action=".($isRevision ? 'revision' : 'report'),
+                        'target_url' => "/guru/kelas?class_kind=group&cheap_class={$session->cheap_class_id}&cheap_session={$session->id}&cheap_action=".($isCurrent ? ($isStarted ? 'live' : 'start') : ($isRevision ? 'revision' : 'report')),
+                        'informational' => $isStarted,
                     ];
                 });
         }
@@ -1044,14 +1067,18 @@ class LearningSessionController extends Controller
             $notifications = Notification::query()
                 ->where('user_id', $user->id)
                 ->where('is_read', false)
-                ->where('unique_key', 'like', 'cheap-class-session-verified:%:student:'.$user->id)
+                ->where(function ($items) use ($user) {
+                    $items
+                        ->where('unique_key', 'like', 'cheap-class-session-started:%:student:'.$user->id)
+                        ->orWhere('unique_key', 'like', 'cheap-class-session-verified:%:student:'.$user->id);
+                })
                 ->latest('id')
                 ->limit(20)
                 ->get();
 
             $sessionIds = $notifications
                 ->map(function (Notification $notification) {
-                    return preg_match('/^cheap-class-session-verified:(\d+):student:/', (string) $notification->unique_key, $matches)
+                    return preg_match('/^cheap-class-session-(?:started|verified):(\d+):student:/', (string) $notification->unique_key, $matches)
                         ? (int) $matches[1]
                         : null;
                 })
@@ -1064,15 +1091,20 @@ class LearningSessionController extends Controller
                 ->keyBy('id');
 
             return $notifications->map(function (Notification $notification) use ($sessions) {
-                preg_match('/^cheap-class-session-verified:(\d+):student:/', (string) $notification->unique_key, $matches);
-                $session = isset($matches[1]) ? $sessions->get((int) $matches[1]) : null;
+                preg_match('/^cheap-class-session-(started|verified):(\d+):student:/', (string) $notification->unique_key, $matches);
+                $event = $matches[1] ?? 'verified';
+                $session = isset($matches[2]) ? $sessions->get((int) $matches[2]) : null;
                 $class = $session?->cheapClass;
                 $completed = $class?->status === 'completed' || $notification->title === 'Kelas Kelompok selesai';
+                $started = $event === 'started';
+                if ($started && (!$session || $session->status !== 'in_progress' || !$session->ends_at?->isFuture())) {
+                    return null;
+                }
 
                 return [
                     'action_key' => "cheap-class:student:notification:{$notification->id}",
-                    'kind' => $completed ? 'cheap_student_class_completed' : 'cheap_student_progress_updated',
-                    'priority' => 20,
+                    'kind' => $started ? 'cheap_student_session_started' : ($completed ? 'cheap_student_class_completed' : 'cheap_student_progress_updated'),
+                    'priority' => $started ? 90 : 20,
                     'sort_at' => $notification->id * -1,
                     'cheap_class_id' => $class?->id ? (int) $class->id : null,
                     'cheap_class_session_id' => $session?->id ? (int) $session->id : null,
@@ -1084,7 +1116,7 @@ class LearningSessionController extends Controller
                     'target_url' => $notification->target_url ?: '/student/progress',
                     'informational' => true,
                 ];
-            });
+            })->filter()->values();
         }
 
         return collect();

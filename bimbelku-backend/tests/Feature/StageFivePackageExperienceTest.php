@@ -40,8 +40,9 @@ class StageFivePackageExperienceTest extends TestCase
 
         $this->getJson('/api/learning-time-slots')
             ->assertOk()
-            ->assertJsonCount(13)
-            ->assertJsonPath('0.start_time', '08:00:00');
+            ->assertJsonCount(15)
+            ->assertJsonPath('0.start_time', '08:00:00')
+            ->assertJsonPath('14.start_time', '22:00:00');
 
         $this->getJson('/api/content/banners?audience=student')
             ->assertOk()

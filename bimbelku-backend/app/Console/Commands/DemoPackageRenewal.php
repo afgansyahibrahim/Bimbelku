@@ -372,6 +372,8 @@ class DemoPackageRenewal extends Command
         });
 
         $last = $this->latestRenewalBooking();
+        // Fixture demo menyediakan URL agar Session Flow V2 dapat diuji sampai tombol Zoom.
+        $last?->update(['meeting_link' => 'https://zoom.us/j/12345678901']);
         $this->info('Paket 2 dipercepat ke PERTEMUAN TERAKHIR. Pertemuan sebelumnya dianggap selesai hanya untuk demo lokal.');
         $this->line('Booking final ID : '.$last?->id);
         $this->line('Jadwal final : '.$last?->start_at?->format('d-m-Y H:i').' - '.$last?->end_at?->format('H:i'));

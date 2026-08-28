@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\BookingRequest;
+use App\Models\Notification;
+use App\Models\Setting;
 use App\Models\TeacherAvailability;
 use App\Models\TeacherOffer;
 use App\Models\TeacherProfile;
@@ -17,13 +19,31 @@ class TeacherOfferResponseWindowTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Setting::query()->updateOrCreate(
+            ['key' => 'teacher_response_online_minutes'],
+            ['value' => '60']
+        );
+        Setting::query()->updateOrCreate(
+            ['key' => 'teacher_response_offline_minutes'],
+            ['value' => '60']
+        );
+        Setting::query()->updateOrCreate(
+            ['key' => 'teacher_offer_wave_size'],
+            ['value' => '3']
+        );
+    }
+
     protected function tearDown(): void
     {
         Carbon::setTestNow();
         parent::tearDown();
     }
 
-    public function test_online_offer_moves_on_after_thirty_minutes(): void
+    public function test_online_offer_uses_sixty_minute_response_window(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-08-10 08:00:00', 'Asia/Jakarta'));
         $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
@@ -33,36 +53,136 @@ class TeacherOfferResponseWindowTest extends TestCase
         app(TeacherMatchingService::class)->dispatchNextOffer($bookingRequest);
 
         $offer = TeacherOffer::query()->firstOrFail();
-        $this->assertTrue($offer->expires_at->equalTo(now()->addMinutes(30)));
+        $this->assertTrue($offer->expires_at->equalTo(now()->addMinutes(60)));
         $this->assertTrue(
             $bookingRequest->fresh()->teacher_response_deadline->equalTo($offer->expires_at)
         );
     }
 
-    public function test_expired_online_offer_is_immediately_forwarded_to_the_next_teacher(): void
+    public function test_expired_wave_is_immediately_forwarded_to_the_next_teacher(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-10 08:00:00', 'Asia/Jakarta'));
+        $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
+        foreach (range(1, 4) as $_) {
+            $this->makeEligibleTeacher(online: true, offline: false);
+        }
+        $bookingRequest = $this->makeRequest($student, 'online');
+        $matchingService = app(TeacherMatchingService::class);
+
+        $matchingService->dispatchNextOffer($bookingRequest);
+        $this->assertCount(3, TeacherOffer::query()->where('status', 'pending')->get());
+
+        Carbon::setTestNow(now()->addMinutes(61));
+        $matchingService->dispatchNextOffer($bookingRequest);
+
+        $offers = TeacherOffer::query()->orderBy('id')->get();
+        $this->assertCount(4, $offers);
+        $this->assertCount(3, $offers->where('status', 'expired'));
+        $this->assertCount(1, $offers->where('status', 'pending'));
+        $this->assertTrue($offers->last()->expires_at->equalTo(now()->addMinutes(60)));
+    }
+
+    public function test_rejected_offer_is_immediately_replaced_while_other_offers_remain_active(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-10 08:00:00', 'Asia/Jakarta'));
+        $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
+        foreach (range(1, 4) as $_) {
+            $this->makeEligibleTeacher(online: true, offline: false);
+        }
+        $bookingRequest = $this->makeRequest($student, 'online');
+        $matchingService = app(TeacherMatchingService::class);
+
+        $matchingService->dispatchNextOffer($bookingRequest);
+        $rejectedOffer = TeacherOffer::query()->orderBy('id')->firstOrFail();
+        $rejectedOffer->update(['status' => 'rejected', 'responded_at' => now()]);
+
+        $matchingService->dispatchNextOffer($bookingRequest->fresh());
+
+        $this->assertSame(4, TeacherOffer::query()->count());
+        $this->assertSame(3, TeacherOffer::query()->where('status', 'pending')->count());
+        $this->assertSame(1, TeacherOffer::query()->where('status', 'rejected')->count());
+    }
+
+    public function test_first_no_response_does_not_suspend_teacher(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-10 08:00:00', 'Asia/Jakarta'));
+        $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
+        $teacher = $this->makeEligibleTeacher(online: true, offline: false);
+        $bookingRequest = $this->makeRequest($student, 'online');
+        $matchingService = app(TeacherMatchingService::class);
+
+        $offer = $matchingService->dispatchNextOffer($bookingRequest);
+        Carbon::setTestNow(now()->addMinutes(61));
+        $matchingService->expireOfferAndContinue($offer);
+
+        $profile = $teacher->teacherProfile()->firstOrFail();
+        $this->assertSame(1, $profile->no_response_streak);
+        $this->assertNull($profile->suspended_until);
+    }
+
+    public function test_scheduler_sends_only_one_mid_window_reminder_and_records_heartbeat(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-08-10 08:00:00', 'Asia/Jakarta'));
         $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
         $this->makeEligibleTeacher(online: true, offline: false);
-        $this->makeEligibleTeacher(online: true, offline: false);
         $bookingRequest = $this->makeRequest($student, 'online');
-        $matchingService = app(TeacherMatchingService::class);
-
-        $firstOffer = $matchingService->dispatchNextOffer($bookingRequest);
-        $this->assertNotNull($firstOffer);
+        app(TeacherMatchingService::class)->dispatchNextOffer($bookingRequest);
 
         Carbon::setTestNow(now()->addMinutes(31));
-        $matchingService->expireOfferAndContinue($firstOffer);
+        $this->artisan('bookings:expire')->assertSuccessful();
+        $this->artisan('bookings:expire')->assertSuccessful();
 
-        $offers = TeacherOffer::query()->orderBy('id')->get();
-        $this->assertCount(2, $offers);
-        $this->assertSame('expired', $offers[0]->status);
-        $this->assertSame('pending', $offers[1]->status);
-        $this->assertNotSame($offers[0]->teacher_id, $offers[1]->teacher_id);
-        $this->assertTrue($offers[1]->expires_at->equalTo(now()->addMinutes(30)));
+        $offer = TeacherOffer::query()->firstOrFail();
+        $this->assertNotNull($offer->reminder_sent_at);
+        $this->assertSame(1, Notification::query()
+            ->where('user_id', $offer->teacher_id)
+            ->where('title', 'Pengingat permintaan bimbel')
+            ->count());
+        $this->assertNotNull(Setting::query()
+            ->where('key', 'booking_workflow_last_heartbeat_at')
+            ->value('value'));
     }
 
-    public function test_offline_offer_moves_on_after_two_hours(): void
+    public function test_exhausted_waiting_request_clears_next_retry_once(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-10 08:00:00', 'Asia/Jakarta'));
+        $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
+        $bookingRequest = $this->makeRequest($student, 'online');
+        $bookingRequest->update([
+            'status' => 'no_teacher',
+            'search_started_at' => now()->subHours(13),
+            'next_matching_at' => now()->subMinute(),
+        ]);
+        $matchingService = app(TeacherMatchingService::class);
+
+        $matchingService->dispatchNextOffer($bookingRequest);
+        $matchingService->dispatchNextOffer($bookingRequest->fresh());
+
+        $this->assertNull($bookingRequest->fresh()->next_matching_at);
+        $this->assertSame(1, $bookingRequest->matchingOperationLogs()
+            ->where('action', 'matching_exhausted')
+            ->count());
+    }
+
+    public function test_offline_search_expands_radius_one_step_before_scheduled_retry(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-10 08:00:00', 'Asia/Jakarta'));
+        $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
+        $bookingRequest = $this->makeRequest($student, 'offline');
+
+        app(TeacherMatchingService::class)->dispatchNextOffer($bookingRequest);
+
+        $bookingRequest->refresh();
+        $this->assertSame('no_teacher', $bookingRequest->status);
+        $this->assertSame(5, $bookingRequest->search_radius_km);
+        $this->assertTrue($bookingRequest->next_matching_at->isFuture());
+        $this->assertDatabaseHas('matching_operation_logs', [
+            'booking_request_id' => $bookingRequest->id,
+            'action' => 'waiting_for_availability',
+        ]);
+    }
+
+    public function test_offline_offer_uses_sixty_minute_response_window(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-08-10 08:00:00', 'Asia/Jakarta'));
         $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
@@ -72,7 +192,7 @@ class TeacherOfferResponseWindowTest extends TestCase
         app(TeacherMatchingService::class)->dispatchNextOffer($bookingRequest);
 
         $offer = TeacherOffer::query()->firstOrFail();
-        $this->assertTrue($offer->expires_at->equalTo(now()->addMinutes(120)));
+        $this->assertTrue($offer->expires_at->equalTo(now()->addMinutes(60)));
         $this->assertTrue(
             $bookingRequest->fresh()->teacher_response_deadline->equalTo($offer->expires_at)
         );

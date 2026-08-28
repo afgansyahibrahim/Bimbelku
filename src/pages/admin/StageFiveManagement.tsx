@@ -38,7 +38,7 @@ const FULL_HOUR_OPTIONS = Array.from({ length: 23 }, (_, hour) => `${String(hour
 
 const destinationOptions = [
   ["/student/dashboard", "Beranda Murid"],
-  ["/student/packages", "Kelas Saya"],
+  ["/student/my-classes?tab=process", "Kelas Saya · Proses"],
   ["/student/packages/new", "Pilih Paket"],
   ["/student/vouchers", "Voucher"],
   ["/student/my-classes", "Seluruh Sesi"],

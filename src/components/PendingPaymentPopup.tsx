@@ -22,7 +22,7 @@ export default function PendingPaymentPopup() {
   const returnPath = orderKind === "cheap_class"
     ? "/student/kelas-murah"
     : orderKind === "package"
-      ? "/student/packages"
+      ? "/student/my-classes?tab=process"
       : "/student/history";
 
   // 1. Cek Tagihan Aktif ke Backend (Dengan pengaman token)
@@ -193,7 +193,7 @@ export default function PendingPaymentPopup() {
   return (
     <>
       {/* === WIDGET STICKY (POJOK KANAN BAWAH) === */}
-      <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] left-3 right-3 z-[60] max-h-[calc(100dvh-5.75rem-env(safe-area-inset-bottom))] min-w-0 overflow-y-auto overscroll-contain animate-in slide-in-from-bottom-5 fade-in duration-500 sm:left-auto sm:right-4 sm:w-[min(340px,calc(100vw-2rem))] xl:bottom-6 xl:right-6 xl:max-h-[calc(100dvh-3rem)]">
+      <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] left-3 right-3 z-[60] min-w-0 overflow-visible animate-in slide-in-from-bottom-5 fade-in duration-500 sm:left-auto sm:right-4 sm:w-[min(340px,calc(100vw-2rem))] xl:bottom-6 xl:right-6">
         <div className="group relative min-w-0 w-full overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-[0_20px_50px_rgba(0,0,0,0.1)] transition-all hover-scale-102 sm:rounded-[2rem] sm:p-5">
           
           {/* Progress Bar Sisa Waktu */}
@@ -251,7 +251,7 @@ export default function PendingPaymentPopup() {
       {/* === MODAL KONFIRMASI PEMBATALAN === */}
       {showConfirmCancel && (
         <div role="dialog" aria-modal="true" aria-labelledby="cancel-order-title" className="fixed inset-0 z-[var(--layer-modal)] flex items-end justify-center bg-slate-900/45 p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] animate-in fade-in duration-300 sm:items-center sm:p-4">
-           <div className="max-h-[calc(100dvh-1.5rem)] min-w-0 w-full max-w-sm overflow-x-hidden overflow-y-auto rounded-[1.75rem] bg-white p-5 shadow-2xl animate-in slide-in-from-bottom-4 duration-300 sm:max-h-[calc(100dvh-2rem)] sm:rounded-[2.5rem] sm:p-8 sm:zoom-in-95">
+           <div className="min-w-0 w-full max-w-sm overflow-hidden rounded-[1.75rem] bg-white p-5 shadow-2xl animate-in slide-in-from-bottom-4 duration-300 sm:rounded-[2.5rem] sm:p-8 sm:zoom-in-95">
               <div className="text-center">
                  <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-6 text-rose-500">
                     <AlertTriangle size={40} />

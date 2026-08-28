@@ -42,18 +42,19 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
   layer?: DialogLayer;
   hideCloseButton?: boolean;
+  overlayClassName?: string;
 };
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
->(({ className, children, layer = "modal", hideCloseButton = false, ...props }, ref) => (
+>(({ className, children, layer = "modal", hideCloseButton = false, overlayClassName, ...props }, ref) => (
   <DialogPortal>
-    <DialogOverlay className={overlayLayerClass[layer]} />
+    <DialogOverlay className={cn(overlayLayerClass[layer], overlayClassName)} />
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-[50%] top-[50%] grid min-w-0 w-[calc(100vw-1rem)] max-w-lg max-h-[calc(100dvh-1rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-x-hidden overflow-y-auto border bg-background p-4 shadow-lg sm:w-[calc(100vw-2rem)] sm:max-h-[calc(100dvh-2rem)] duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:p-6 sm:rounded-lg",
+        "fixed left-[50%] top-[50%] grid min-w-0 w-[calc(100vw-1rem)] max-w-lg max-h-[calc(100dvh-1rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-hidden border bg-background p-4 shadow-lg sm:w-[calc(100vw-2rem)] sm:max-h-[calc(100dvh-2rem)] duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:p-6 sm:rounded-lg",
         contentLayerClass[layer],
         className,
       )}

@@ -9,6 +9,7 @@ const app = read("src/App.tsx");
 const packageBuilder = read("src/pages/students/PackageBuilder.tsx");
 const subjectsSection = read("src/components/SubjectsSection.tsx");
 const packageLink = read("src/components/StudentPackageLink.tsx");
+const packageBlockedDialog = read("src/components/StudentPackageBlockedDialog.tsx");
 
 const requirements = [
   [app, 'const LegacyPackageRedirect', "Redirect alamat belajar lama belum tersedia"],
@@ -18,7 +19,7 @@ const requirements = [
   [subjectsSection, "/student/packages/new?subject_name=", "Kartu mapel landing belum membuka pembuat paket"],
   [packageBuilder, 'searchParams.get("subject_name")', "Pembuat paket belum menerima mapel landing"],
   [packageLink, 'currentUser.role === "student"', "Tautan Paket Baru belum membedakan akun murid"],
-  [packageLink, "Fitur belajar khusus murid", "Admin dan tutor belum menerima penjelasan saat membuka paket"],
+  [packageBlockedDialog, "Fitur belajar khusus murid", "Admin dan tutor belum menerima penjelasan saat membuka paket"],
 ];
 
 const failures = requirements

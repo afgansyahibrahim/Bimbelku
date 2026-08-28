@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\CurriculumSubject;
+use App\Models\LearningTimeSlot;
 use App\Models\TeacherAvailability;
 use App\Models\TeacherProfile;
 use App\Models\User;
@@ -118,5 +119,80 @@ class StageTwoMobileBookingTest extends TestCase
 
         $this->postJson('/api/student/tutor-availability', [])
             ->assertForbidden();
+    }
+
+    public function test_schedule_recommendations_preserve_days_and_check_every_session(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-24 08:00:00', 'Asia/Jakarta'));
+        $this->seed(CurriculumCatalogSeeder::class);
+        $subject = CurriculumSubject::query()
+            ->where('normalized_name', 'matematika')
+            ->firstOrFail();
+        $teacher = User::factory()->create(['role' => 'teacher', 'status' => 'active']);
+        $profile = TeacherProfile::create([
+            'user_id' => $teacher->id,
+            'points' => 150,
+            'is_accepting_requests' => true,
+            'verified_at' => now()->subDay(),
+        ]);
+        $profile->subjects()->create([
+            'name' => 'Nama lama yang berbeda',
+            'curriculum_subject_id' => $subject->id,
+            'levels' => ['SMP'],
+            'is_active' => true,
+            'is_online' => true,
+            'is_offline' => false,
+            'is_private_active' => true,
+        ]);
+        foreach (['Selasa', 'Kamis'] as $day) {
+            TeacherAvailability::create([
+                'user_id' => $teacher->id,
+                'day' => $day,
+                'start_time' => '15:00:00',
+                'end_time' => '20:00:00',
+                'is_active' => true,
+            ]);
+        }
+        foreach ([16, 17, 18] as $hour) {
+            LearningTimeSlot::query()->updateOrCreate(
+                ['start_time' => sprintf('%02d:00:00', $hour)],
+                [
+                    'label' => sprintf('%02d.00 WIB', $hour),
+                    'sort_order' => $hour,
+                    'is_active' => true,
+                ]
+            );
+        }
+
+        $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
+        Sanctum::actingAs($student);
+        $response = $this->postJson('/api/student/schedule-recommendations', [
+            'curriculum_subject_id' => $subject->id,
+            'education_level' => 'SMP',
+            'grade' => 'Kelas 7',
+            'learning_mode' => 'online',
+            'duration_hours' => 1,
+            'schedule_start_date' => '2026-09-01',
+            'weekdays' => [2, 4],
+            'session_count' => 4,
+            'current_time' => '18:00',
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('mode', 'preserve_days')
+            ->assertJsonPath('weekdays', [2, 4])
+            ->assertJsonMissing(['teacher_id' => $teacher->id]);
+
+        $recommendations = collect($response->json('recommendations'));
+        $this->assertTrue(
+            $recommendations->contains(fn (array $item) => $item['candidate_count'] > 0),
+            $response->getContent()
+        );
+        $this->assertTrue($recommendations->every(function (array $item) {
+            return collect($item['schedules'])->every(
+                fn (string $schedule) => in_array(Carbon::parse($schedule)->dayOfWeekIso, [2, 4], true)
+            );
+        }));
     }
 }

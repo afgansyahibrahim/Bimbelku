@@ -8,6 +8,7 @@ import http, { getApiError, getCached } from "@/lib/http";
 import { notify } from "@/lib/notify";
 
 type TimeSlot = { id: number; start_time: string; label?: string | null };
+type BookingRules = { booking_lead_hours: number };
 type Session = { id: number; start_at?: string | null };
 type MatchingState = { can_change_schedule?: boolean; message?: string | null; reason_code?: string | null };
 type PackageSubject = {
@@ -49,8 +50,8 @@ const wibDateTime = (value: string) => {
   const part = (type: string) => parts.find((item) => item.type === type)?.value || "";
   return { date: `${part("year")}-${part("month")}-${part("day")}`, time: `${part("hour")}:${part("minute")}` };
 };
-const earliest = (time: string) => {
-  const threshold = new Date(Date.now() + 72 * 60 * 60 * 1000);
+const earliest = (time: string, leadHours = 24) => {
+  const threshold = new Date(Date.now() + leadHours * 60 * 60 * 1000);
   const hour = Number(time.slice(0, 2)) || 0;
   const candidate = new Date(threshold);
   candidate.setHours(hour, 0, 0, 0);
@@ -77,6 +78,7 @@ export default function PackageReschedule() {
   const navigate = useNavigate();
   const [pkg, setPkg] = useState<PackageData | null>(null);
   const [slots, setSlots] = useState<TimeSlot[]>([]);
+  const [bookingLeadHours, setBookingLeadHours] = useState(24);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -85,20 +87,22 @@ export default function PackageReschedule() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [packageResponse, slotResponse] = await Promise.all([
+      const [packageResponse, slotResponse, rulesResponse] = await Promise.all([
         http.get<PackageData>(`/student/packages/${id}`),
         getCached<TimeSlot[]>("/learning-time-slots", { maxAgeMs: 5 * 60_000 }),
+        getCached<BookingRules>("/package-booking-rules", { maxAgeMs: 5 * 60_000 }),
       ]);
       const data = packageResponse.data;
       const fullHourSlots = slotResponse.data.filter((slot) => slot.start_time.slice(3, 5) === "00");
       const editable = (data.subjects || []).filter((subject) => subject.matching?.can_change_schedule);
       if (!editable.length) throw new Error("Tidak ada jadwal yang dapat diubah pada paket ini.");
-      setPkg(data); setSlots(fullHourSlots);
+      const leadHours = rulesResponse.data.booking_lead_hours;
+      setPkg(data); setSlots(fullHourSlots); setBookingLeadHours(leadHours);
       setDrafts(editable.map((subject) => {
         const old = (subject.sessions || []).map((session) => session.start_at).filter((value): value is string => Boolean(value));
         const fallbackTime = fullHourSlots.find((slot) => slot.start_time.slice(0, 5) === "18:00")?.start_time.slice(0, 5) || fullHourSlots[0]?.start_time.slice(0, 5) || "18:00";
         const time = old[0] ? wibDateTime(old[0]).time : fallbackTime;
-        const startDate = earliest(time);
+        const startDate = earliest(time, leadHours);
         const weekdays = old.length ? [...new Set(old.map((value) => isoWeekday(new Date(`${wibDateTime(value).date}T12:00:00`))))].slice(0, 4) : [1, 3, 5];
         return { id: subject.id, name: subject.name, count: subject.allocated_sessions, startDate, time, weekdays, schedules: buildSchedules(subject.allocated_sessions, startDate, time, weekdays) };
       }));
@@ -126,14 +130,14 @@ export default function PackageReschedule() {
         subjects: drafts.map((draft) => ({ package_subject_id: draft.id, schedules: draft.schedules })),
       });
       notify.success(response.data.message);
-      navigate("/student/packages", { replace: true });
+      navigate("/student/my-classes?tab=process", { replace: true });
     } catch (err) { notify.error(getApiError(err, "Jadwal gagal diperbarui.")); }
     finally { setSaving(false); }
   };
 
   return <StudentLayout title="Ubah Jadwal Paket">
     <div className="space-y-5 pb-24">
-      <Link to="/student/packages" className="inline-flex min-h-11 items-center gap-2 rounded-xl px-2 text-sm font-black text-indigo-700"><ArrowLeft size={17}/>Kembali ke Kelas Saya</Link>
+      <Link to="/student/my-classes?tab=process" className="inline-flex min-h-11 items-center gap-2 rounded-xl px-2 text-sm font-black text-indigo-700"><ArrowLeft size={17}/>Kembali ke Proses</Link>
       <section className="rounded-[2rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-blue-900 p-5 text-white sm:p-8">
         <p className="text-xs font-black uppercase tracking-[.18em] text-indigo-200">Pencarian tutor</p>
         <h1 className="mt-2 text-2xl font-black sm:text-3xl">Ubah jadwal agar kandidat tutor bertambah</h1>
@@ -147,7 +151,7 @@ export default function PackageReschedule() {
           {drafts.map((draft) => <section key={draft.id} className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-black text-slate-900">{draft.name}</h2><p className="mt-1 text-xs font-semibold text-slate-500">{draft.count} sesi · {duration} jam/pertemuan</p></div><span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">Cari ulang setelah disimpan</span></div>
             <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <label><span className="mb-2 block text-xs font-black uppercase tracking-wider text-slate-500">Mulai belajar</span><input type="date" min={earliest(draft.time)} value={draft.startDate} onChange={(e) => update(draft.id,{startDate:e.target.value})} className="form-field"/></label>
+              <label><span className="mb-2 block text-xs font-black uppercase tracking-wider text-slate-500">Mulai belajar</span><input type="date" min={earliest(draft.time, bookingLeadHours)} value={draft.startDate} onChange={(e) => update(draft.id,{startDate:e.target.value})} className="form-field"/></label>
               <label className="min-w-0"><span className="mb-2 block text-xs font-black uppercase tracking-wider text-slate-500">Jam belajar</span><ResponsiveSelect value={draft.time} onValueChange={(time)=>update(draft.id,{time})} ariaLabel={`Pilih jam belajar ${draft.name}`} tone="emerald" className="border-emerald-300 bg-emerald-50 text-emerald-800" options={compatibleSlots.map((slot)=>({ value: slot.start_time.slice(0,5), label: slot.label || `${slot.start_time.slice(0,5).replace(":", ".")} WIB` }))}/></label>
             </div>
             <div className="mt-4"><p className="mb-2 text-xs font-black uppercase tracking-wider text-slate-500">Hari belajar</p><div className="grid grid-cols-4 gap-2 sm:grid-cols-7">{WEEKDAYS.map((day)=>{const active=draft.weekdays.includes(day.value); const disabled=!active&&draft.weekdays.length>=4; return <button key={day.value} type="button" disabled={disabled} onClick={()=>{const days=active?draft.weekdays.filter(v=>v!==day.value):[...draft.weekdays,day.value].sort((a,b)=>a-b); if(days.length) update(draft.id,{weekdays:days});}} className={`min-h-11 rounded-xl border text-xs font-black ${active?"border-indigo-600 bg-indigo-600 text-white":"border-slate-200 bg-white text-slate-600 disabled:opacity-30"}`}>{day.short}</button>})}</div></div>

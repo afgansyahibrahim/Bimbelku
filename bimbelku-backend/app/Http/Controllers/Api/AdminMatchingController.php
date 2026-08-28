@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\BookingRequest;
+use App\Models\Setting;
 use App\Models\TeacherOffer;
 use App\Models\User;
 use App\Services\TeacherAssignmentService;
@@ -94,6 +95,7 @@ class AdminMatchingController extends Controller
         return response()->json([
             'data' => $items,
             'summary' => $summary,
+            'system_health' => $this->systemHealth(),
             'scope' => $scope,
             'meta' => [
                 'current_page' => $paginator->currentPage(),
@@ -355,6 +357,9 @@ class AdminMatchingController extends Controller
 
     private function formatSummary(BookingRequest $bookingRequest): array
     {
+        $activeOffers = $bookingRequest->offers
+            ->filter(fn (TeacherOffer $offer) => $offer->status === 'pending' && $offer->expires_at?->isFuture())
+            ->values();
         $activeOffer = $bookingRequest->offers
             ->first(fn (TeacherOffer $offer) => $offer->status === 'pending');
         $startedAt = $bookingRequest->search_started_at ?? $bookingRequest->created_at;
@@ -381,6 +386,8 @@ class AdminMatchingController extends Controller
             'search_started_at' => $startedAt?->toIso8601String(),
             'search_expires_at' => $bookingRequest->search_expires_at?->toIso8601String(),
             'teacher_response_deadline' => $bookingRequest->teacher_response_deadline?->toIso8601String(),
+            'next_matching_at' => $bookingRequest->next_matching_at?->toIso8601String(),
+            'active_offer_count' => $activeOffers->count(),
             'search_age_minutes' => $startedAt ? $startedAt->diffInMinutes(now()) : 0,
             'needs_attention' => $attention !== null,
             'attention_reason' => $attention,
@@ -412,6 +419,15 @@ class AdminMatchingController extends Controller
                 'expires_at' => $activeOffer->expires_at?->toIso8601String(),
                 'is_overdue' => $activeOffer->expires_at?->isPast() ?? false,
             ] : null,
+            'active_offers' => $activeOffers->map(fn (TeacherOffer $offer) => [
+                'id' => $offer->id,
+                'teacher_id' => $offer->teacher_id,
+                'teacher_name' => $offer->teacher?->name ?? 'Tutor',
+                'distance_km' => $offer->distance_km,
+                'offered_at' => $offer->offered_at?->toIso8601String(),
+                'expires_at' => $offer->expires_at?->toIso8601String(),
+                'is_overdue' => false,
+            ])->values(),
             'offer_totals' => [
                 'total' => $bookingRequest->offers->count(),
                 'rejected' => $bookingRequest->offers->where('status', 'rejected')->count(),
@@ -425,6 +441,23 @@ class AdminMatchingController extends Controller
                 'package_id' => $bookingRequest->packageSubject?->learning_package_id,
                 'package_status' => $bookingRequest->packageSubject?->package?->status,
             ],
+        ];
+    }
+
+    private function systemHealth(): array
+    {
+        $value = Setting::query()
+            ->where('key', 'booking_workflow_last_heartbeat_at')
+            ->value('value');
+        try {
+            $heartbeat = $value ? Carbon::parse($value) : null;
+        } catch (\Throwable) {
+            $heartbeat = null;
+        }
+
+        return [
+            'scheduler_healthy' => $heartbeat?->gte(now()->subMinutes(3)) ?? false,
+            'last_heartbeat_at' => $heartbeat?->toIso8601String(),
         ];
     }
 

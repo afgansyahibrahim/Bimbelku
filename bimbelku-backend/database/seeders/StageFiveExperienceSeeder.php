@@ -57,7 +57,7 @@ class StageFiveExperienceSeeder extends Seeder
             );
         }
 
-        foreach (range(8, 20) as $hour) {
+        foreach (range(8, 22) as $hour) {
             $time = str_pad((string) $hour, 2, '0', STR_PAD_LEFT).':00:00';
             LearningTimeSlot::updateOrCreate(
                 ['start_time' => $time],

@@ -13,6 +13,7 @@ const progress = read("src/pages/students/LearningProgress.tsx");
 const detail = read("src/pages/students/LearningProgressDetail.tsx");
 const progressLib = read("src/lib/studentProgress.ts");
 const packages = read("src/pages/students/MyPackages.tsx");
+const myClasses = read("src/pages/students/MyClasses.tsx");
 const cheapStudent = read("src/pages/students/CheapClasses.tsx");
 const cheapTeacher = read("src/pages/teacher/CheapClasses.tsx");
 const account = read("src/pages/students/Account.tsx");
@@ -35,7 +36,11 @@ expect(detail.includes('initialTab="progress"') && detail.includes("package_subj
 
 expect(packages.includes("Pemakaian sesi") && packages.includes("Bukan persentase penguasaan materi"), "Kelas Saya masih menyebut pemakaian sesi sebagai progress materi");
 expect(packages.includes('to={`/student/progress/package/${item.id}`}') && packages.includes("Lihat Progress"), "Kelas Saya belum memiliki shortcut detail Progress paket");
-expect(cheapStudent.includes('to={`/student/progress/cheap-class/${item.id}`}'), "Kelas Kelompok murid belum memiliki shortcut detail Progress");
+expect(
+  cheapStudent.includes('to={`/student/progress/cheap-class/${item.id}`}')
+    || (myClasses.includes('`/student/progress/cheap-class/${group.id}`') && myClasses.includes("Lihat progress")),
+  "Kelas Saya murid belum memiliki shortcut detail Progress Kelas Kelompok",
+);
 expect(account.includes("Lihat progress per paket") && !account.includes("Catatan tutor\", description"), "halaman Saya masih memakai struktur Progress lama/duplikat");
 
 expect(landing.includes('import Reveal from "@/components/Reveal"') && landing.includes("Lihat per paket dulu") && landing.includes("Paket Belajar menunjukkan progress per Bab") && landing.includes("Kelas Kelompok cukup menunjukkan progress per Bab"), "landing belum menjelaskan rancangan Progress Bab-only dengan animasi Reveal");

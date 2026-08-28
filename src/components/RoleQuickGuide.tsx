@@ -165,7 +165,7 @@ const contextualTutorials: Record<Role, Record<string, Tutorial>> = {
       title: "Cara mengajar Kelas Kelompok",
       description: "Link Zoom hanya boleh diisi setelah kelas sudah pasti jadi.",
       steps: [
-        { title: "Lihat kelas yang ditugaskan", body: "Di sini ada Kelas Kelompok yang menjadi tugasmu. Cek hari, jam, dan jumlah muridnya.", target: '[data-tour="teacher-cheap-hero"]' },
+        { title: "Lihat kelas yang ditugaskan", body: "Di sini ada Kelas Kelompok yang menjadi tugasmu. Cek hari, jam, dan jumlah muridnya.", target: '[data-tour="teacher-cheap-classes"]' },
         { title: "Isi link Zoom", body: "Jika status kelas sudah dikonfirmasi, isi link Zoom lalu tekan tombol simpan di sebelahnya.", target: '[data-tour="teacher-cheap-list"]' },
       ],
     },
@@ -173,9 +173,10 @@ const contextualTutorials: Record<Role, Record<string, Tutorial>> = {
   admin: {},
 };
 
-const contextForPath = (path: string) => {
+const contextForPath = (path: string, search = "") => {
   if (path.includes("/kelas-murah")) return path.startsWith("/guru") ? "teacher-cheap-classes" : "cheap-classes";
   if (path.includes("/permintaan")) return "teacher-requests";
+  if (path.includes("/guru/kelas") && new URLSearchParams(search).get("class_kind") === "group") return "teacher-cheap-classes";
   if (path.includes("/guru/kelas")) return "teacher-classes";
   if (path.includes("/guru/jadwal")) return "teacher-schedule";
   if (path.includes("/packages/new")) return "package-builder";
@@ -269,7 +270,7 @@ const autoOpenContexts = new Set([
 
 function RoleQuickGuideContent({ role }: { role: Role }) {
   const location = useLocation();
-  const context = useMemo(() => contextForPath(location.pathname), [location.pathname]);
+  const context = useMemo(() => contextForPath(location.pathname, location.search), [location.pathname, location.search]);
   const [tutorial, setTutorial] = useState<Tutorial>(() => tutorialFor(role, context));
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);

@@ -7,10 +7,12 @@ use App\Models\Booking;
 use App\Models\BookingDispute;
 use App\Models\BookingParticipant;
 use App\Models\Notification;
+use App\Models\Order;
 use App\Models\PackageChapter;
 use App\Models\PackageSession;
 use App\Models\PackageSessionChapterLog;
 use App\Models\ParticipantAttendance;
+use App\Models\PromotionClaim;
 use App\Models\Refund;
 use App\Models\SessionReport;
 use App\Models\TeacherAppeal;
@@ -973,6 +975,7 @@ class SessionWorkflowController extends Controller
                     'notes' => $validated['notes'] ?? null,
                 ]);
                 $lockedRefund->order->update(['status' => 'refunded']);
+                $this->restorePromotionClaimForRefund($lockedRefund->order, (string) $lockedRefund->reason);
                 $participant = $lockedRefund->order->participant;
                 $participant?->update(['status' => 'refunded']);
                 $participant?->bookingRequest?->update(['status' => 'refunded']);
@@ -1067,6 +1070,30 @@ class SessionWorkflowController extends Controller
             ->firstOrFail();
     }
 
+    private function restorePromotionClaimForRefund(Order $order, string $reason): void
+    {
+        $normalizedReason = mb_strtolower(trim($reason));
+        $platformFault = in_array($normalizedReason, [
+            'keadaan darurat tutor',
+            'keberatan murid disetujui',
+            'tutor tidak hadir',
+        ], true);
+
+        if (!$platformFault || !$order->learning_package_id) {
+            return;
+        }
+
+        PromotionClaim::query()
+            ->where('order_id', $order->id)
+            ->where('status', 'used')
+            ->update([
+                'status' => 'available',
+                'order_id' => null,
+                'learning_package_id' => null,
+                'used_at' => null,
+                'released_at' => now(),
+            ]);
+    }
     private function queueRefund(
         BookingParticipant $participant,
         Booking $booking,

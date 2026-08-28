@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\BookingRequest;
+use App\Models\Notification;
 use App\Models\Setting;
 use App\Models\TeacherOffer;
 use App\Services\PackageCheckoutService;
@@ -153,6 +154,11 @@ class TeacherOfferController extends Controller
         }
 
         $result = DB::transaction(function () use ($teacherOffer, $validated, $request) {
+            $bookingRequest = BookingRequest::query()
+                ->lockForUpdate()
+                ->findOrFail($teacherOffer->booking_request_id);
+            $bookingRequest->loadMissing('packageSubject.package');
+            $isRenewal = (bool) $bookingRequest->packageSubject?->package?->renewal_of_id;
             $offer = TeacherOffer::query()->lockForUpdate()->findOrFail($teacherOffer->id);
             if ($offer->status !== 'pending') {
                 abort(422, 'Penawaran ini sudah diproses.');
@@ -161,9 +167,6 @@ class TeacherOfferController extends Controller
                 return ['expired' => true];
             }
 
-            $bookingRequest = $offer->bookingRequest()
-                ->lockForUpdate()
-                ->firstOrFail();
             if (
                 $bookingRequest->status !== 'teacher_pending'
                 || (int) $bookingRequest->matched_teacher_id !== (int) $request->user()->id
@@ -178,11 +181,46 @@ class TeacherOfferController extends Controller
                     .(!empty($validated['note']) ? ': '.$validated['note'] : ''),
             ]);
 
-            BookingRequest::query()
-                ->whereKey($bookingRequest->id)
-                ->where('status', 'teacher_pending')
-                ->where('matched_teacher_id', $request->user()->id)
-                ->update([
+            if ($isRenewal) {
+                $bookingRequest->offers()
+                    ->where('status', 'pending')
+                    ->whereKeyNot($offer->id)
+                    ->update([
+                        'status' => 'cancelled',
+                        'responded_at' => now(),
+                    ]);
+                $bookingRequest->update([
+                    'status' => 'cancelled',
+                    'matched_teacher_id' => null,
+                    'teacher_response_deadline' => null,
+                    'next_matching_at' => null,
+                ]);
+                $package = $bookingRequest->packageSubject?->package;
+                $package?->update(['status' => 'cancelled']);
+                $package?->subjects()->update(['status' => 'cancelled']);
+                $package?->subjects()->each(function ($subject) {
+                    $subject->sessions()->whereNotIn('status', ['completed', 'cancelled'])->update(['status' => 'cancelled']);
+                });
+                Notification::create([
+                    'user_id' => $bookingRequest->student_id,
+                    'title' => 'Perpanjangan dibatalkan',
+                    'message' => 'Tutor pilihanmu menolak perpanjangan. Permintaan ini dibatalkan dan tidak dialihkan ke tutor lain.',
+                    'type' => 'warning',
+                    'target_url' => '/student/my-classes?tab=history',
+                ]);
+
+                return ['expired' => false, 'renewal_cancelled' => true];
+            }
+
+            $otherDeadline = $bookingRequest->offers()
+                ->where('status', 'pending')
+                ->where('expires_at', '>', now())
+                ->max('expires_at');
+            $bookingRequest->update($otherDeadline ? [
+                    'status' => 'teacher_pending',
+                    'matched_teacher_id' => null,
+                    'teacher_response_deadline' => $otherDeadline,
+                ] : [
                     'status' => 'matching',
                     'matched_teacher_id' => null,
                     'teacher_response_deadline' => null,
@@ -199,6 +237,14 @@ class TeacherOfferController extends Controller
             ], 422);
         }
 
+        if ($result['renewal_cancelled'] ?? false) {
+            return response()->json([
+                'message' => 'Perpanjangan dibatalkan karena tutor pilihan menolak. Tidak dialihkan ke tutor lain.',
+            ]);
+        }
+
+        // Rolling pool langsung mengisi slot yang baru kosong tanpa menunggu
+        // tutor lain pada permintaan yang sama selesai merespons.
         $matchingService->dispatchNextOffer($teacherOffer->bookingRequest);
 
         return response()->json([

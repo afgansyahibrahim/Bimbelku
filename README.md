@@ -15,13 +15,15 @@ Tahap 5, alur murid Tahap 6A, operasional tutor Tahap 6B, serta admin operasiona
 - Kategori pembelajaran dibatasi menjadi SD, SMP, SMA, dan Umum.
 - Satu mata pelajaran utama dan beberapa jenjang per tutor.
 - Rentang jam tersedia per hari; sistem menolak benturan sesi.
-- Pencarian otomatis dan adil berdasarkan kompetensi, jadwal, poin, pemerataan, serta jarak.
+- Pencarian otomatis berdasarkan kompetensi, seluruh jadwal paket, reliabilitas respons, poin, pemerataan, serta jarak.
 - Permintaan lanjutan memprioritaskan tutor sebelumnya apabila seluruh syarat masih terpenuhi.
 - Paket 1, 4, 8, atau 12 sesi dengan masa penggunaan 7 atau 30 hari.
 - Paket dapat dibagi kepada maksimal tiga mapel dengan tutor berbeda.
 - Satu sesi paket berlangsung 60 menit pada slot tepat di pergantian jam.
 - Admin mengatur pilihan slot; murid tidak memasukkan jam paket secara bebas.
-- Satu tagihan paket dibuka setelah semua tutor mapel menerima seluruh jadwal.
+- Satu tagihan paket dibuka sebelum pencarian tutor; pencarian baru dimulai setelah pembayaran diverifikasi.
+- Mesin matching menjaga maksimal tiga penawaran aktif dan langsung mengisi slot yang ditolak atau kedaluwarsa.
+- Rekomendasi jadwal mempertahankan pola hari dan membandingkan jam berdasarkan guru yang dapat memenuhi seluruh sesi.
 - Perpanjangan per mapel memprioritaskan tutor lama tujuh hari sebelum paket berakhir.
 - Voucher klaim dan kode promo memakai satu mesin diskon backend.
 - Harga promo menampilkan harga normal dicoret, harga akhir, dan label diskon kecil.
@@ -157,7 +159,9 @@ Pada terminal backend kedua, jalankan proses tenggat:
 php artisan schedule:work
 ```
 
-Scheduler wajib aktif karena menangani penawaran tutor kedaluwarsa, batas pembayaran, kelompok yang belum terpenuhi, waktu mulai sesi, dan antrean pemeriksaan 48 jam.
+Scheduler wajib aktif karena menangani reminder penawaran, penawaran tutor kedaluwarsa, rolling pool, retry pencarian, batas pembayaran, waktu mulai sesi, dan antrean pemeriksaan 48 jam. Halaman admin Pencarian Tutor menampilkan heartbeat; status “belum terdeteksi” berarti `schedule:work` atau cron perlu diperiksa.
+
+Aturan awal pemesanan privat adalah minimum 24 jam sebelum sesi pertama, atau 12 jam untuk perpanjangan dengan tutor yang sama. Penawaran guru berlaku 60 menit, mendapat satu pengingat sekitar menit ke-30, dan pencarian berhenti sebelum cutoff kelas. Nilai tersebut tersimpan dalam tabel `settings` dan dibaca bersama oleh frontend serta backend.
 
 Jangan menjalankan `php artisan migrate:fresh` pada database yang berisi data penting. Perintah tersebut menghapus seluruh tabel dan isi database.
 

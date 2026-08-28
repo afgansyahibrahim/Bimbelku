@@ -32,6 +32,7 @@ class AdminFinanceOperationsController extends Controller
                 'verifier:id,name',
                 'refund:id,order_id,status,amount,reason,destination_method,processed_at',
                 'learningPackage.plan:id,name',
+                'promotion:id,title,code',
                 'cheapClassEnrollment.cheapClass' => fn ($classes) => $classes->withCount([
                     'enrollments as confirmed_payment_count' => fn ($items) => $items->where('status', 'confirmed'),
                 ]),
@@ -245,7 +246,14 @@ class AdminFinanceOperationsController extends Controller
                 'email' => $order->user->email,
             ] : null,
             'title' => collect([$subject, $teacher])->filter()->join(' · '),
+            'subtotal_amount' => (float) $order->subtotal_amount,
+            'discount_amount' => (float) $order->discount_amount,
             'amount' => (float) $order->amount,
+            'promotion' => ($order->promotion || !empty($details['promotion_code']) || !empty($details['promotion_title'])) ? [
+                'id' => $order->promotion?->id,
+                'title' => $order->promotion?->title ?? $details['promotion_title'] ?? 'Voucher',
+                'code' => $order->promotion?->code ?? $details['promotion_code'],
+            ] : null,
             'wallet_reserved_amount' => (float) $order->wallet_reserved_amount,
             'wallet_applied_amount' => (float) $order->wallet_applied_amount,
             'external_payment_amount' => round(max(0, (float) $order->amount - (float) ($order->status === 'submitted' ? $order->wallet_reserved_amount : $order->wallet_applied_amount)), 2),

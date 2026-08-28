@@ -1359,6 +1359,7 @@ class CheapClassService
                 'starts_at' => $session->starts_at,
                 'ends_at' => $session->ends_at,
                 'status' => $session->status,
+                'teacher_started_at' => $hasAccess ? $session->teacher_started_at : null,
                 // Laporan tutor belum menjadi progress resmi sampai admin memverifikasi sesi.
                 'progress_updates' => $hasAccess && $session->status === 'completed' ? ($session->progress_updates ?? []) : [],
                 'progress_notes' => $hasAccess && $session->status === 'completed' ? $session->progress_notes : null,
@@ -1638,7 +1639,7 @@ class CheapClassService
         // transisi pertama dan tidak kembali unread setiap refresh lifecycle.
         $reportRequired = 0;
         CheapClassSession::query()
-            ->where('status', 'scheduled')
+            ->whereIn('status', ['scheduled', 'in_progress'])
             ->where('ends_at', '<=', now())
             ->whereHas('cheapClass', fn ($classes) => $classes->where('status', 'confirmed'))
             ->with('cheapClass')
@@ -1647,7 +1648,7 @@ class CheapClassService
                 foreach ($sessions as $session) {
                     $updated = CheapClassSession::query()
                         ->whereKey($session->id)
-                        ->where('status', 'scheduled')
+                        ->whereIn('status', ['scheduled', 'in_progress'])
                         ->update(['status' => 'report_required']);
                     if ($updated !== 1) {
                         continue;

@@ -47,31 +47,27 @@ class TeacherMatchingService
             ->get()
             ->each(fn (TeacherOffer $offer) => $this->expireOfferAndContinue($offer, false));
 
-        $activeOffer = $bookingRequest->offers()
-            ->where('status', 'pending')
-            ->where('expires_at', '>', now())
-            ->latest('offered_at')
-            ->first();
-
-        if ($activeOffer) {
-            return $activeOffer;
-        }
-
         $startAt = $this->startAt($bookingRequest);
-        // Tahap 5 mengizinkan kelas mendadak. Penawaran dapat diterima sampai
-        // waktu mulai, sedangkan tenggat pembayaran mengikuti sisa waktu nyata.
-        $acceptanceCutoff = $startAt->copy();
-        $maximumSearchDeadline = $bookingRequest->search_expires_at
-            ?? $bookingRequest->search_started_at?->copy()->addHours($this->maximumSearchHours())
-            ?? now()->addHours($this->maximumSearchHours());
+        $acceptanceCutoff = $startAt->copy()->subHours($this->matchingCutoffHours());
+        $maximumSearchDeadline = collect([
+            $bookingRequest->search_expires_at,
+            $bookingRequest->search_started_at?->copy()->addHours($this->maximumSearchHours()),
+            $acceptanceCutoff,
+        ])->filter()->sortBy(fn (Carbon $deadline) => $deadline->timestamp)->first()
+            ?? $acceptanceCutoff;
 
         if (now()->greaterThanOrEqualTo($acceptanceCutoff) || now()->greaterThanOrEqualTo($maximumSearchDeadline)) {
-            if ($bookingRequest->status !== 'no_teacher') {
-                $failure = [
-                    'code' => 'search_deadline_exhausted',
-                    'message' => 'Batas waktu pencarian tutor telah berakhir. Kamu dapat mengubah jadwal, mencoba pencarian sesuai opsi yang tersedia, atau membatalkan pesanan.',
-                    'recommended_action' => 'change_schedule',
-                ];
+            $failure = [
+                'code' => 'search_deadline_exhausted',
+                'message' => 'Batas waktu pencarian tutor telah berakhir. Kamu dapat mengubah jadwal, mencoba pencarian sesuai opsi yang tersedia, atau membatalkan pesanan.',
+                'recommended_action' => 'change_schedule',
+            ];
+            $alreadyRecorded = $bookingRequest->matchingOperationLogs()
+                ->where('action', 'matching_exhausted')
+                ->when($bookingRequest->search_started_at, fn ($query) => $query
+                    ->where('created_at', '>=', $bookingRequest->search_started_at))
+                ->exists();
+            if (!$alreadyRecorded) {
                 MatchingOperationLog::create([
                     'booking_request_id' => $bookingRequest->id,
                     'actor_id' => null,
@@ -81,50 +77,132 @@ class TeacherMatchingService
                     'after_state' => ['status' => 'no_teacher', 'search_radius_km' => (int) $bookingRequest->search_radius_km],
                     'metadata' => $failure,
                 ]);
-                $bookingRequest->packageSubject?->update(['status' => 'no_teacher']);
-                $this->updateRequestGroup($bookingRequest, [
-                    'status' => 'no_teacher',
-                    'matched_teacher_id' => null,
-                    'teacher_response_deadline' => null,
-                ]);
                 Notification::create([
                     'user_id' => $bookingRequest->student_id,
                     'title' => 'Batas pencarian tutor berakhir',
                     'message' => $failure['message'],
                     'type' => 'warning',
-                    'target_url' => '/student/packages',
+                    'target_url' => '/student/my-classes?tab=process',
                 ]);
             }
+            $bookingRequest->packageSubject?->update(['status' => 'no_teacher']);
+            $this->updateRequestGroup($bookingRequest, [
+                'status' => 'no_teacher',
+                'matched_teacher_id' => null,
+                'teacher_response_deadline' => null,
+                'next_matching_at' => null,
+            ]);
             return null;
         }
 
+        if ($bookingRequest->next_matching_at?->isFuture()) {
+            return $bookingRequest->offers()
+                ->where('status', 'pending')
+                ->where('expires_at', '>', now())
+                ->latest('offered_at')
+                ->first();
+        }
+
         $endAt = $this->endAt($bookingRequest);
+        $activeOffers = $bookingRequest->offers()
+            ->where('status', 'pending')
+            ->where('expires_at', '>', now())
+            ->orderBy('offered_at')
+            ->get();
+        $availableSlots = max(0, $this->offerWaveSize() - $activeOffers->count());
+        if ($availableSlots === 0) {
+            return $activeOffers->last();
+        }
+
         $offerRequestIds = collect([$bookingRequest->id]);
         $offerCycleResetAt = $bookingRequest->matchingOperationLogs()
             ->where('action', 'schedule_changed')
             ->latest('created_at')
             ->value('created_at');
-        $alreadyOffered = TeacherOffer::query()
+        $cycleOffers = TeacherOffer::query()
             ->whereIn('booking_request_id', $offerRequestIds)
             ->when($offerCycleResetAt, fn ($query) => $query->where('offered_at', '>=', $offerCycleResetAt))
-            ->pluck('teacher_id');
+            ->get(['teacher_id', 'status', 'offered_at']);
+        $alreadyOffered = $cycleOffers->pluck('teacher_id')->unique()->values();
         $candidates = $this->candidateQuery($bookingRequest, $alreadyOffered, $startAt, $endAt)
             ->limit(500)
             ->get();
-        $candidate = $this->rankCandidates($bookingRequest, $candidates)->first();
+        $candidates = $this->rankCandidates($bookingRequest, $candidates)
+            ->take($availableSlots)
+            ->values();
 
-        if (!$candidate) {
+        // Tutor yang diam boleh memperoleh satu pengingat setelah masa jeda,
+        // tetapi tutor yang menolak tidak pernah ditawari ulang pada pesanan sama.
+        if ($candidates->isEmpty() && $cycleOffers->isNotEmpty()) {
+            $retryCutoff = now()->subMinutes($this->offerRetryCooldownMinutes());
+            $retryableTeacherIds = $cycleOffers
+                ->groupBy('teacher_id')
+                ->filter(function (Collection $offers) use ($retryCutoff) {
+                    return $offers->count() < 2
+                        && !$offers->contains('status', 'rejected')
+                        && $offers->every(fn (TeacherOffer $offer) => $offer->status === 'expired')
+                        && $offers->max('offered_at')?->lte($retryCutoff);
+                })
+                ->keys()
+                ->map(fn ($teacherId) => (int) $teacherId)
+                ->values();
+
+            if ($retryableTeacherIds->isNotEmpty()) {
+                $retryCandidates = $this->candidateQuery($bookingRequest, collect(), $startAt, $endAt)
+                    ->whereIn('users.id', $retryableTeacherIds)
+                    ->limit(500)
+                    ->get();
+                $candidates = $this->rankCandidates($bookingRequest, $retryCandidates)
+                    ->take($availableSlots)
+                    ->values();
+            }
+        }
+
+        if ($candidates->isEmpty()) {
+            if ($activeOffers->isNotEmpty()) {
+                $this->updateRequestGroup($bookingRequest, [
+                    'status' => 'teacher_pending',
+                    'matched_teacher_id' => null,
+                    'teacher_response_deadline' => $activeOffers->max('expires_at'),
+                    'next_matching_at' => null,
+                ]);
+
+                return $activeOffers->last();
+            }
+
             $failure = $this->matchingFailureContext($bookingRequest, $alreadyOffered);
+            $recentManualRadiusExpansion = $bookingRequest->matchingOperationLogs()
+                ->where('action', 'radius_expanded')
+                ->where('created_at', '>=', now()->subMinute())
+                ->exists();
+            $automaticRadius = $bookingRequest->learning_mode === 'offline' && !$recentManualRadiusExpansion
+                ? $this->nextRadius((int) $bookingRequest->search_radius_km)
+                : null;
+            $previousRadius = (int) $bookingRequest->search_radius_km;
+            if ($automaticRadius !== null && in_array($failure['code'], ['radius_exhausted', 'no_current_candidate'], true)) {
+                $failure = [
+                    'code' => 'automatic_radius_expansion',
+                    'message' => "Belum ada tutor dalam radius {$previousRadius} km. Sistem akan memeriksa ulang otomatis dengan radius {$automaticRadius} km.",
+                    'recommended_action' => 'wait_for_retry',
+                ];
+            }
+            $nextMatchingAt = now()->addMinutes($this->waitingRetryMinutes())->min($maximumSearchDeadline);
+            $firstWaitingNotice = !$bookingRequest->matchingOperationLogs()
+                ->where('action', 'waiting_for_availability')
+                ->when($offerCycleResetAt, fn ($query) => $query->where('created_at', '>=', $offerCycleResetAt))
+                ->exists();
             $this->updateRequestGroup($bookingRequest, [
                 'status' => 'no_teacher',
                 'matched_teacher_id' => null,
                 'teacher_response_deadline' => null,
+                'next_matching_at' => $nextMatchingAt,
+                'search_radius_km' => $automaticRadius ?? $previousRadius,
             ]);
 
             MatchingOperationLog::create([
                 'booking_request_id' => $bookingRequest->id,
                 'actor_id' => null,
-                'action' => 'matching_exhausted',
+                'action' => 'waiting_for_availability',
                 'reason' => $failure['message'],
                 'before_state' => [
                     'status' => 'matching',
@@ -132,18 +210,35 @@ class TeacherMatchingService
                 ],
                 'after_state' => [
                     'status' => 'no_teacher',
-                    'search_radius_km' => (int) $bookingRequest->search_radius_km,
+                    'search_radius_km' => $automaticRadius ?? $previousRadius,
                 ],
-                'metadata' => $failure,
+                'metadata' => [
+                    ...$failure,
+                    'automatic_radius_from_km' => $automaticRadius ? $previousRadius : null,
+                    'automatic_radius_to_km' => $automaticRadius,
+                ],
             ]);
 
-            Notification::create([
-                'user_id' => $bookingRequest->student_id,
-                'title' => 'Tutor belum ditemukan',
-                'message' => $failure['message'],
-                'type' => 'warning',
-                'target_url' => '/student/packages',
-            ]);
+            if ($firstWaitingNotice) {
+                Notification::create([
+                    'user_id' => $bookingRequest->student_id,
+                    'title' => 'Masih mencari tutor',
+                    'message' => 'Belum ada tutor yang tersedia. Sistem akan memeriksa kandidat baru secara otomatis dan admin sudah diberi tahu.',
+                    'type' => 'warning',
+                    'target_url' => '/student/my-classes?tab=process',
+                ]);
+                User::query()
+                    ->where('role', 'admin')
+                    ->where('status', 'active')
+                    ->pluck('id')
+                    ->each(fn (int $adminId) => Notification::create([
+                        'user_id' => $adminId,
+                        'title' => 'Pencarian tutor membutuhkan perhatian',
+                        'message' => "Permintaan #{$bookingRequest->id} belum memiliki kandidat tutor yang tersedia.",
+                        'type' => 'warning',
+                        'target_url' => '/admin/tutor-searches',
+                    ]));
+            }
 
             return null;
         }
@@ -152,57 +247,69 @@ class TeacherMatchingService
 
         $offerResult = DB::transaction(function () use (
             $bookingRequest,
-            $candidate,
+            $candidates,
             $expiresAt
         ) {
             $lockedRequest = BookingRequest::query()
                 ->lockForUpdate()
                 ->findOrFail($bookingRequest->id);
             if (!in_array($lockedRequest->status, ['matching', 'teacher_pending', 'no_teacher'], true)) {
-                return ['offer' => null, 'created' => false];
+                return ['offers' => collect(), 'created' => false];
             }
 
             $existing = $lockedRequest->offers()
                 ->where('status', 'pending')
                 ->where('expires_at', '>', now())
-                ->latest('offered_at')
-                ->first();
-            if ($existing) {
-                return ['offer' => $existing, 'created' => false];
+                ->orderBy('offered_at')
+                ->get();
+            $availableSlots = max(0, $this->offerWaveSize() - $existing->count());
+            if ($availableSlots === 0) {
+                return ['offers' => $existing, 'created' => false];
             }
 
-            $offer = TeacherOffer::create([
-                'booking_request_id' => $lockedRequest->id,
-                'teacher_id' => $candidate->id,
-                'status' => 'pending',
-                'distance_km' => $candidate->match_distance_km,
-                'offered_at' => now(),
-                'expires_at' => $expiresAt,
-            ]);
+            $offers = $candidates->take($availableSlots)->map(fn (User $candidate) => TeacherOffer::create([
+                    'booking_request_id' => $lockedRequest->id,
+                    'teacher_id' => $candidate->id,
+                    'status' => 'pending',
+                    'distance_km' => $candidate->match_distance_km,
+                    'offered_at' => now(),
+                    'expires_at' => $expiresAt,
+                ]));
 
+            if ($offers->isEmpty()) {
+                return ['offers' => $existing, 'created' => false];
+            }
+
+            $latestDeadline = $lockedRequest->offers()
+                ->where('status', 'pending')
+                ->where('expires_at', '>', now())
+                ->max('expires_at');
             $this->updateRequestGroup($lockedRequest, [
                 'status' => 'teacher_pending',
-                'matched_teacher_id' => $candidate->id,
-                'teacher_response_deadline' => $expiresAt,
+                'matched_teacher_id' => null,
+                'teacher_response_deadline' => $latestDeadline,
+                'next_matching_at' => null,
             ], incrementAttempts: true);
 
-            return ['offer' => $offer, 'created' => true];
+            return ['offers' => $offers, 'created' => true];
         });
 
-        $offer = $offerResult['offer'];
-        if (!$offer || !$offerResult['created']) {
-            return $offer;
+        $offers = $offerResult['offers'];
+        if ($offers->isEmpty() || !$offerResult['created']) {
+            return $offers->first();
         }
 
-        Notification::create([
-            'user_id' => $candidate->id,
-            'title' => 'Permintaan bimbel baru',
-            'message' => "Permintaan {$bookingRequest->subject_name} menunggu jawaban sampai {$expiresAt->translatedFormat('d M Y, H:i')} WIB.",
-            'type' => 'info',
-            'target_url' => '/guru/permintaan',
-        ]);
+        $offers->each(function (TeacherOffer $offer) use ($bookingRequest, $expiresAt) {
+            Notification::create([
+                'user_id' => $offer->teacher_id,
+                'title' => 'Permintaan bimbel baru',
+                'message' => "Permintaan {$bookingRequest->subject_name} menunggu jawaban sampai {$expiresAt->translatedFormat('d M Y, H:i')} WIB. Tutor pertama yang menerima akan mendapat jadwal ini.",
+                'type' => 'info',
+                'target_url' => '/guru/permintaan',
+            ]);
+        });
 
-        return $offer;
+        return $offers->first();
     }
 
     public function offerResponseDeadline(
@@ -210,11 +317,19 @@ class TeacherMatchingService
         ?Carbon $maximumSearchDeadline = null
     ): Carbon {
         $deadline = now()->addMinutes($this->teacherResponseMinutes($bookingRequest));
-        $deadline = $deadline->min($this->startAt($bookingRequest));
+        $deadline = $deadline->min(
+            $this->startAt($bookingRequest)->subHours($this->matchingCutoffHours())
+        );
 
-        $searchDeadline = $maximumSearchDeadline
-            ?? $bookingRequest->search_expires_at
-            ?? $bookingRequest->search_started_at?->copy()->addHours($this->maximumSearchHours());
+        $searchDeadline = $maximumSearchDeadline;
+        foreach ([
+            $bookingRequest->search_expires_at,
+            $bookingRequest->search_started_at?->copy()->addHours($this->maximumSearchHours()),
+        ] as $candidateDeadline) {
+            if ($candidateDeadline && (!$searchDeadline || $candidateDeadline->lt($searchDeadline))) {
+                $searchDeadline = $candidateDeadline;
+            }
+        }
 
         return $searchDeadline ? $deadline->min($searchDeadline) : $deadline;
     }
@@ -222,11 +337,18 @@ class TeacherMatchingService
     public function expireOfferAndContinue(TeacherOffer $offer, bool $continue = true): void
     {
         $expiredOffer = DB::transaction(function () use ($offer) {
+            $lockedRequest = BookingRequest::query()
+                ->lockForUpdate()
+                ->find($offer->booking_request_id);
             $lockedOffer = TeacherOffer::query()
                 ->lockForUpdate()
                 ->find($offer->id);
 
-            if (!$lockedOffer || $lockedOffer->status !== 'pending') {
+            if (
+                !$lockedOffer
+                || $lockedOffer->status !== 'pending'
+                || $lockedOffer->expires_at->isFuture()
+            ) {
                 return null;
             }
 
@@ -235,6 +357,22 @@ class TeacherMatchingService
                 'responded_at' => now(),
                 'no_response_penalty_applied' => true,
             ]);
+
+            if ($lockedRequest && in_array($lockedRequest->status, ['teacher_pending', 'matching'], true)) {
+                $otherDeadline = $lockedRequest->offers()
+                    ->where('status', 'pending')
+                    ->where('expires_at', '>', now())
+                    ->max('expires_at');
+                $lockedRequest->update($otherDeadline ? [
+                    'status' => 'teacher_pending',
+                    'matched_teacher_id' => null,
+                    'teacher_response_deadline' => $otherDeadline,
+                ] : [
+                    'status' => 'matching',
+                    'matched_teacher_id' => null,
+                    'teacher_response_deadline' => null,
+                ]);
+            }
 
             return $lockedOffer;
         });
@@ -250,13 +388,7 @@ class TeacherMatchingService
             return;
         }
 
-        $this->updateRequestGroup($bookingRequest, [
-            'status' => 'matching',
-            'matched_teacher_id' => null,
-            'teacher_response_deadline' => null,
-        ]);
-
-        if ($continue) {
+        if ($continue && in_array($bookingRequest->fresh()->status, ['teacher_pending', 'matching'], true)) {
             $this->dispatchNextOffer($bookingRequest);
         }
     }
@@ -285,6 +417,11 @@ class TeacherMatchingService
 
     public function hasAvailableCandidate(BookingRequest $bookingRequest): bool
     {
+        return $this->availableCandidateCountForPreview($bookingRequest) > 0;
+    }
+
+    public function availableCandidateCountForPreview(BookingRequest $bookingRequest): int
+    {
         $startAt = $this->startAt($bookingRequest);
         $endAt = $this->endAt($bookingRequest);
         $candidates = $this->candidateQuery(
@@ -296,7 +433,7 @@ class TeacherMatchingService
             ->limit(100)
             ->get();
 
-        return $this->rankCandidates($bookingRequest, $candidates)->isNotEmpty();
+        return $this->rankCandidates($bookingRequest, $candidates)->count();
     }
 
     public function availableCandidateCount(BookingRequest $bookingRequest): int
@@ -352,7 +489,19 @@ class TeacherMatchingService
         $classTypeColumn = 'is_private_active';
 
         $subjectMatches = $profile->subjects()
-            ->where('name', $bookingRequest->subject_name)
+            ->where(function ($subjects) use ($bookingRequest) {
+                if ($bookingRequest->curriculum_subject_id) {
+                    $subjects->where(function ($identity) use ($bookingRequest) {
+                        $identity->where('curriculum_subject_id', $bookingRequest->curriculum_subject_id)
+                            ->orWhere(function ($legacy) use ($bookingRequest) {
+                                $legacy->whereNull('curriculum_subject_id')
+                                    ->where('name', $bookingRequest->subject_name);
+                            });
+                    });
+                } else {
+                    $subjects->where('name', $bookingRequest->subject_name);
+                }
+            })
             ->where('is_active', true)
             ->where($modeColumn, true)
             ->where($classTypeColumn, true)
@@ -409,10 +558,15 @@ class TeacherMatchingService
 
     public function endAt(BookingRequest $bookingRequest): Carbon
     {
-        return Carbon::parse(
+        $endAt = Carbon::parse(
             $bookingRequest->scheduled_date->format('Y-m-d').' '.$bookingRequest->end_time,
             config('app.timezone', 'Asia/Jakarta')
         );
+        if ($endAt->lte($this->startAt($bookingRequest))) {
+            $endAt->addDay();
+        }
+
+        return $endAt;
     }
 
     public function nextRadius(int $currentRadius): ?int
@@ -462,6 +616,7 @@ class TeacherMatchingService
                     'status' => 'matching',
                     'matched_teacher_id' => null,
                     'teacher_response_deadline' => null,
+                    'next_matching_at' => null,
                 ]);
 
             if ($lockedRequest->package_subject_id) {
@@ -514,7 +669,19 @@ class TeacherMatchingService
             ->whereHas('teacherProfile.subjects', function ($query) use ($bookingRequest, $modeColumn) {
                 $classTypeColumn = 'is_private_active';
 
-                $query->where('name', $bookingRequest->subject_name)
+                $query->where(function ($subjects) use ($bookingRequest) {
+                    if ($bookingRequest->curriculum_subject_id) {
+                        $subjects->where(function ($identity) use ($bookingRequest) {
+                            $identity->where('curriculum_subject_id', $bookingRequest->curriculum_subject_id)
+                                ->orWhere(function ($legacy) use ($bookingRequest) {
+                                    $legacy->whereNull('curriculum_subject_id')
+                                        ->where('name', $bookingRequest->subject_name);
+                                });
+                        });
+                    } else {
+                        $subjects->where('name', $bookingRequest->subject_name);
+                    }
+                })
                     ->where('is_active', true)
                     ->where($modeColumn, true)
                     ->where($classTypeColumn, true)
@@ -542,7 +709,13 @@ class TeacherMatchingService
                             ->where('end_time', '>', $bookingRequest->start_time);
                     });
             })
-            ->with(['teacherProfile.subjects', 'availabilities']);
+            ->with(['teacherProfile.subjects', 'availabilities'])
+            ->withCount([
+                'teacherOffers as matching_offer_total_count' => fn ($offers) => $offers
+                    ->whereIn('status', ['accepted', 'rejected', 'expired']),
+                'teacherOffers as matching_offer_responded_count' => fn ($offers) => $offers
+                    ->whereIn('status', ['accepted', 'rejected']),
+            ]);
 
         if (
             $bookingRequest->learning_mode === 'offline'
@@ -695,14 +868,22 @@ class TeacherMatchingService
 
     private function rankCandidates(BookingRequest $bookingRequest, Collection $candidates): Collection
     {
+        $bookingRequest->loadMissing('packageSubject');
+        $preferredTeacherId = (int) ($bookingRequest->packageSubject?->preferred_teacher_id ?? 0);
         $continuityTeacherId = Booking::query()
             ->where('student_id', $bookingRequest->student_id)
             ->where('status', 'completed')
             ->where('learning_mode', $bookingRequest->learning_mode)
             ->where('class_type', 'private')
             ->whereHas('bookingRequest', function ($query) use ($bookingRequest) {
-                $query->where('subject_name', $bookingRequest->subject_name)
-                    ->where('education_level', $bookingRequest->education_level);
+                $query->where('education_level', $bookingRequest->education_level)
+                    ->where(function ($subjects) use ($bookingRequest) {
+                        if ($bookingRequest->curriculum_subject_id) {
+                            $subjects->where('curriculum_subject_id', $bookingRequest->curriculum_subject_id);
+                        } else {
+                            $subjects->where('subject_name', $bookingRequest->subject_name);
+                        }
+                    });
             })
             ->latest('completed_at')
             ->value('teacher_id');
@@ -745,12 +926,12 @@ class TeacherMatchingService
                 $teacher->match_distance_km = $distance;
                 return true;
             })
-            ->sort(function (User $a, User $b) use ($bookingRequest, $continuityTeacherId) {
-                if ($continuityTeacherId) {
-                    $continuityA = $a->id === (int) $continuityTeacherId ? 0 : 1;
-                    $continuityB = $b->id === (int) $continuityTeacherId ? 0 : 1;
-                    if ($continuityA !== $continuityB) {
-                        return $continuityA <=> $continuityB;
+            ->sort(function (User $a, User $b) use ($bookingRequest, $continuityTeacherId, $preferredTeacherId) {
+                if ($preferredTeacherId > 0) {
+                    $preferredA = $a->id === $preferredTeacherId ? 0 : 1;
+                    $preferredB = $b->id === $preferredTeacherId ? 0 : 1;
+                    if ($preferredA !== $preferredB) {
+                        return $preferredA <=> $preferredB;
                     }
                 }
 
@@ -762,10 +943,24 @@ class TeacherMatchingService
                     }
                 }
 
+                $responseA = $this->responseReliabilityScore($a);
+                $responseB = $this->responseReliabilityScore($b);
+                if ($responseA !== $responseB) {
+                    return $responseB <=> $responseA;
+                }
+
                 $pointWeightA = $this->pointService->recommendationWeight((int) ($a->teacherProfile->points ?? 0));
                 $pointWeightB = $this->pointService->recommendationWeight((int) ($b->teacherProfile->points ?? 0));
                 if ($pointWeightA !== $pointWeightB) {
                     return $pointWeightA <=> $pointWeightB;
+                }
+
+                if ($continuityTeacherId) {
+                    $continuityA = $a->id === (int) $continuityTeacherId ? 0 : 1;
+                    $continuityB = $b->id === (int) $continuityTeacherId ? 0 : 1;
+                    if ($continuityA !== $continuityB) {
+                        return $continuityA <=> $continuityB;
+                    }
                 }
 
                 $assignmentA = (int) ($a->teacherProfile->assignment_count ?? 0);
@@ -781,8 +976,31 @@ class TeacherMatchingService
             ->values();
     }
 
+    private function responseReliabilityScore(User $teacher): int
+    {
+        $total = (int) ($teacher->matching_offer_total_count ?? 0);
+        if ($total < 3) {
+            return 500;
+        }
+
+        return (int) round(
+            ((int) ($teacher->matching_offer_responded_count ?? 0) / max(1, $total)) * 1000
+        );
+    }
+
     private function applyNoResponseRestriction(TeacherOffer $offer): void
     {
+        $alreadyCountedForRequest = TeacherOffer::query()
+            ->where('booking_request_id', $offer->booking_request_id)
+            ->where('teacher_id', $offer->teacher_id)
+            ->whereKeyNot($offer->id)
+            ->where('status', 'expired')
+            ->where('no_response_penalty_applied', true)
+            ->exists();
+        if ($alreadyCountedForRequest) {
+            return;
+        }
+
         $result = DB::transaction(function () use ($offer) {
             $profile = TeacherProfile::query()
                 ->where('user_id', $offer->teacher_id)
@@ -797,10 +1015,11 @@ class TeacherMatchingService
                 || $profile->no_response_window_started_at->lt(now()->subDays(30));
             $streak = $windowExpired ? 1 : ((int) $profile->no_response_streak + 1);
             $hours = match (true) {
-                $streak >= 4 => 24,
-                $streak === 3 => 12,
-                $streak === 2 => 6,
-                default => 3,
+                $streak >= 5 => 24,
+                $streak === 4 => 12,
+                $streak === 3 => 6,
+                $streak === 2 => 3,
+                default => 0,
             };
 
             $profile->update([
@@ -808,7 +1027,7 @@ class TeacherMatchingService
                 'no_response_window_started_at' => $windowExpired
                     ? now()
                     : $profile->no_response_window_started_at,
-                'suspended_until' => now()->addHours($hours),
+                'suspended_until' => $hours > 0 ? now()->addHours($hours) : null,
             ]);
 
             return ['streak' => $streak, 'hours' => $hours];
@@ -826,6 +1045,10 @@ class TeacherMatchingService
                 actor: null,
                 notes: "Pembatasan menerima murid selama {$result['hours']} jam."
             );
+        }
+
+        if ($result['hours'] === 0) {
+            return;
         }
 
         Notification::create([
@@ -940,13 +1163,13 @@ class TeacherMatchingService
         $query->update($attributes);
     }
 
-    private function teacherResponseMinutes(BookingRequest $bookingRequest): int
+    public function teacherResponseMinutes(?BookingRequest $bookingRequest = null): int
     {
-        $isOffline = $bookingRequest->learning_mode === 'offline';
+        $isOffline = $bookingRequest?->learning_mode === 'offline';
         $settingKey = $isOffline
             ? 'teacher_response_offline_minutes'
             : 'teacher_response_online_minutes';
-        $defaultMinutes = $isOffline ? 120 : 30;
+        $defaultMinutes = 60;
 
         return max(
             5,
@@ -956,7 +1179,27 @@ class TeacherMatchingService
 
     public function maximumSearchHours(): int
     {
-        return min(72, max(1, (int) (Setting::where('key', 'maximum_search_hours')->value('value') ?? 72)));
+        return min(72, max(1, (int) (Setting::where('key', 'maximum_search_hours')->value('value') ?? 12)));
+    }
+
+    public function matchingCutoffHours(): int
+    {
+        return min(12, max(1, (int) (Setting::where('key', 'matching_cutoff_hours')->value('value') ?? 2)));
+    }
+
+    public function offerWaveSize(): int
+    {
+        return min(5, max(1, (int) (Setting::where('key', 'teacher_offer_wave_size')->value('value') ?? 3)));
+    }
+
+    private function offerRetryCooldownMinutes(): int
+    {
+        return min(720, max(30, (int) (Setting::where('key', 'teacher_offer_retry_cooldown_minutes')->value('value') ?? 120)));
+    }
+
+    private function waitingRetryMinutes(): int
+    {
+        return min(360, max(5, (int) (Setting::where('key', 'matching_wait_retry_minutes')->value('value') ?? 30)));
     }
 
     private function indonesianDayName(int $isoDay): string

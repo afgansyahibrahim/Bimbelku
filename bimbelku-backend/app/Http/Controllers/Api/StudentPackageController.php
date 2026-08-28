@@ -21,6 +21,7 @@ use App\Models\PackageSubject;
 use App\Models\Promotion;
 use App\Models\PromotionClaim;
 use App\Models\Refund;
+use App\Models\Setting;
 use App\Services\HourlyRateService;
 use App\Services\PackageCheckoutService;
 use App\Services\TeacherMatchingService;
@@ -63,6 +64,28 @@ class StudentPackageController extends Controller
         return $this->publicCachedResponse($request, $timeSlots, 60);
     }
 
+    public function bookingRules(Request $request)
+    {
+        $keys = [
+            'booking_lead_hours',
+            'renewal_booking_lead_hours',
+            'maximum_search_hours',
+            'matching_cutoff_hours',
+            'teacher_response_minutes',
+            'teacher_offer_wave_size',
+        ];
+
+        $values = Cache::remember('package_booking_rules.v1', now()->addMinute(), fn () => Setting::query()->whereIn('key', $keys)->pluck('value', 'key'));
+
+        return response()->json([
+            'booking_lead_hours' => (int) ($values['booking_lead_hours'] ?? 24),
+            'renewal_booking_lead_hours' => (int) ($values['renewal_booking_lead_hours'] ?? 12),
+            'maximum_search_hours' => (int) ($values['maximum_search_hours'] ?? 12),
+            'matching_cutoff_hours' => (int) ($values['matching_cutoff_hours'] ?? 2),
+            'teacher_response_minutes' => (int) ($values['teacher_response_minutes'] ?? 30),
+            'teacher_offer_wave_size' => (int) ($values['teacher_offer_wave_size'] ?? 3),
+        ]);
+    }
     public function index(Request $request)
     {
         $scope = $request->query('scope');
@@ -170,7 +193,7 @@ class StudentPackageController extends Controller
             ->whereNotIn('status', ['resolved', 'rejected', 'cancelled'])
             ->count();
         $unreadMessages = ClassroomMessage::query()
-            ->where('sender_id', '!=', $studentId)
+            ->where('message_type', '!=', 'system') ->where('sender_id', '!=', $studentId)
             ->whereHas('booking', function ($bookings) use ($studentId) {
                 $bookings
                     ->whereIn('status', [

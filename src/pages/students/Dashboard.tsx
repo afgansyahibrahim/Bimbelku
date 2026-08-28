@@ -211,7 +211,7 @@ export default function Dashboard() {
 
             {data.unread_messages_count > 0 && (
               <Link
-                to="/student/my-classes"
+                to="/student/messages"
                 className="group flex min-w-0 items-center justify-between gap-3 overflow-hidden rounded-[1.5rem] border border-orange-100 bg-gradient-to-br from-white to-orange-50 p-4 shadow-sm transition-all hover-shadow-md sm:gap-4 sm:rounded-[2rem] sm:p-5"
               >
                 <div className="flex min-w-0 flex-1 items-center gap-4">
@@ -280,7 +280,7 @@ export default function Dashboard() {
               <section className="render-auto w-full min-w-0 overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-sm sm:rounded-[2rem] sm:p-6">
                 <div className="flex min-w-0 items-start justify-between gap-3">
                   <div className="min-w-0"><h2 className="break-words text-lg font-black text-slate-900 sm:text-xl">Mata pelajaran saya</h2><p className="mt-1 break-words text-xs leading-5 text-slate-500 sm:text-sm">Tutor dan progres dipisahkan untuk setiap mapel.</p></div>
-                  <Link to="/student/packages" className="shrink-0 pt-0.5 text-xs font-black text-indigo-600 sm:text-sm">Detail</Link>
+                  <Link to="/student/my-classes?tab=process" className="shrink-0 pt-0.5 text-xs font-black text-indigo-600 sm:text-sm">Detail</Link>
                 </div>
                 <div className="mt-5 grid gap-3 lg:grid-cols-2">
                   {activePackage.subjects.map((subject) => {
@@ -370,10 +370,10 @@ function AdaptiveCard({ packageData, nextSession }: { packageData?: PackageData;
   }
   if (["matching", "teacher_pending"].includes(packageData.status)) {
     const accepted = packageData.subjects.filter((item) => item.teacher).length;
-    return <ActionCard icon={Radar} eyebrow="Radar aktif" title="Pencarian Tutor Berlangsung" description={`${accepted} dari ${packageData.subjects.length} tutor mapel sudah menerima.`} to="/student/packages" action="Lihat Progres" pulse />;
+    return <ActionCard icon={Radar} eyebrow="Radar aktif" title="Pencarian Tutor Berlangsung" description={`${accepted} dari ${packageData.subjects.length} tutor mapel sudah menerima.`} to="/student/my-classes?tab=process" action="Lihat Progres" pulse />;
   }
   if (packageData.status === "no_teacher") {
-    return <ActionCard icon={Radar} eyebrow="Pencarian dijeda" title="Tutor Belum Tersedia" description="Perluas pencarian atau batalkan paket tanpa kehilangan voucher." to="/student/packages" action="Atur Pencarian" />;
+    return <ActionCard icon={Radar} eyebrow="Pencarian dijeda" title="Tutor Belum Tersedia" description="Perluas pencarian atau batalkan paket tanpa kehilangan voucher." to="/student/my-classes?tab=process" action="Atur Pencarian" />;
   }
   if (["awaiting_payment", "payment_rejected"].includes(packageData.status) && packageData.latest_order) {
     return <ActionCard icon={CreditCard} eyebrow={packageData.status === "payment_rejected" ? "Bukti perlu diperbaiki" : "Pesanan sudah diperiksa"} title="Selesaikan Pembayaran" description="Pencarian tutor dimulai setelah pembayaran dinyatakan diterima oleh sistem." to="/payment" action="Bayar Sekarang" />;
@@ -388,7 +388,7 @@ function AdaptiveCard({ packageData, nextSession }: { packageData?: PackageData;
     const modeIcon = nextSession.learning_mode === "online" ? Monitor : MapPin;
     return <ActionCard icon={modeIcon} eyebrow="Kelas berikutnya" title={`${nextSession.subject} bersama ${nextSession.teacher_name}`} description={new Date(nextSession.start_at).toLocaleString("id-ID", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })} to="/student/my-classes" action="Lihat Detail" />;
   }
-  return <ActionCard icon={BookOpenCheck} eyebrow="Paket aktif" title={`${packageData.remaining_sessions} sesi masih tersedia`} description="Buka Kelas Saya untuk melihat tutor, jadwal, dan laporan." to="/student/packages" action="Buka Kelas Saya" />;
+  return <ActionCard icon={BookOpenCheck} eyebrow="Paket aktif" title={`${packageData.remaining_sessions} sesi masih tersedia`} description="Buka Kelas Saya untuk melihat tutor, jadwal, dan laporan." to="/student/my-classes" action="Buka Kelas Saya" />;
 }
 
 function ActionCard({ icon: Icon, eyebrow, title, description, to, action, pulse = false }: { icon: typeof Radar; eyebrow: string; title: string; description: string; to: string; action: string; pulse?: boolean }) {

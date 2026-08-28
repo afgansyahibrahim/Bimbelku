@@ -66,12 +66,41 @@ class DemoCheapClassCommandTest extends TestCase
             ->assertOk()
             ->assertJsonPath('0.id', $class->id)
             ->assertJsonPath('0.status', 'confirmed');
+        $this->getJson('/api/session-action/next')
+            ->assertOk()
+            ->assertJsonPath('data.kind', 'cheap_teacher_mark_ready');
+        $this->postJson("/api/teacher/cheap-classes/{$class->id}/start-session")
+            ->assertOk()
+            ->assertJsonPath('session.status', 'in_progress');
+        $firstAttendance = $session->fresh()->teacher_started_at;
+        $this->assertNotNull($firstAttendance);
+
+        // Klik ulang aman dan tidak mengubah jam absensi pertama.
+        $this->postJson("/api/teacher/cheap-classes/{$class->id}/start-session")
+            ->assertOk();
+        $this->assertTrue($session->fresh()->teacher_started_at->equalTo($firstAttendance));
 
         Sanctum::actingAs($student);
+        $this->getJson('/api/student/cheap-classes?scope=owned')
+            ->assertOk()
+            ->assertJsonCount(1)
+            ->assertJsonPath('0.id', $class->id)
+            ->assertJsonPath('0.enrollment.status', 'confirmed');
         $this->getJson('/api/student/cheap-classes')
             ->assertOk()
             ->assertJsonPath('0.id', $class->id)
             ->assertJsonPath('0.enrollment.status', 'confirmed');
+        $this->getJson('/api/session-action/next')
+            ->assertOk()
+            ->assertJsonPath('data.kind', 'cheap_student_session_started')
+            ->assertJsonPath('data.cheap_class_id', $class->id)
+            ->assertJsonPath('data.cheap_class_session_id', $session->id);
+
+        Sanctum::actingAs($admin);
+        $this->getJson('/api/admin/cheap-classes/schedule?view=sessions&scope=active')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $session->id)
+            ->assertJsonPath('data.0.teacher_started_at', $session->fresh()->teacher_started_at->toISOString());
 
         // Mempercepat hanya fixture local/testing sampai jadwal sesi berakhir.
         $this->artisan('demo:cheap-class', ['stage' => 'session-ended'])
@@ -85,7 +114,7 @@ class DemoCheapClassCommandTest extends TestCase
             ->assertJsonPath('data.kind', 'cheap_teacher_report_required')
             ->assertJsonPath('data.cheap_class_id', $class->id)
             ->assertJsonPath('data.cheap_class_session_id', $session->id)
-            ->assertJsonPath('data.target_url', "/guru/kelas-murah?cheap_class={$class->id}&cheap_session={$session->id}&cheap_action=report");
+            ->assertJsonPath('data.target_url', "/guru/kelas?class_kind=group&cheap_class={$class->id}&cheap_session={$session->id}&cheap_action=report");
 
         $payload = [
             'session_id' => $session->id,
@@ -130,7 +159,7 @@ class DemoCheapClassCommandTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.kind', 'cheap_teacher_revision_requested')
             ->assertJsonPath('data.admin_review_notes', 'Tambahkan penjelasan hasil latihan murid agar laporan lebih spesifik.')
-            ->assertJsonPath('data.target_url', "/guru/kelas-murah?cheap_class={$class->id}&cheap_session={$session->id}&cheap_action=revision");
+            ->assertJsonPath('data.target_url', "/guru/kelas?class_kind=group&cheap_class={$class->id}&cheap_session={$session->id}&cheap_action=revision");
 
         $payload['session_notes'] = 'Dua murid hadir; keduanya memahami operasi aljabar dasar dan masih perlu penguatan soal cerita.';
         $this->putJson("/api/teacher/cheap-classes/{$class->id}/progress", $payload)
@@ -171,6 +200,7 @@ class DemoCheapClassCommandTest extends TestCase
             ->assertSuccessful();
 
         $student = User::query()->where('email', 'demo.student@bimbelku.local')->firstOrFail();
+        $teacher = User::query()->where('email', 'demo.tutor@bimbelku.local')->firstOrFail();
         $class = CheapClass::query()->where('package_code', 'like', 'DEMO-KM-PREPAY-%')->firstOrFail();
         $session = CheapClassSession::query()->where('cheap_class_id', $class->id)->firstOrFail();
 
@@ -220,6 +250,17 @@ class DemoCheapClassCommandTest extends TestCase
         $this->assertSame('scheduled', $session->status);
         $this->assertTrue($session->starts_at->lte(now()));
         $this->assertTrue($session->ends_at->gt(now()));
+
+        Sanctum::actingAs($teacher);
+        $this->postJson("/api/teacher/cheap-classes/{$class->id}/start-session")
+            ->assertOk()
+            ->assertJsonPath('session.status', 'in_progress');
+        $this->assertNotNull($session->fresh()->teacher_started_at);
+
+        Sanctum::actingAs($student);
+        $this->getJson('/api/session-action/next')
+            ->assertOk()
+            ->assertJsonPath('data.kind', 'cheap_student_session_started');
 
         $this->artisan('demo:cheap-class', ['stage' => 'session-ended'])
             ->assertSuccessful();

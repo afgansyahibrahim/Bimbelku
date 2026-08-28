@@ -31,6 +31,7 @@ add("pre-payment uses production join/payment services", command.includes("app(C
 add("payment shortcut provides protected demo proof", command.includes("cheap-class-payment-proof.png") && command.includes("Storage::disk('local')->put"));
 add("session-live stage can advance confirmed class without changing production rules", command.includes("'session-live' => $this->sessionLive()") && command.includes("Semua shortcut hanya local/testing"));
 add("feature test covers pre-payment to report-required flow", test.includes("test_pre_payment_demo_can_start_before_payment_without_waiting_for_admin_opening_hour") && test.includes("payment-submitted") && test.includes("payment-paid") && test.includes("session-live"));
+add("demo covers tutor attendance and student start popup", test.includes("/start-session") && test.includes("cheap_student_session_started") && test.includes("teacher_started_at"));
 
 let failed = 0;
 for (const [label, ok] of checks) {

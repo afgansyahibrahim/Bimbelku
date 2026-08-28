@@ -20,6 +20,7 @@ import http, { getCached } from "@/lib/http";
 
 type SessionActionKind =
   | "student_confirm_presence"
+  | "student_session_started"
   | "student_review_session"
   | "teacher_mark_ready"
   | "teacher_waiting_student_presence"
@@ -27,9 +28,12 @@ type SessionActionKind =
   | "teacher_report_progress"
   | "teacher_session_ready"
   | "cheap_teacher_report_required"
+  | "cheap_teacher_mark_ready"
+  | "cheap_teacher_session_started"
   | "cheap_teacher_revision_requested"
   | "cheap_admin_verify_report"
   | "cheap_student_progress_updated"
+  | "cheap_student_session_started"
   | "cheap_student_class_completed";
 
 type SessionAction = {
@@ -68,6 +72,15 @@ const copyFor = (action: SessionAction) => {
         description: "Konfirmasi dengan satu tap jika kamu sudah bersama tutor atau sudah siap mengikuti kelas online.",
         button: "Saya Sudah Hadir",
         Icon: CheckCircle2,
+        tone: "emerald" as const,
+      };
+    case "student_session_started":
+      return {
+        eyebrow: "Sesi dimulai",
+        title: "Kelasmu sedang berlangsung",
+        description: "Kehadiranmu sudah tercatat. Masuk ke ruang belajar dan ikuti arahan tutor sampai sesi selesai.",
+        button: "Buka ruang belajar",
+        Icon: PlayCircle,
         tone: "emerald" as const,
       };
     case "student_review_session":
@@ -133,6 +146,24 @@ const copyFor = (action: SessionAction) => {
         Icon: ClipboardCheck,
         tone: "indigo" as const,
       };
+    case "cheap_teacher_mark_ready":
+      return {
+        eyebrow: "Waktunya mengajar",
+        title: "Konfirmasi hadir dan mulai kelas",
+        description: "Tekan satu kali saat kamu sudah siap di Zoom. Jam kehadiran pertama akan tercatat dan seluruh murid diberi tahu.",
+        button: "Buka Kelas Kelompok",
+        Icon: UserCheck,
+        tone: "indigo" as const,
+      };
+    case "cheap_teacher_session_started":
+      return {
+        eyebrow: "Kehadiran tercatat",
+        title: "Kelas Kelompok sedang berlangsung",
+        description: "Murid sudah diberi tahu. Buka Zoom dan mulai mengajar sesuai materi sesi hari ini.",
+        button: "Buka halaman kelas",
+        Icon: PlayCircle,
+        tone: "emerald" as const,
+      };
     case "cheap_teacher_revision_requested":
       return {
         eyebrow: "Perlu diperbaiki",
@@ -162,6 +193,15 @@ const copyFor = (action: SessionAction) => {
         Icon: BookOpen,
         tone: "emerald" as const,
       };
+    case "cheap_student_session_started":
+      return {
+        eyebrow: "Tutor sudah hadir",
+        title: "Kelas Kelompok sudah dimulai",
+        description: `Sesi ${action.session_number || "ini"} sedang berlangsung. Buka Kelas Saya lalu masuk ke Zoom untuk mulai belajar.`,
+        button: "Gabung belajar",
+        Icon: PlayCircle,
+        tone: "emerald" as const,
+      };
     case "cheap_student_class_completed":
       return {
         eyebrow: "Kelas selesai",
@@ -173,6 +213,13 @@ const copyFor = (action: SessionAction) => {
       };
   }
 };
+
+const acknowledgeOnOpen = new Set<SessionActionKind>([
+  "teacher_session_ready",
+  "student_session_started",
+  "cheap_teacher_session_started",
+  "cheap_student_session_started",
+]);
 
 const formattedSchedule = (value?: string) => {
   if (!value) return "";
@@ -193,14 +240,14 @@ export default function SessionActionReminder() {
   const [collapsed, setCollapsed] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
-  const role = useMemo(() => {
+  const role = (() => {
     try {
       const stored = JSON.parse(localStorage.getItem("user") || "null") as { role?: string } | null;
       return stored?.role || "";
     } catch {
       return "";
     }
-  }, [location.pathname]);
+  })();
 
   const load = useCallback(async () => {
     if (!localStorage.getItem("token") || !["student", "teacher", "admin"].includes(role)) {
@@ -216,7 +263,7 @@ export default function SessionActionReminder() {
         force: true,
       });
       const rawNext = response.data?.data || null;
-      const next = rawNext?.kind === "teacher_session_ready"
+      const next = rawNext && acknowledgeOnOpen.has(rawNext.kind)
         && sessionStorage.getItem(`bimbelku:session-action:ack:${rawNext.action_key}`) === "1"
         ? null
         : rawNext;
@@ -276,6 +323,13 @@ export default function SessionActionReminder() {
           && params.get("status") === "awaiting_admin_verification";
       }
 
+      if (action.cheap_class_id && action.kind.startsWith("cheap_student_")) {
+        const targetSessionId = Number(target.searchParams.get("cheap_session"));
+        return location.pathname === target.pathname
+          && Number(params.get("cheap_class")) === action.cheap_class_id
+          && (!targetSessionId || Number(params.get("cheap_session")) === targetSessionId);
+      }
+
       if (action.informational) {
         return location.pathname === target.pathname;
       }
@@ -306,6 +360,9 @@ export default function SessionActionReminder() {
       : "bg-indigo-600 hover:bg-indigo-700";
 
   const dismissInformational = async () => {
+    if (action && acknowledgeOnOpen.has(action.kind)) {
+      sessionStorage.setItem(`bimbelku:session-action:ack:${action.action_key}`, "1");
+    }
     if (!action?.notification_id) {
       setAction(null);
       return;
@@ -390,7 +447,7 @@ export default function SessionActionReminder() {
           )}
 
           <Button type="button" onClick={() => {
-            if (action.kind === "teacher_session_ready") {
+            if (acknowledgeOnOpen.has(action.kind)) {
               sessionStorage.setItem(`bimbelku:session-action:ack:${action.action_key}`, "1");
               setAction(null);
             }
@@ -401,7 +458,7 @@ export default function SessionActionReminder() {
           }} className={`mt-4 min-h-11 w-full rounded-xl font-black ${buttonClass}`}>
             {copy.button}<ChevronRight size={16} className="ml-2" />
           </Button>
-          <p className="mt-3 text-center text-[10px] font-semibold leading-4 text-slate-400">{action.informational ? "Ini hanya informasi. Kamu boleh menutupnya kapan saja." : action.kind === "teacher_session_ready" ? "Setelah dibuka, pesan ini selesai. BimbelKu akan mengingatkan lagi saat waktunya menutup sesi." : "Boleh diminimalkan, tetapi pengingat tetap tersedia sampai tugas selesai."}</p>
+          <p className="mt-3 text-center text-[10px] font-semibold leading-4 text-slate-400">{action.informational ? "Ini hanya informasi. Kamu boleh menutupnya kapan saja." : acknowledgeOnOpen.has(action.kind) ? "Setelah dibuka, pesan ini selesai. BimbelKu akan mengingatkan lagi saat ada langkah berikutnya." : "Boleh diminimalkan, tetapi pengingat tetap tersedia sampai tugas selesai."}</p>
         </div>
       </div>
     </aside>

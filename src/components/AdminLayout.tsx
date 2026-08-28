@@ -385,17 +385,19 @@ export default function AdminLayout({ children, title, subtitle = "Pusat operasi
           </div>
         </header>
 
-        <div className="flex-1 overflow-x-hidden overflow-y-auto px-3 py-5 pb-[calc(6.75rem+env(safe-area-inset-bottom))] sm:px-6 sm:py-7 sm:pb-[calc(6.75rem+env(safe-area-inset-bottom))] xl:px-8 xl:pb-7">
+        <div className="mobile-app-content flex-1 overflow-x-hidden overflow-y-auto p-4 pb-[calc(7.25rem+env(safe-area-inset-bottom))] sm:px-6 sm:py-7 sm:pb-[calc(6.75rem+env(safe-area-inset-bottom))] xl:px-8 xl:pb-7">
           <div className="mx-auto w-full min-w-0 max-w-[90rem] pb-12">{children}</div>
         </div>
-        <AdminMobileBottomNav
-          items={mobileNavigation}
-          isActive={isActive}
-          menuActive={!mobileNavigation.some((item) => isActive(item))}
-          attentionNotifications={attentionNotifications}
-          operationalCounts={operationalCounts}
-          onOpenMenu={() => setSidebarOpen(true)}
-        />
+        {!sidebarOpen && (
+          <AdminMobileBottomNav
+            items={mobileNavigation}
+            isActive={isActive}
+            menuActive={!mobileNavigation.some((item) => isActive(item))}
+            attentionNotifications={attentionNotifications}
+            operationalCounts={operationalCounts}
+            onOpenMenu={() => setSidebarOpen(true)}
+          />
+        )}
       </main>
     </div>
   );
@@ -478,7 +480,7 @@ function AdminMobileBottomNav({
   return (
     <nav
       aria-label="Navigasi utama admin"
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 px-2 pb-[max(env(safe-area-inset-bottom),0.45rem)] pt-1.5 shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur-xl xl:hidden"
+      className="fixed inset-x-3 bottom-[max(env(safe-area-inset-bottom),0.5rem)] z-40 rounded-[1.4rem] border border-slate-200/80 bg-white/95 p-1.5 shadow-[0_14px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl xl:hidden"
     >
       <div className="mx-auto grid max-w-lg grid-cols-5 gap-1">
         {items.map((item) => {
@@ -502,7 +504,7 @@ function AdminMobileBottomNav({
               to={item.to}
               aria-current={active ? "page" : undefined}
               aria-label={item.label}
-              className={`flex min-h-[3.6rem] min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-[10px] font-bold transition ${
+              className={`flex min-h-[3.45rem] min-w-0 flex-col items-center justify-center gap-1 rounded-[1rem] px-1 text-[10px] font-bold transition ${
                 active
                   ? "bg-orange-50 text-orange-600"
                   : "text-slate-400 hover:bg-slate-50 hover:text-slate-600"
@@ -521,7 +523,7 @@ function AdminMobileBottomNav({
           onClick={onOpenMenu}
           aria-label="Buka semua menu admin"
           aria-pressed={menuActive}
-          className={`flex min-h-[3.6rem] min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-[10px] font-bold transition ${
+          className={`flex min-h-[3.45rem] min-w-0 flex-col items-center justify-center gap-1 rounded-[1rem] px-1 text-[10px] font-bold transition ${
             menuActive
               ? "bg-orange-50 text-orange-600"
               : "text-slate-400 hover:bg-slate-50 hover:text-slate-600"

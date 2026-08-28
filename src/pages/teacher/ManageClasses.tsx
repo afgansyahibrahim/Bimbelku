@@ -35,6 +35,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import http, { getApiError, getCached } from "@/lib/http";
 import { isValidHttpUrl, validateUpload } from "@/lib/validation";
+import TeacherCheapClasses from "./CheapClasses";
 
 const LearningSessionHub = lazy(() => import("@/components/LearningSessionHub"));
 
@@ -92,6 +93,7 @@ type Action = "absence" | "emergency";
 type MethodFilter = "all" | TeacherClass["method"];
 type ScheduleSort = "nearest" | "farthest";
 type ClassScope = "active" | "history";
+type ClassKind = "all" | "private" | "group";
 
 const teacherHistoryStatuses = new Set(["completed", "refunded"]);
 
@@ -225,6 +227,29 @@ export default function ManageClasses() {
   const [classScope, setClassScope] = useState<ClassScope>("active");
   const [methodFilter, setMethodFilter] = useState<MethodFilter>("all");
   const [scheduleSort, setScheduleSort] = useState<ScheduleSort>("nearest");
+  const [groupRefreshToken, setGroupRefreshToken] = useState(0);
+  const [classKind, setClassKind] = useState<ClassKind>(() => {
+    const requested = searchParams.get("class_kind");
+    return requested === "group" || requested === "private" ? requested : "all";
+  });
+
+  useEffect(() => {
+    const requested = searchParams.get("class_kind");
+    setClassKind(requested === "group" || requested === "private" ? requested : "all");
+  }, [searchParams]);
+
+  const changeClassKind = (nextKind: ClassKind) => {
+    const next = new URLSearchParams(searchParams);
+    if (nextKind === "all") next.delete("class_kind");
+    else next.set("class_kind", nextKind);
+    if (nextKind !== "group") {
+      next.delete("cheap_class");
+      next.delete("cheap_session");
+      next.delete("cheap_action");
+    }
+    setClassKind(nextKind);
+    setSearchParams(next, { replace: true });
+  };
 
   useEffect(() => { void loadClasses(); }, []);
 
@@ -255,14 +280,23 @@ export default function ManageClasses() {
     return [...filtered].sort((left, right) => {
       const leftTime = parseDate(left.start_at)?.getTime();
       const rightTime = parseDate(right.start_at)?.getTime();
+      const leftEndTime = parseDate(left.end_at)?.getTime();
+      const rightEndTime = parseDate(right.end_at)?.getTime();
 
       if (leftTime === undefined && rightTime === undefined) return left.id - right.id;
       if (leftTime === undefined) return 1;
       if (rightTime === undefined) return -1;
 
+      const leftOngoing = left.status === "in_progress"
+        || (leftTime <= now && leftEndTime !== undefined && leftEndTime >= now);
+      const rightOngoing = right.status === "in_progress"
+        || (rightTime <= now && rightEndTime !== undefined && rightEndTime >= now);
       const leftUpcoming = leftTime >= now;
       const rightUpcoming = rightTime >= now;
 
+      if (scheduleSort === "nearest" && leftOngoing !== rightOngoing) {
+        return leftOngoing ? -1 : 1;
+      }
       if (leftUpcoming !== rightUpcoming) return leftUpcoming ? -1 : 1;
 
       if (scheduleSort === "nearest") {
@@ -415,22 +449,30 @@ export default function ManageClasses() {
     <TeacherLayout title="Kelas Saya">
       <div className="mx-auto max-w-7xl space-y-7 pb-12">
         <section data-tour="teacher-classes-hero" className="flex flex-col justify-between gap-5 rounded-[1.7rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-5 text-white shadow-xl sm:rounded-[2rem] sm:p-7 md:flex-row md:items-end">
-          <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Pelaksanaan sesi</p><h1 className="mt-3 text-2xl font-black sm:text-3xl">Kelas yang sudah dipesan</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Sistem membimbing sesi dari konfirmasi hadir sampai hasil belajar dan keputusan murid. Kelas yang selesai tetap dapat dibuka dari tab Riwayat.</p></div>
-          <Button onClick={() => void loadClasses()} variant="outline" className="rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"><RefreshCw size={16} className="mr-2" />Muat ulang</Button>
+          <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Pelaksanaan sesi</p><h1 className="mt-3 text-2xl font-black sm:text-3xl">Kelas yang sudah dipesan</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Kelola kelas privat dan kelompok dari satu halaman, mulai dari konfirmasi hadir sampai hasil belajar. Kelas yang selesai tetap dapat dibuka dari tab Riwayat.</p></div>
+          <Button onClick={() => { void loadClasses(); setGroupRefreshToken((current) => current + 1); }} variant="outline" className="rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"><RefreshCw size={16} className="mr-2" />Muat ulang</Button>
         </section>
 
-        <section data-tour="teacher-class-steps" className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <section className="rounded-[1.5rem] border border-slate-100 bg-white p-2 shadow-sm">
+          <div className="grid grid-cols-3 gap-1.5 rounded-2xl bg-slate-100 p-1.5">
+            {([['all', 'Semua'], ['private', 'Privat'], ['group', 'Kelompok']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => changeClassKind(value)} aria-pressed={classKind === value} className={`min-h-11 rounded-xl px-2 text-sm font-black transition ${classKind === value ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:bg-white/70"}`}>{label}</button>)}
+          </div>
+        </section>
+
+        <section className="rounded-[1.5rem] border border-slate-100 bg-white p-2 shadow-sm">
+          <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-slate-100 p-1.5">
+            <button type="button" onClick={() => setClassScope("active")} aria-pressed={classScope === "active"} className={`min-h-11 rounded-xl px-3 text-sm font-black transition ${classScope === "active" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:bg-white/70"}`}>Aktif</button>
+            <button type="button" onClick={() => setClassScope("history")} aria-pressed={classScope === "history"} className={`min-h-11 rounded-xl px-3 text-sm font-black transition ${classScope === "history" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:bg-white/70"}`}>Riwayat</button>
+          </div>
+        </section>
+
+        <div className={classKind === "group" ? "hidden" : "contents"}>
+
+        {classKind === "private" && <section data-tour="teacher-class-steps" className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           {["Siap mulai", "Kehadiran", "Akhiri sesi", "Hasil belajar", "Konfirmasi murid"].map((label, index) => <div key={label} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm"><span className="grid h-7 w-7 place-items-center rounded-lg bg-indigo-50 text-xs font-black text-indigo-700">{index + 1}</span><p className="mt-2 text-xs font-black leading-5 text-slate-700">{label}</p></div>)}
-        </section>
+        </section>}
 
-        {!loadError && classes.length > 0 && (
-          <section className="rounded-[1.5rem] border border-slate-100 bg-white p-2 shadow-sm">
-            <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-slate-100 p-1.5">
-              <button type="button" onClick={() => setClassScope("active")} aria-pressed={classScope === "active"} className={`min-h-11 rounded-xl px-3 text-sm font-black transition ${classScope === "active" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:bg-white/70"}`}>Aktif <span className="ml-1 text-xs">({activeClasses.length})</span></button>
-              <button type="button" onClick={() => setClassScope("history")} aria-pressed={classScope === "history"} className={`min-h-11 rounded-xl px-3 text-sm font-black transition ${classScope === "history" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:bg-white/70"}`}>Riwayat <span className="ml-1 text-xs">({historyClasses.length})</span></button>
-            </div>
-          </section>
-        )}
+        {classKind === "all" && <div className="my-7 flex items-center gap-3"><span className="h-px flex-1 bg-slate-200" /><h2 className="text-sm font-black uppercase tracking-[.16em] text-slate-500">Kelas Privat</h2><span className="h-px flex-1 bg-slate-200" /></div>}
 
         {!loadError && classes.length > 0 && (
           <section className="rounded-[1.7rem] border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
@@ -440,7 +482,7 @@ export default function ManageClasses() {
                   <Filter size={17} />
                 </span>
                 <div className="min-w-0">
-                  <p className="font-black text-slate-900">Filter kelas</p>
+                  <p className="font-black text-slate-900">{classKind === "all" ? "Filter kelas privat" : "Filter kelas"}</p>
                   <p className="truncate text-xs text-slate-500">{visibleClasses.length} dari {classScope === "active" ? activeClasses.length : historyClasses.length} kelas {classScope === "active" ? "aktif" : "riwayat"} ditampilkan</p>
                 </div>
               </div>
@@ -501,13 +543,25 @@ export default function ManageClasses() {
             <Button onClick={() => void loadClasses()} className="mt-5 rounded-xl bg-indigo-600 hover:bg-indigo-700"><RefreshCw size={16} className="mr-2" />Coba lagi</Button>
           </div>
         ) : classes.length === 0 ? (
-          <div className="rounded-[2rem] border-2 border-dashed border-slate-200 bg-white py-20 text-center"><BookOpen className="mx-auto h-11 w-11 text-slate-300" /><p className="mt-4 font-black text-slate-800">Belum ada kelas terkonfirmasi</p><p className="mt-1 text-sm text-slate-500">Permintaan baru tersedia pada menu Permintaan Bimbel.</p></div>
+          <div className="rounded-[2rem] border-2 border-dashed border-slate-200 bg-white py-20 text-center"><BookOpen className="mx-auto h-11 w-11 text-slate-300" /><p className="mt-4 font-black text-slate-800">Belum ada kelas privat terkonfirmasi</p><p className="mt-1 text-sm text-slate-500">Permintaan baru tersedia pada menu Permintaan Bimbel.</p></div>
         ) : visibleClasses.length === 0 ? (
           <div className="rounded-[2rem] border-2 border-dashed border-slate-200 bg-white px-5 py-14 text-center">
             <Filter className="mx-auto h-10 w-10 text-slate-300" />
-            <p className="mt-4 font-black text-slate-800">{classScope === "history" ? "Riwayat kelas masih kosong" : "Tidak ada kelas sesuai filter"}</p>
-            <p className="mt-1 text-sm text-slate-500">{classScope === "history" ? "Kelas yang sudah selesai atau direfund akan tersimpan di sini." : "Pilih metode lain atau tampilkan seluruh kelas."}</p>
-            <Button type="button" variant="outline" className="mt-5 rounded-xl" onClick={() => setMethodFilter("all")}>Tampilkan semua kelas</Button>
+            <p className="mt-4 font-black text-slate-800">
+              {classScope === "history"
+                ? "Riwayat kelas masih kosong"
+                : methodFilter === "all"
+                  ? "Belum ada jadwal kelas aktif"
+                  : `Belum ada jadwal kelas ${methodFilter}`}
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              {classScope === "history"
+                ? "Kelas yang sudah selesai atau direfund akan tersimpan di sini."
+                : methodFilter === "all"
+                  ? "Jadwal akan muncul di sini setelah kelas dengan murid dikonfirmasi."
+                  : "Belum ada jadwal dengan metode ini. Coba tampilkan semua metode."}
+            </p>
+            {methodFilter !== "all" && <Button type="button" variant="outline" className="mt-5 rounded-xl" onClick={() => setMethodFilter("all")}>Tampilkan semua metode</Button>}
           </div>
         ) : (
           <div data-tour="teacher-class-list" className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -547,6 +601,10 @@ export default function ManageClasses() {
             ))}
           </div>
         )}
+        </div>
+
+        {classKind === "all" && <div className="flex items-center gap-3"><span className="h-px flex-1 bg-slate-200" /><h2 className="text-sm font-black uppercase tracking-[.16em] text-slate-500">Kelas Kelompok</h2><span className="h-px flex-1 bg-slate-200" /></div>}
+        {classKind !== "private" && <TeacherCheapClasses embedded controlledScope={classScope} onScopeChange={setClassScope} refreshToken={groupRefreshToken} />}
       </div>
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => { if (!open) { setSelected(null); clearSessionActionQuery(); } }}>

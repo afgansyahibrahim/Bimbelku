@@ -1,5 +1,0 @@
-File yang dihapus setelah zero-reference audit:
-public/bimbel_cerdas.png
-
-Catatan:
-File ini hanya asset logo lama bertuliskan “Bimbel Cerdas”. Navbar Tahap 3 tidak lagi menggunakannya. `public/logo_bimbel.png` tetap dipertahankan karena masih digunakan sebagai favicon / OG / Twitter image di index.html.

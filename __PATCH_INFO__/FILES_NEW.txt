@@ -1,5 +1,0 @@
-CHECKPOINT_TAHAP_5_SESSION_PROGRESS_20260814.md
-bimbelku-backend/database/migrations/2026_08_14_210000_add_progress_history_to_cheap_class_sessions.php
-bimbelku-backend/database/migrations/2026_08_14_211000_add_no_change_reason_to_learning_progress_reports.php
-scripts/check-stage5-session-progress-guidance.mjs
-src/pages/teacher/TeacherLearningProgressDetail.tsx

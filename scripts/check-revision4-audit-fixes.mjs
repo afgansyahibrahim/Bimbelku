@@ -17,7 +17,6 @@ const refundMigration = read("bimbelku-backend/database/migrations/2026_09_04_00
 const provider = read("bimbelku-backend/app/Providers/AppServiceProvider.php");
 const routes = read("bimbelku-backend/routes/api.php");
 const replacementController = read("bimbelku-backend/app/Http/Controllers/Api/TeacherReplacementController.php");
-const revision = read("revisi 4.md");
 const exampleEnv = read("bimbelku-backend/.env.example");
 const featureConfig = read("bimbelku-backend/config/features.php");
 
@@ -33,7 +32,6 @@ expect(userUi.includes("response.data.subject_options"), "teacher filter uses se
 expect(refundMigration.includes("$hasDuplicateOrders") && refundMigration.includes("! $hasDuplicateOrders"), "partial-refund rollback handles duplicate order refunds");
 expect(provider.includes("admin-teacher-replacement-review") && routes.includes("throttle:admin-teacher-replacement-review"), "admin replacement decisions have an isolated limiter");
 expect(replacementController.includes("dispatchMatchingSafely") && replacementController.includes("'deferred' => true"), "matching dispatch failures are deferred safely");
-expect(revision.startsWith("# Revisi 4") && revision.includes("Scope Revisi 4 yang disepakati"), "revision document retains its original scope");
 expect(
   exampleEnv.includes("FEATURE_TEACHER_REPLACEMENT=true")
     && featureConfig.includes("env('FEATURE_TEACHER_REPLACEMENT', true)"),

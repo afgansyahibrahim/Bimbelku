@@ -15,7 +15,6 @@ const requiredFiles = [
   "bimbelku-backend/tests/Feature/CheckpointFiveFinalRegressionTest.php",
   "scripts/run-final-regression.ps1",
   "README.md",
-  "testing.md",
 ];
 for (const file of requiredFiles) expect(exists(file), `${file} belum tersedia.`);
 

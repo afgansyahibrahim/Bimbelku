@@ -20,8 +20,8 @@ class StageFiveContentController extends Controller
         $audience = $validated['audience'] ?? 'all';
         $now = now(config('app.timezone'));
 
-        // Banner adalah konten yang dapat diubah saat aplikasi sedang dipakai.
-        // Jangan biarkan browser menampilkan versi lama setelah admin menyimpan perubahan.
+        // Cache singkat mengurangi round-trip dashboard tanpa menahan perubahan
+        // terjadwal atau pembaruan admin terlalu lama.
         $banners = DynamicBanner::query()
             ->where('is_active', true)
             ->whereIn('audience', $audience === 'all' ? ['all'] : ['all', $audience])
@@ -33,7 +33,7 @@ class StageFiveContentController extends Controller
 
         return response()
             ->json($banners)
-            ->header('Cache-Control', 'no-store, max-age=0, must-revalidate');
+            ->header('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     }
 
     public function tutorials(Request $request)

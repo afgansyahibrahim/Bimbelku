@@ -21,7 +21,7 @@ class BannerAndCheapClassAccessTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_public_banner_response_is_not_cached_by_the_browser(): void
+    public function test_public_banner_response_uses_a_short_browser_cache(): void
     {
         DynamicBanner::create([
             'title' => 'Banner terbaru',
@@ -37,7 +37,11 @@ class BannerAndCheapClassAccessTest extends TestCase
             ->assertJsonPath('0.title', 'Banner terbaru');
 
         $this->assertStringContainsString(
-            'no-store',
+            'max-age=60',
+            (string) $response->headers->get('Cache-Control')
+        );
+        $this->assertStringContainsString(
+            'stale-while-revalidate=300',
             (string) $response->headers->get('Cache-Control')
         );
     }
@@ -61,7 +65,29 @@ class BannerAndCheapClassAccessTest extends TestCase
             ->assertJsonPath('0.image_path', 'stage-five/banners/banner.png')
             ->assertJsonPath('0.image_url', fn (string $url) => str_contains($url, '/api/public-media/stage-five/banners/banner.png'));
 
-        $this->get('/api/public-media/stage-five/banners/banner.png')->assertOk();
+        $mediaResponse = $this->get('/api/public-media/stage-five/banners/banner.png')->assertOk();
+        $this->assertStringContainsString(
+            'immutable',
+            (string) $mediaResponse->headers->get('Cache-Control')
+        );
+    }
+
+    public function test_missing_public_banner_image_does_not_emit_a_broken_media_url(): void
+    {
+        Storage::fake('public');
+        DynamicBanner::create([
+            'title' => 'Banner tanpa file',
+            'image_path' => 'stage-five/banners/missing.webp',
+            'audience' => 'student',
+            'destination_kind' => 'internal',
+            'destination_url' => '/student/dashboard',
+            'sort_order' => 0,
+            'is_active' => true,
+        ]);
+
+        $this->getJson('/api/content/banners?audience=student')
+            ->assertOk()
+            ->assertJsonPath('0.image_url', null);
     }
 
     public function test_primary_admin_can_load_cheap_class_form_and_lists(): void

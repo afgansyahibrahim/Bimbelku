@@ -96,6 +96,51 @@ class CheckpointThreeCommunicationAuditTest extends TestCase
         ]);
     }
 
+    public function test_admin_notification_recipients_are_searchable_paginated_and_minimal(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+            'email' => 'admin-notification@example.test',
+        ]);
+        config(['bimbelku.primary_admin_email' => $admin->email]);
+        $recipient = User::factory()->create([
+            'role' => 'student',
+            'status' => 'active',
+            'name' => 'Murid Penerima Khusus',
+            'email' => 'penerima-khusus@example.test',
+            'phone' => '081234567890',
+            'address' => 'Data privat tidak boleh ikut',
+        ]);
+        User::factory()->create([
+            'role' => 'teacher',
+            'status' => 'pending',
+            'name' => 'Tutor Belum Aktif',
+        ]);
+        Sanctum::actingAs($admin);
+
+        $this->getJson('/api/admin/notifications/recipients?q=Penerima&per_page=10')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $recipient->id)
+            ->assertJsonPath('data.0.name', 'Murid Penerima Khusus')
+            ->assertJsonPath('data.0.role', 'student')
+            ->assertJsonPath('meta.current_page', 1)
+            ->assertJsonMissingPath('data.0.phone')
+            ->assertJsonMissingPath('data.0.address');
+
+        $this->postJson('/api/admin/notifications/send', [
+            'user_id' => $recipient->id,
+            'title' => 'Pengingat belajar',
+            'message' => 'Jangan lupa melihat jadwal belajar terbaru.',
+            'type' => 'info',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $recipient->id,
+            'title' => 'Pengingat belajar',
+        ]);
+    }
+
     private function makePaidBooking(int $studentCount = 1): array
     {
         $teacher = User::factory()->create(['role' => 'teacher', 'status' => 'active']);

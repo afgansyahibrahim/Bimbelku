@@ -64,15 +64,18 @@ class LearningCatalogController extends Controller
         $chapters = collect();
 
         if (!$request->boolean('compact')) {
+            $subjectId = $request->integer('curriculum_subject_id');
             $subjectName = trim((string) $request->query('subject_name', ''));
             $educationLevel = trim((string) $request->query('education_level', ''));
             $grade = trim((string) $request->query('grade', ''));
 
             $chapterQuery = CurriculumChapter::query()
                 ->where('is_active', true)
-                ->whereHas('subject', function ($subjects) use ($subjectName) {
+                ->whereHas('subject', function ($subjects) use ($subjectId, $subjectName) {
                     $subjects->where('is_active', true);
-                    if ($subjectName !== '') {
+                    if ($subjectId > 0) {
+                        $subjects->whereKey($subjectId);
+                    } elseif ($subjectName !== '') {
                         $subjects->where('name', $subjectName);
                     }
                 })

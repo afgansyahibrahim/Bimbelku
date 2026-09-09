@@ -24,7 +24,7 @@ const teacherCheapController = read("bimbelku-backend/app/Http/Controllers/Api/T
 const cheapClassService = read("bimbelku-backend/app/Services/CheapClassService.php");
 
 expect(myPackages.includes('type PackageScope = "active" | "history"'), "Kelas Saya murid belum memisahkan proses dan riwayat paket");
-expect(myClasses.includes('["process", "Proses"') && myClasses.includes('["history", "Riwayat"') && myClasses.includes('<PackageProcessList scope="history"'), "Tab Proses/Riwayat Kelas Saya murid belum lengkap");
+expect(myClasses.includes('["process", "Dalam Proses"') && myClasses.includes('["history", "Riwayat"') && myClasses.includes('<PackageProcessList scope="history"'), "Tab Proses/Riwayat Kelas Saya murid belum lengkap");
 expect(myPackages.includes("Pemakaian sesi") && myPackages.includes("Bukan persentase penguasaan materi"), "Pemakaian sesi masih dapat disalahartikan sebagai progress akademik");
 expect(myPackages.includes('/student/progress/package/${item.id}'), "Shortcut progress dari Kelas Saya murid hilang");
 expect(myPackages.includes('scope: "active"') && myPackages.includes('scope: "history"'), "Kelas Saya murid masih membagi riwayat hanya dari satu halaman pagination");

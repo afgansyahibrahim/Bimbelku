@@ -55,4 +55,9 @@ class LearningPackage extends Model
     {
         return $this->hasMany(PromotionClaim::class);
     }
+
+    public function teacherReplacementRequests()
+    {
+        return $this->hasMany(TeacherReplacementRequest::class);
+    }
 }

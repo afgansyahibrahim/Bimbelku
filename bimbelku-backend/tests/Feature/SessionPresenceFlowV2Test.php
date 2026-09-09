@@ -187,6 +187,7 @@ class SessionPresenceFlowV2Test extends TestCase
             'duration_hours' => 1,
             'learning_mode' => 'online',
             'class_type' => 'private',
+            'meeting_link' => 'https://zoom.us/j/12345678901',
             'hourly_rate' => 50000,
             'total_amount' => 50000,
             'status' => 'confirmed',

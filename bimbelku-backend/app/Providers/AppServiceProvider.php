@@ -6,13 +6,16 @@ use App\Models\Booking;
 use App\Models\Order;
 use App\Models\Payout;
 use App\Models\Refund;
+use App\Models\TeacherReplacementRequest;
 use App\Observers\BookingObserver;
 use App\Observers\OrderObserver;
 use App\Observers\PayoutObserver;
 use App\Observers\RefundObserver;
+use App\Policies\TeacherReplacementRequestPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Routing\UrlRoutable;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -31,6 +34,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Gate::policy(TeacherReplacementRequest::class, TeacherReplacementRequestPolicy::class);
+
         $actorKey = static function (Request $request): string {
             $userId = $request->user()?->getAuthIdentifier();
 
@@ -103,10 +108,14 @@ class AppServiceProvider extends ServiceProvider
         $registerIsolatedLimiter('auth-login', 10, 'Percobaan login terlalu sering. Tunggu :seconds detik lalu coba lagi.');
         $registerIsolatedLimiter('auth-forgot-password', 5, 'Permintaan reset kata sandi terlalu sering. Tunggu :seconds detik lalu coba lagi.');
         $registerIsolatedLimiter('auth-reset-password', 5, 'Reset kata sandi dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+        $registerIsolatedLimiter('auth-email-verification-resend', 5, 'Permintaan kode verifikasi terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+        $registerIsolatedLimiter('auth-email-verification-verify', 10, 'Percobaan kode verifikasi terlalu sering. Tunggu :seconds detik lalu coba lagi.');
 
         // Shared authenticated actions.
         $registerIsolatedLimiter('account-password-change', 5, 'Perubahan kata sandi dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');
         $registerIsolatedLimiter('student-payment-pin-set', 5, 'Pengaturan PIN dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+        $registerIsolatedLimiter('student-payment-pin-reset-request', 3, 'Permintaan reset PIN terlalu sering. Tunggu :seconds detik lalu coba lagi.');
+        $registerIsolatedLimiter('student-payment-pin-reset', 10, 'Percobaan reset PIN terlalu sering. Tunggu :seconds detik lalu coba lagi.');
         $registerIsolatedLimiter('support-ticket-create', 10, 'Pembuatan tiket dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');
         $registerIsolatedLimiter('support-ticket-reply', 20, 'Balasan tiket dikirim terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['id']);
         $registerIsolatedLimiter('session-action-poll', 60, 'Pemeriksaan status sesi terlalu sering. Tunggu :seconds detik lalu coba lagi.');
@@ -123,6 +132,9 @@ class AppServiceProvider extends ServiceProvider
         $registerIsolatedLimiter('student-refund-destination', 10, 'Pemilihan tujuan refund dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['refund']);
         $registerIsolatedLimiter('student-package-retry', 5, 'Pencarian tutor diulang terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['learningPackage']);
         $registerIsolatedLimiter('student-package-reschedule', 5, 'Penjadwalan ulang dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['learningPackage']);
+        $registerIsolatedLimiter('student-teacher-replacement', 3, 'Pengajuan ganti guru dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['learningPackage', 'packageSubject']);
+        $registerIsolatedLimiter('student-teacher-replacement-action', 6, 'Aksi penggantian guru dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['teacherReplacement']);
+        $registerIsolatedLimiter('admin-teacher-replacement-review', 10, 'Keputusan penggantian guru dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['teacherReplacement']);
         $registerIsolatedLimiter('student-promotion-preview', 20, 'Pengecekan promo dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.');
         $registerIsolatedLimiter('student-promotion-claim', 10, 'Klaim promo dilakukan terlalu sering. Tunggu :seconds detik lalu coba lagi.', ['promotion']);
 

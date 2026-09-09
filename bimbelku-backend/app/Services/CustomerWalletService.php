@@ -13,6 +13,87 @@ use InvalidArgumentException;
 
 class CustomerWalletService
 {
+    public function creditOverpayment(Order $order, float $amount, ?int $actorId = null): CustomerWalletTransaction
+    {
+        $amount = $this->money($amount);
+        if ($amount <= 0) {
+            throw new InvalidArgumentException('Nominal kelebihan pembayaran harus lebih besar dari nol.');
+        }
+        $eventKey = "order:{$order->id}:overpayment_credit";
+        $existing = CustomerWalletTransaction::query()->where('event_key', $eventKey)->first();
+        if ($existing) {
+            return $existing;
+        }
+
+        return DB::transaction(function () use ($order, $amount, $actorId, $eventKey) {
+            $lockedOrder = Order::query()->lockForUpdate()->findOrFail($order->id);
+            abort_if($amount > (float) $lockedOrder->payment_surplus_amount + 0.009, 422, 'Nominal kelebihan pembayaran tidak valid.');
+            User::query()->whereKey($lockedOrder->user_id)->lockForUpdate()->firstOrFail();
+            $wallet = $this->lockedWalletForUser((int) $lockedOrder->user_id);
+            $this->assertMutationBaseline($wallet);
+            $before = $this->money($wallet->current_balance);
+            $after = $this->money($before + $amount);
+            $this->saveWallet($wallet, $after, $this->money($wallet->reserved_balance));
+
+            return $this->createTransaction([
+                'customer_wallet_id' => $wallet->id,
+                'user_id' => $lockedOrder->user_id,
+                'refund_id' => null,
+                'order_id' => $lockedOrder->id,
+                'actor_id' => $actorId,
+                'event_key' => $eventKey,
+                'type' => 'overpayment_credit',
+                'direction' => 'credit',
+                'amount' => $amount,
+                'balance_before' => $before,
+                'balance_after' => $after,
+                'description' => "Kelebihan pembayaran {$lockedOrder->order_id} masuk ke Saldo BimbelKu",
+                'metadata' => ['source' => 'external_transfer'],
+                'created_at' => now(),
+            ]);
+        }, 3);
+    }
+
+    public function creditExpiredPartialPayment(Order $order, float $amount): CustomerWalletTransaction
+    {
+        $amount = $this->money($amount);
+        if ($amount <= 0) {
+            throw new InvalidArgumentException('Nominal pembayaran parsial harus lebih besar dari nol.');
+        }
+        $eventKey = "order:{$order->id}:expired_partial_credit";
+        $existing = CustomerWalletTransaction::query()->where('event_key', $eventKey)->first();
+        if ($existing) {
+            return $existing;
+        }
+
+        return DB::transaction(function () use ($order, $amount, $eventKey) {
+            $lockedOrder = Order::query()->lockForUpdate()->findOrFail($order->id);
+            User::query()->whereKey($lockedOrder->user_id)->lockForUpdate()->firstOrFail();
+            $wallet = $this->lockedWalletForUser((int) $lockedOrder->user_id);
+            $this->assertMutationBaseline($wallet);
+            $before = $this->money($wallet->current_balance);
+            $after = $this->money($before + $amount);
+            $this->saveWallet($wallet, $after, $this->money($wallet->reserved_balance));
+
+            return $this->createTransaction([
+                'customer_wallet_id' => $wallet->id,
+                'user_id' => $lockedOrder->user_id,
+                'refund_id' => null,
+                'order_id' => $lockedOrder->id,
+                'actor_id' => null,
+                'event_key' => $eventKey,
+                'type' => 'expired_partial_credit',
+                'direction' => 'credit',
+                'amount' => $amount,
+                'balance_before' => $before,
+                'balance_after' => $after,
+                'description' => "Dana parsial {$lockedOrder->order_id} dikembalikan ke Saldo BimbelKu",
+                'metadata' => ['reason' => 'top_up_expired', 'source' => 'external_transfer'],
+                'created_at' => now(),
+            ]);
+        }, 3);
+    }
+
     public function creditRefund(Refund $refund, ?int $actorId = null, ?float $creditAmount = null): CustomerWalletTransaction
     {
         $eventKey = "refund:{$refund->id}:wallet_credit";
@@ -93,14 +174,20 @@ class CustomerWalletService
         $wallet = CustomerWallet::query()->where('user_id', $userId)->first();
         $balance = $this->money($wallet?->current_balance ?? 0);
         $supported = $this->supportsOrder($order);
-        $usable = $supported ? min($balance, $this->money($order->amount)) : 0.0;
+        $isTopUp = $order->status === 'partially_paid';
+        $usable = $isTopUp
+            ? $this->money($order->wallet_reserved_amount)
+            : ($supported ? min($balance, $this->money($order->amount)) : 0.0);
+        $externalDue = $isTopUp
+            ? $this->money($order->payment_outstanding_amount)
+            : $this->money(max(0, $this->money($order->amount) - $usable));
 
         return [
             'supported' => $supported,
             'balance' => $balance,
             'reserved_balance' => $this->money($wallet?->reserved_balance ?? 0),
             'usable_amount' => $usable,
-            'external_due' => $this->money(max(0, $this->money($order->amount) - $usable)),
+            'external_due' => $externalDue,
             'currency' => $wallet?->currency ?? 'IDR',
         ];
     }

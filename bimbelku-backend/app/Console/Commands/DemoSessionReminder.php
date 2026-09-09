@@ -14,6 +14,7 @@ use App\Models\PackagePlan;
 use App\Models\PackageSession;
 use App\Models\PackageSubject;
 use App\Models\TeacherProfile;
+use App\Models\TeacherSubject;
 use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +24,7 @@ class DemoSessionReminder extends Command
     protected $signature = 'demo:session-reminder
         {stage=setup : setup|checkout-ready|status|reset}';
 
-    protected $description = 'Menyiapkan Paket Belajar lokal lengkap untuk menguji Session Action Reminder tanpa menunggu aturan booking 72 jam';
+    protected $description = 'Menyiapkan Paket Belajar lokal lengkap untuk menguji Session Action Reminder tanpa menunggu aturan booking 24 jam';
 
     private const STUDENT_EMAIL = 'demo.student@bimbelku.local';
     private const TEACHER_EMAIL = 'demo.tutor@bimbelku.local';
@@ -93,7 +94,7 @@ class DemoSessionReminder extends Command
                 ]
             );
 
-            // setup menaruh sesi pada jendela check-in sekarang. Rule pemesanan 72 jam
+            // setup menaruh sesi pada jendela check-in sekarang. Rule pemesanan 24 jam
             // tidak disentuh karena command hanya membentuk fixture lokal setelah order dianggap paid.
             $start = now()->subMinutes(2)->startOfMinute();
             $end = $start->copy()->addHour();
@@ -247,7 +248,7 @@ class DemoSessionReminder extends Command
         $this->comment('3) Belajar seperti biasa. Jalankan checkout-ready saat ingin mempercepat akhir sesi.');
         $this->comment('4) Tutor: Akhiri Sesi -> Isi Hasil Belajar per Bab.');
         $this->comment('5) Murid: pilih Sesi Sesuai atau Ada masalah.');
-        $this->comment('Rule pemesanan 72 jam production tidak diubah.');
+        $this->comment('Rule pemesanan 24 jam production tidak diubah.');
 
         return self::SUCCESS;
     }
@@ -368,6 +369,19 @@ class DemoSessionReminder extends Command
 
     private function ensureDemoUsers(): array
     {
+        $catalogSubject = CurriculumSubject::query()->updateOrCreate(
+            ['normalized_name' => 'demo-matematika-session'],
+            [
+                'name' => 'Matematika Demo Session',
+                'group_name' => 'Demo',
+                'education_levels' => ['SMP'],
+                'grades' => ['Kelas 7'],
+                'is_elective' => false,
+                'is_active' => true,
+                'curriculum_name' => 'Kurikulum Merdeka',
+            ]
+        );
+
         $student = User::query()->updateOrCreate(
             ['email' => self::STUDENT_EMAIL],
             [
@@ -409,6 +423,19 @@ class DemoSessionReminder extends Command
                 'is_accepting_requests' => true,
             ]
         );
+
+        $profile = TeacherProfile::query()->where('user_id', $teacher->id)->firstOrFail();
+        TeacherSubject::query()->where('teacher_profile_id', $profile->id)->delete();
+        TeacherSubject::query()->create([
+            'teacher_profile_id' => $profile->id,
+            'curriculum_subject_id' => $catalogSubject->id,
+            'name' => 'Matematika',
+            'levels' => ['SMP'],
+            'is_active' => true,
+            'is_online' => true,
+            'is_offline' => false,
+            'is_private_active' => true,
+        ]);
 
         return [$student->fresh(), $teacher->fresh('teacherProfile')];
     }

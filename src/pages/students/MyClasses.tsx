@@ -39,6 +39,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import http, { getApiError, getCached } from "@/lib/http";
+import { announceNavigationAttentionChanged, unreadIdsForStudentClassTab, type AttentionNotification } from "@/lib/navigationAttention";
 import { validateUpload } from "@/lib/validation";
 
 const LearningSessionHub = lazy(() => import("@/components/LearningSessionHub"));
@@ -321,6 +322,7 @@ export default function MyClasses() {
   const [hubBookingId, setHubBookingId] = useState<number | null>(null);
   const [hubInitialTab, setHubInitialTab] = useState<"session">("session");
   const [hubReturnClass, setHubReturnClass] = useState<ClassItem | null>(null);
+  const [classAttention, setClassAttention] = useState<AttentionNotification[]>([]);
   const [subjectFilter, setSubjectFilter] = useState("all");
   const [scheduleSort, setScheduleSort] = useState<ScheduleSort>("nearest");
   const [activeTab, setActiveTab] = useState<ClassTab>(() => {
@@ -357,6 +359,21 @@ export default function MyClasses() {
     next.delete("cheap_session");
     next.delete("session_action");
     setSearchParams(next, { replace: true });
+  };
+
+  const openTab = async (value: ClassTab) => {
+    changeTab(value);
+    const ids = unreadIdsForStudentClassTab(value, classAttention);
+    if (!ids.length) return;
+
+    const idSet = new Set(ids);
+    setClassAttention((current) => current.filter((item) => !idSet.has(item.id)));
+    try {
+      await http.post("/notifications/read-batch", { ids });
+      announceNavigationAttentionChanged();
+    } catch {
+      // Polling layout akan mengembalikan indikator bila status baca gagal disimpan.
+    }
   };
 
   useEffect(() => {
@@ -689,7 +706,7 @@ export default function MyClasses() {
   };
 
   return (
-    <StudentLayout title="Kelas Saya">
+    <StudentLayout title="Kelas Saya" onAttentionNotificationsChange={setClassAttention}>
       <div className="mx-auto max-w-7xl space-y-5 pb-4 sm:space-y-7 sm:pb-12">
         <section data-tour="student-classes-hero" className="flex flex-col justify-between gap-5 rounded-[1.75rem] bg-gradient-to-br from-indigo-950 to-violet-900 p-5 text-white shadow-xl sm:rounded-[2rem] sm:p-7 md:flex-row md:items-end">
           <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Pusat belajar</p><h1 className="mt-3 text-2xl font-black sm:text-3xl">Kelas Saya</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Pantau pesanan, buka jadwal belajar, dan lihat riwayat kelas privat maupun kelompok dalam satu halaman.</p></div>
@@ -710,11 +727,12 @@ export default function MyClasses() {
                 key={value}
                 type="button"
                 aria-pressed={activeTab === value}
-                onClick={() => changeTab(value)}
-                className={`flex min-h-12 min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 text-xs font-black transition sm:text-sm ${activeTab === value ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`}
+                onClick={() => void openTab(value)}
+                className={`relative flex min-h-12 min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 text-xs font-black transition sm:text-sm ${activeTab === value ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`}
               >
                 <Icon className="shrink-0" size={16} />
                 <span className="truncate">{label}</span>
+                {unreadIdsForStudentClassTab(value, classAttention).length > 0 && <span aria-label={`Ada pembaruan baru di ${label}`} className={`absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-rose-500 ${activeTab === value ? "ring-2 ring-indigo-600" : "ring-2 ring-white"}`} />}
               </button>
             ))}
           </div>

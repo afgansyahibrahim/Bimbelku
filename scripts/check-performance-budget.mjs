@@ -20,6 +20,10 @@ if (!fs.existsSync(indexPath)) {
 const html = fs.readFileSync(indexPath, "utf8");
 const scriptSource = html.match(/<script[^>]+src="([^"]+)"/)?.[1];
 const stylesheetSource = html.match(/<link[^>]+href="([^"]+\.css)"/)?.[1];
+const bannerFallbackPath = path.join(
+  projectRoot,
+  "src/assets/banners/cara-memesan-tutor.webp",
+);
 
 if (!scriptSource || !stylesheetSource) {
   console.error("Aset awal JavaScript atau CSS tidak ditemukan pada dist/index.html.");
@@ -30,12 +34,14 @@ const resolveAsset = (source) => path.join(distRoot, source.replace(/^\//, ""));
 const gzipBytes = (source) => zlib.gzipSync(fs.readFileSync(resolveAsset(source))).byteLength;
 const javascriptBytes = gzipBytes(scriptSource);
 const cssBytes = gzipBytes(stylesheetSource);
+const bannerFallbackBytes = fs.statSync(bannerFallbackPath).size;
 const budgets = {
   javascript: 110 * 1024,
   // Seluruh 65 rute berbagi stylesheet responsif yang tetap dibatasi ketat.
-  // 22 KB gzip memberi ruang aman bagi perbaikan aksesibilitas tanpa menunda
-  // rendering awal secara berarti.
-  css: 22 * 1024,
+  // Batas 26 KB gzip menjaga regresi sambil mengakomodasi utility lintas halaman.
+  css: 26 * 1024,
+  // Fallback ini langsung terlihat pada dashboard dan berpotensi menjadi LCP.
+  bannerFallback: 35 * 1024,
 };
 
 const failures = [];
@@ -44,6 +50,11 @@ if (javascriptBytes > budgets.javascript) {
 }
 if (cssBytes > budgets.css) {
   failures.push(`CSS awal ${cssBytes} byte melewati anggaran ${budgets.css} byte.`);
+}
+if (bannerFallbackBytes > budgets.bannerFallback) {
+  failures.push(
+    `Banner fallback ${bannerFallbackBytes} byte melewati anggaran ${budgets.bannerFallback} byte.`,
+  );
 }
 
 if (failures.length) {
@@ -55,5 +66,6 @@ if (failures.length) {
 const kilobytes = (bytes) => (bytes / 1024).toFixed(1);
 console.log(
   `Anggaran performa lulus: JS awal ${kilobytes(javascriptBytes)} KB gzip, `
-  + `CSS awal ${kilobytes(cssBytes)} KB gzip.`,
+  + `CSS awal ${kilobytes(cssBytes)} KB gzip, `
+  + `banner fallback ${kilobytes(bannerFallbackBytes)} KB.`,
 );

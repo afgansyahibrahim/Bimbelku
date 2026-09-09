@@ -118,6 +118,7 @@ type SavedDraft = {
 const DRAFT_KEY = "bimbelku.package-builder.stage-6a";
 const MULTI_SUBJECT_TUTORIAL_KEY = "bimbelku.tutorial.student.multi-subject.v1";
 const MAX_WEEKDAYS_PER_SUBJECT = 4;
+const maxWeekdaysForSessions = (count: number) => count === 1 ? 1 : count === 4 ? 2 : 4;
 
 const draftKeyForCurrentUser = () => {
   try {
@@ -295,7 +296,7 @@ export default function PackageBuilder() {
   const [bookingRules, setBookingRules] = useState<BookingRules>({
     booking_lead_hours: 24,
     renewal_booking_lead_hours: 12,
-    maximum_search_hours: 12,
+    maximum_search_hours: 24,
     matching_cutoff_hours: 2,
     teacher_response_minutes: 60,
     teacher_offer_wave_size: 3,
@@ -330,6 +331,8 @@ export default function PackageBuilder() {
   const draftStorageKey = useMemo(draftKeyForCurrentUser, []);
 
   const plan = plans.find((item) => item.id === planId);
+  const weekdayLimit = maxWeekdaysForSessions(Number(plan?.session_count || 0));
+  const packageWeekdays = new Set(subjects.flatMap((item) => item.weekdays));
   // Nilai aman hanya dipakai untuk menghitung tampilan. Pilihan pengguna tetap kosong sampai dipilih.
   const effectiveDurationHours: DurationHours = durationHours || 1;
   const availableTimeSlots = useMemo(
@@ -388,11 +391,12 @@ export default function PackageBuilder() {
     && schedulesDoNotOverlap
     && scheduleRangeDays <= plan.validity_days
     && (mode === "online" || hasOfflineLocation)
+    && packageWeekdays.size <= weekdayLimit
     && subjects.every((item) => item.curriculum_subject_id
       && item.subject_name
       && item.curriculum_chapter_ids.length > 0
       && item.weekdays.length > 0
-      && item.weekdays.length <= MAX_WEEKDAYS_PER_SUBJECT
+      && item.weekdays.length <= weekdayLimit
       && item.schedules.length === item.session_count
       && item.schedules.every(Boolean)
       && availableTimeSlots.some((slot) => slot.start_time.slice(0, 5) === item.schedule_time)),
@@ -590,7 +594,13 @@ export default function PackageBuilder() {
       setMaterialsLoading((current) => ({ ...current, [id]: true }));
       void import("@/lib/http").then(({ getCached, getApiError }) =>
         getCached<{ chapters: CurriculumChapterOption[] }>("/learning-catalog", {
-          params: { subject_name: name, education_level: level, grade, chapters_only: 1 },
+          params: {
+            curriculum_subject_id: id,
+            subject_name: name,
+            education_level: level,
+            grade,
+            chapters_only: 1,
+          },
           maxAgeMs: 60_000,
         }).then((response) => {
           setMaterialCatalogs((current) => ({ ...current, [id]: {
@@ -970,7 +980,7 @@ export default function PackageBuilder() {
     Boolean(plan),
     subjects.every((item) => item.curriculum_subject_id && item.curriculum_chapter_ids.length > 0),
     Boolean(plan && selectedSessions === plan.session_count),
-    subjects.every((item) => item.weekdays.length > 0 && item.weekdays.length <= MAX_WEEKDAYS_PER_SUBJECT && item.schedules.length === item.session_count && item.schedules.every(Boolean)) && schedulesDoNotOverlap,
+    packageWeekdays.size <= weekdayLimit && subjects.every((item) => item.weekdays.length > 0 && item.schedules.length === item.session_count && item.schedules.every(Boolean)) && schedulesDoNotOverlap,
     Boolean(draftValid && quote),
   ];
   const firstIncomplete = completedSteps.findIndex((done) => !done);
@@ -1267,8 +1277,8 @@ export default function PackageBuilder() {
                       <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
                         {WEEKDAYS.map((day) => {
                           const active = item.weekdays.includes(day.value);
-                          const limitReached = item.weekdays.length >= MAX_WEEKDAYS_PER_SUBJECT;
-                          const disabled = !active && limitReached;
+                          const limitReached = packageWeekdays.size >= weekdayLimit;
+                          const disabled = !active && !packageWeekdays.has(day.value) && limitReached;
                           return <button
                             key={day.value}
                             type="button"
@@ -1282,17 +1292,17 @@ export default function PackageBuilder() {
                               if (weekdays.length) updateSubject(item.key, { weekdays });
                             }}
                             className={`min-h-11 rounded-xl border px-2 text-xs font-black transition ${active ? "border-indigo-600 bg-indigo-600 text-white" : disabled ? "cursor-not-allowed border-slate-100 bg-slate-100 text-slate-300" : "border-slate-200 bg-white text-slate-600 hover:border-indigo-300 hover:text-indigo-700"}`}
-                            title={disabled ? `Maksimal ${MAX_WEEKDAYS_PER_SUBJECT} hari belajar` : day.label}
+                            title={disabled ? `Maksimal ${weekdayLimit} hari belajar` : day.label}
                           >
                             {day.short}
                           </button>;
                         })}
                       </div>
                       <div className="mt-2 flex flex-wrap items-center justify-between gap-1.5 text-xs font-medium">
-                        <p className={item.weekdays.length >= MAX_WEEKDAYS_PER_SUBJECT ? "font-bold text-amber-700" : "text-slate-500"}>
-                          Maksimal {MAX_WEEKDAYS_PER_SUBJECT} hari per mapel · {item.weekdays.length}/{MAX_WEEKDAYS_PER_SUBJECT} dipilih
+                        <p className={packageWeekdays.size >= weekdayLimit ? "font-bold text-amber-700" : "text-slate-500"}>
+                          Maksimal {weekdayLimit} hari unik untuk seluruh paket · {packageWeekdays.size}/{weekdayLimit} dipilih
                         </p>
-                        {item.weekdays.length >= MAX_WEEKDAYS_PER_SUBJECT && <span className="rounded-full bg-amber-100 px-2 py-1 font-black text-amber-800">Batas tercapai</span>}
+                        {packageWeekdays.size >= weekdayLimit && <span className="rounded-full bg-amber-100 px-2 py-1 font-black text-amber-800">Batas tercapai</span>}
                       </div>
                       <p className="mt-1 text-xs font-medium text-slate-500">Jam yang dipilih berlaku sama pada seluruh hari. Tanggal tertentu dapat digeser sebelum tutor dicari.</p>
                     </div>

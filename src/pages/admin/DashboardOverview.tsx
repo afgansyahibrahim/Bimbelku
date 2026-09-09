@@ -64,8 +64,10 @@ interface DashboardData {
     payouts: boolean;
     teachers: boolean;
     users: boolean;
+    classes: boolean;
   };
   generated_at: string;
+  operational_chart?: Array<{ date: string; label: string; sessions: number; orders: number; confirmed: number; in_progress: number; completed: number; attention: number }>;
 }
 
 const emptyData: DashboardData = {
@@ -90,6 +92,7 @@ const emptyData: DashboardData = {
     payouts: false,
     teachers: false,
     users: false,
+    classes: false,
   },
   generated_at: "",
 };
@@ -247,6 +250,8 @@ export default function DashboardOverview() {
             ))}
           </div>
         </section>
+
+        {data.operational_chart && (data.visible_sections.classes || data.visible_sections.payments) && <OperationalChart rows={data.operational_chart} showSessions={data.visible_sections.classes} showOrders={data.visible_sections.payments} />}
 
         <section>
           <div className="mb-4 flex items-end justify-between gap-4">
@@ -434,6 +439,107 @@ export default function DashboardOverview() {
   );
 }
 
+function OperationalChart({ rows, showSessions, showOrders }: { rows: NonNullable<DashboardData["operational_chart"]>; showSessions: boolean; showOrders: boolean }) {
+  const [selectedRow, setSelectedRow] = useState<NonNullable<DashboardData["operational_chart"]>[number] | null>(null);
+  const max = Math.max(1, ...rows.map((row) => Math.max(showSessions ? row.sessions : 0, showOrders ? row.orders : 0)));
+  const totals = rows.reduce(
+    (sum, row) => ({
+      confirmed: sum.confirmed + row.confirmed,
+      in_progress: sum.in_progress + row.in_progress,
+      completed: sum.completed + row.completed,
+      attention: sum.attention + row.attention,
+    }),
+    { confirmed: 0, in_progress: 0, completed: 0, attention: 0 },
+  );
+  const barHeight = (value: number) => (value === 0 ? 2 : Math.max(12, Math.round((value / max) * 112)));
+  const selectedDate = selectedRow
+    ? new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date(`${selectedRow.date}T00:00:00`))
+    : "";
+
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-black text-slate-950">Tren operasional 7 hari</h2>
+          <p className="mt-1 text-sm text-slate-500">Angka tampil di atas batang. Ketuk salah satu hari untuk melihat rinciannya.</p>
+        </div>
+        <div className="flex flex-wrap gap-3 text-[11px] font-bold text-slate-500" aria-label="Keterangan diagram">
+          {showSessions && <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-indigo-500" />Sesi</span>}
+          {showOrders && <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-orange-400" />Pesanan</span>}
+        </div>
+      </div>
+
+      <div className="mt-5 overflow-x-auto pb-2" tabIndex={0} aria-label="Diagram tren operasional, dapat digeser ke samping di layar kecil">
+        <div className="grid min-w-[35rem] grid-cols-7 gap-2 sm:min-w-0 sm:gap-3">
+          {rows.map((row) => {
+            const selected = selectedRow?.date === row.date;
+            return (
+              <button
+                key={row.date}
+                type="button"
+                onClick={() => setSelectedRow(row)}
+                aria-pressed={selected}
+                aria-label={`${row.label}: ${row.sessions} sesi, ${row.orders} pesanan, ${row.attention} bermasalah. Tampilkan rincian.`}
+                className={`group min-w-0 rounded-xl px-1 pt-2 text-center outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 ${selected ? "bg-orange-50 ring-2 ring-orange-400" : ""}`}
+              >
+                <div className="relative flex h-40 items-end justify-center gap-1 border-b-2 border-slate-300 pb-0 sm:gap-2">
+                  {showSessions && (
+                    <div className="flex h-full w-6 flex-col items-center justify-end sm:w-8">
+                      <span className="mb-1 text-[11px] font-black tabular-nums text-indigo-700">{row.sessions}</span>
+                      <span className="w-4 rounded-t-md bg-indigo-500 transition group-hover:bg-indigo-600 sm:w-6" style={{ height: `${barHeight(row.sessions)}px` }} />
+                    </div>
+                  )}
+                  {showOrders && (
+                    <div className="flex h-full w-6 flex-col items-center justify-end sm:w-8">
+                      <span className="mb-1 text-[11px] font-black tabular-nums text-orange-700">{row.orders}</span>
+                      <span className="w-4 rounded-t-md bg-orange-400 transition group-hover:bg-orange-500 sm:w-6" style={{ height: `${barHeight(row.orders)}px` }} />
+                    </div>
+                  )}
+                </div>
+                <div className="h-14 pt-2">
+                  <p className="truncate text-[10px] font-bold text-slate-500 sm:text-xs">{row.label}</p>
+                  <p className={`mt-1 min-h-4 text-[10px] font-black ${row.attention > 0 ? "text-rose-600" : "text-transparent"}`} aria-hidden={row.attention === 0}>
+                    {row.attention > 0 ? `${row.attention} masalah` : "0 masalah"}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {selectedRow && (
+        <div className="mt-3 rounded-2xl border border-orange-200 bg-orange-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-black capitalize text-slate-950" aria-live="polite">Rincian {selectedDate}</p>
+            <button type="button" onClick={() => setSelectedRow(null)} className="min-h-9 rounded-lg px-3 text-xs font-black text-slate-600 hover:bg-white">Tutup</button>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            {showSessions && <ChartDetail label="Sesi" value={selectedRow.sessions} tone="text-indigo-700" />}
+            {showOrders && <ChartDetail label="Pesanan" value={selectedRow.orders} tone="text-orange-700" />}
+            {showSessions && <ChartDetail label="Terjadwal" value={selectedRow.confirmed} tone="text-blue-700" />}
+            {showSessions && <ChartDetail label="Berjalan" value={selectedRow.in_progress} tone="text-amber-700" />}
+            {showSessions && <ChartDetail label="Selesai" value={selectedRow.completed} tone="text-emerald-700" />}
+            {showSessions && <ChartDetail label="Bermasalah" value={selectedRow.attention} tone="text-rose-700" />}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <StatusSummary label="Terjadwal" value={totals.confirmed} tone="text-blue-700 bg-blue-50" />
+        <StatusSummary label="Berjalan" value={totals.in_progress} tone="text-amber-700 bg-amber-50" />
+        <StatusSummary label="Selesai" value={totals.completed} tone="text-emerald-700 bg-emerald-50" />
+        <StatusSummary label="Bermasalah" value={totals.attention} tone="text-rose-700 bg-rose-50" />
+      </div>
+    </section>
+  );
+}
+
+function ChartDetail({ label, value, tone }: { label: string; value: number; tone: string }) {
+  return <div className="rounded-xl bg-white p-3"><p className={`text-lg font-black tabular-nums ${tone}`}>{value}</p><p className="mt-0.5 text-[11px] font-bold text-slate-500">{label}</p></div>;
+}
+
+function StatusSummary({ label, value, tone }: { label: string; value: number; tone: string }) { return <div className={`rounded-2xl p-3 ${tone}`}><p className="text-xl font-black">{value}</p><p className="mt-1 text-[11px] font-bold">{label}</p></div>; }
 function HeroMetric({ label, value, icon: Icon }: { label: string; value: number; icon: typeof SearchCheck }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">

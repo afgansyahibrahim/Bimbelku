@@ -10,11 +10,15 @@ class Refund extends Model
     use HasAutomaticPublicCode;
 
     protected $guarded = ['id'];
+
     protected $hidden = ['proof'];
+
     protected $appends = ['proof_url'];
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'wallet_refund_amount' => 'decimal:2',
+        'external_refund_amount' => 'decimal:2',
         'processed_at' => 'datetime',
         'destination_selected_at' => 'datetime',
         'destination_selection_version' => 'integer',
@@ -66,6 +70,13 @@ class Refund extends Model
      */
     public function tenderBreakdown(): array
     {
+        if ($this->wallet_refund_amount !== null && $this->external_refund_amount !== null) {
+            return [
+                'total_amount' => round((float) $this->amount, 2),
+                'wallet_funded_amount' => round((float) $this->wallet_refund_amount, 2),
+                'external_funded_amount' => round((float) $this->external_refund_amount, 2),
+            ];
+        }
         $order = $this->relationLoaded('order') ? $this->getRelation('order') : $this->order()->first();
         $total = round(max(0, (float) $this->amount), 2);
         $orderAmount = round(max(0, (float) ($order?->amount ?? $total)), 2);

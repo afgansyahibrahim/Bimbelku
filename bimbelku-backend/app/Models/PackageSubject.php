@@ -52,6 +52,16 @@ class PackageSubject extends Model
 
     public function bookingRequest()
     {
-        return $this->hasOne(BookingRequest::class);
+        return $this->hasOne(BookingRequest::class)->oldestOfMany();
+    }
+
+    public function teacherReplacementRequests()
+    {
+        return $this->hasMany(TeacherReplacementRequest::class);
+    }
+
+    public function latestTeacherReplacement()
+    {
+        return $this->hasOne(TeacherReplacementRequest::class)->latestOfMany();
     }
 }

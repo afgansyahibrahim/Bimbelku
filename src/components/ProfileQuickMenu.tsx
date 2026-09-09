@@ -1,16 +1,15 @@
-import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { ChevronDown, CircleHelp, Settings, UserRound } from "lucide-react";
-import LogoutButton from "@/components/LogoutButton";
+import { ChevronDown, CircleHelp, LogOut, Settings, UserRound } from "lucide-react";
+import { useLogout } from "@/hooks/useLogout";
 
 type Accent = "student" | "teacher" | "admin";
 
 const styles: Record<Accent, { ring: string; badge: string; icon: string }> = {
   student: {
-    ring: "from-blue-500 to-indigo-600 shadow-blue-500/20",
-    badge: "bg-blue-50 text-blue-700",
-    icon: "bg-blue-50 text-blue-700",
+    ring: "from-slate-300 to-slate-500 shadow-slate-500/20",
+    badge: "bg-slate-100 text-slate-700",
+    icon: "bg-slate-100 text-slate-700",
   },
   teacher: {
     ring: "from-indigo-500 to-violet-600 shadow-indigo-500/20",
@@ -41,9 +40,15 @@ export default function ProfileQuickMenu({
 }) {
   const [open, setOpen] = useState(false);
   const location = useLocation();
+  const logout = useLogout();
   const tone = styles[accent];
   const image = user?.avatar_url || user?.avatar || user?.photo || user?.photo_url;
   const initial = String(user?.name || roleLabel || "U").trim().charAt(0).toUpperCase();
+
+  const handleLogout = () => {
+    setOpen(false);
+    void logout();
+  };
 
   useEffect(() => setOpen(false), [location.pathname, location.search]);
 
@@ -73,7 +78,7 @@ export default function ProfileQuickMenu({
         className="group flex min-h-11 min-w-11 items-center justify-end gap-2 rounded-2xl px-1.5 py-1 transition hover:bg-slate-50 sm:gap-3 sm:px-2"
       >
         <div className="hidden min-w-0 text-right md:block">
-          <p className="max-w-40 truncate text-sm font-black leading-tight text-slate-800">{user?.name || "Memuat..."}</p>
+          <p className="max-w-[15rem] break-words whitespace-normal text-sm font-black leading-tight text-slate-800">{user?.name || "Memuat..."}</p>
           <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${tone.badge}`}>{roleLabel}</span>
         </div>
         <div className={`h-10 w-10 shrink-0 rounded-full bg-gradient-to-tr p-[2px] shadow-lg ${tone.ring}`}>
@@ -109,7 +114,7 @@ export default function ProfileQuickMenu({
                   {image ? <img src={image} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <span className="font-black">{initial}</span>}
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate font-black">{user?.name || "Pengguna BimbelKu"}</p>
+                  <p className="break-words whitespace-normal font-black leading-tight">{user?.name || "Pengguna BimbelKu"}</p>
                   <p className="mt-0.5 truncate text-xs text-slate-300">{user?.email || "Akun BimbelKu"}</p>
                   <span className="mt-2 inline-flex rounded-full bg-white/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-white">{roleLabel}</span>
                 </div>
@@ -136,8 +141,17 @@ export default function ProfileQuickMenu({
             </div>
 
             <div className="mt-2 border-t border-slate-100 pt-2">
-              <LogoutButton accent={accent} />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={handleLogout}
+                className="flex min-h-12 w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-black text-rose-600 transition hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
+              >
+                <span className="grid h-9 w-9 place-items-center rounded-xl bg-rose-50 text-rose-600"><LogOut size={17} /></span>
+                Keluar
+              </button>
             </div>
+
           </div>
         </>
       )}

@@ -1,9 +1,7 @@
-import { notify } from "@/lib/notify";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { BookOpenCheck, LayoutDashboard, LogOut, Menu, User, X } from "lucide-react";
-import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
+import { BookOpenCheck, LayoutDashboard, Menu, User, X } from "lucide-react";
 import StudentPackageLink from "@/components/StudentPackageLink";
 
 const readStoredUser = () => {
@@ -22,10 +20,8 @@ const readStoredUser = () => {
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [user, setUser] = useState<any>(() => readStoredUser());
+  const [user] = useState<any>(() => readStoredUser());
   const location = useLocation();
-  const navigate = useNavigate();
-  const confirm = useConfirmDialog();
 
   const isNavActive = (href: string) =>
     location.pathname === href || location.pathname.startsWith(`${href}/`);
@@ -45,31 +41,6 @@ const Navbar = () => {
   useEffect(() => {
     setIsOpen(false);
   }, [location.pathname, location.search]);
-
-  const handleLogout = async () => {
-    const approved = await confirm({
-      title: "Keluar dari akun?",
-      description: "Sesi pada perangkat ini akan ditutup. Data yang sudah tersimpan tetap aman.",
-      confirmText: "Ya, keluar",
-      cancelText: "Tetap masuk",
-      tone: "danger",
-    });
-    if (!approved) return;
-
-    try {
-      const { default: http } = await import("@/lib/http");
-      await http.post("/logout");
-    } catch {
-      // Token lokal tetap dibersihkan jika sesi server sudah berakhir.
-    } finally {
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-      setUser(null);
-      setIsOpen(false);
-      notify.success("Anda telah keluar dari akun.");
-      navigate("/", { replace: true });
-    }
-  };
 
   const getDashboardLink = () => {
     if (!user) return "/login";
@@ -137,9 +108,7 @@ const Navbar = () => {
                     <LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard
                   </Button>
                 </Link>
-                <Button variant="ghost" size="sm" onClick={handleLogout} className="rounded-xl font-bold text-red-600 hover:bg-red-50 hover:text-red-700">
-                  Keluar
-                </Button>
+
               </>
             ) : (
               <>
@@ -201,9 +170,7 @@ const Navbar = () => {
                         <LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard Saya
                       </Button>
                     </Link>
-                    <Button variant="ghost" onClick={handleLogout} className="w-full justify-start rounded-xl font-bold text-red-600 hover:bg-red-50">
-                      <LogOut className="mr-2 h-4 w-4" /> Keluar
-                    </Button>
+
                   </div>
                 ) : (
                   <div className="grid gap-2 sm:grid-cols-2">

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\TeacherProfile;
+use App\Models\TeacherSubject;
 use App\Models\User;
 use Database\Seeders\CurriculumCatalogSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -232,6 +233,41 @@ class StageFourAccountFlowTest extends TestCase
             ->assertUnprocessable();
     }
 
+    public function test_teacher_filter_options_are_not_limited_to_the_current_page(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
+        $subjectNames = collect(range(1, 11))->map(fn (int $number) => sprintf('Mapel %02d', $number));
+        foreach ($subjectNames as $subjectName) {
+            $teacher = User::factory()->create(['role' => 'teacher', 'status' => 'active']);
+            $profile = TeacherProfile::create([
+                'user_id' => $teacher->id,
+                'points' => 150,
+                'is_accepting_requests' => true,
+            ]);
+            TeacherSubject::create([
+                'teacher_profile_id' => $profile->id,
+                'name' => $subjectName,
+                'levels' => ['SMP'],
+                'is_active' => true,
+                'is_online' => true,
+                'is_offline' => false,
+                'is_private_active' => true,
+                'is_group_active' => false,
+            ]);
+        }
+        Sanctum::actingAs($admin);
+
+        $response = $this->getJson('/api/admin/users?role=teacher&per_page=10')
+            ->assertOk()
+            ->assertJsonCount(10, 'data');
+
+        $this->assertEqualsCanonicalizing(
+            $subjectNames->all(),
+            $response->json('subject_options')
+        );
+    }
+
+
     public function test_student_can_save_a_personal_cover_without_changing_password(): void
     {
         Storage::fake('public');
@@ -256,6 +292,44 @@ class StageFourAccountFlowTest extends TestCase
         $this->assertNotNull($student->profile_cover);
         Storage::disk('public')->assertExists($student->profile_cover);
         $this->assertTrue(Hash::check('password123', $student->password));
+    }
+
+    public function test_student_can_clear_address_and_location_without_a_broken_success_response(): void
+    {
+        $student = User::factory()->create([
+            'role' => 'student',
+            'status' => 'active',
+            'phone' => '081234567890',
+            'address' => 'Jl. Lama No. 10',
+            'maps_link' => 'https://maps.google.com/?q=-6.2,106.8',
+            'latitude' => -6.2,
+            'longitude' => 106.8,
+            'location_consent_at' => now(),
+        ]);
+        Sanctum::actingAs($student);
+
+        $this->putJson('/api/user', [
+            'name' => $student->name,
+            'phone' => '081234567890',
+            'address' => '',
+            'maps_link' => '',
+            'latitude' => '',
+            'longitude' => '',
+            'location_consent' => false,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.address', null)
+            ->assertJsonPath('data.maps_link', null)
+            ->assertJsonPath('data.latitude', null)
+            ->assertJsonPath('data.longitude', null)
+            ->assertJsonPath('data.location_consent_at', null);
+
+        $student->refresh();
+        $this->assertNull($student->address);
+        $this->assertNull($student->maps_link);
+        $this->assertNull($student->latitude);
+        $this->assertNull($student->longitude);
+        $this->assertNull($student->location_consent_at);
     }
 
     public function test_password_is_changed_through_a_separate_endpoint(): void

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use App\Models\User;
 use App\Models\PaymentSetting;
 use App\Models\Order;
@@ -17,12 +18,14 @@ use App\Models\SessionReport;
 use App\Models\BookingRequest;
 use App\Models\Notification;
 use App\Models\Refund;
+use App\Models\TeacherSubject;
 use App\Models\TeacherProfile;
 use App\Models\TeacherPayoutRequest;
 use App\Services\CheapClassService;
 use App\Services\TeacherMatchingService;
 use App\Services\TeacherOfferReleaseService;
 use App\Services\PackageCheckoutService;
+use App\Services\PaymentReconciliationService;
 use App\Support\AdminPermissionCatalog;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB; 
@@ -39,8 +42,8 @@ class AdminController extends Controller
     {
         $teachers = User::where('role', 'teacher')
                         ->where('status', 'pending')
-                        ->with(['teacherProfile', 'subjects']) 
-                        ->orderBy('created_at', 'desc')
+                        ->with(['teacherProfile', 'subjects'])
+                    ->orderBy('created_at', 'desc')
                         ->limit(300)
                         ->get();
 
@@ -51,7 +54,7 @@ class AdminController extends Controller
     {
         $teachers = User::where('role', 'teacher')
                         ->whereIn('status', ['active', 'rejected', 'banned']) // Tambahkan banned jika ada
-                        ->with(['teacherProfile', 'subjects']) 
+                        ->with(['teacherProfile', 'subjects'])
                         ->orderBy('updated_at', 'desc')
                         ->limit(500)
                         ->get();
@@ -196,52 +199,78 @@ class AdminController extends Controller
     {
         $validated = $request->validate([
             'role' => 'nullable|in:student,teacher',
+            'subject' => ['nullable', 'string', 'max:120'],
+            'q' => ['nullable', 'string', 'max:120'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:5', 'max:50'],
         ]);
         $role = $validated['role'] ?? 'student';
+        $subjectFilter = trim((string) ($validated['subject'] ?? ''));
+        $search = trim((string) ($validated['q'] ?? ''));
+        $perPage = (int) ($validated['per_page'] ?? 20);
 
-        // [FIX UTAMA] Hapus 'rejected' dari exclusion list.
-        // Sekarang hanya menyembunyikan yang 'pending'.
-        // Jadi user yang statusnya 'active', 'rejected', atau 'banned' akan TAMPIL.
-        $users = User::where('role', $role)
-                    ->where('status', '!=', 'pending') 
-                    ->with('teacherProfile') 
-                    ->orderBy('created_at', 'desc')
-                    ->limit(500)
-                    ->get();
+        $query = User::query()
+            ->where('role', $role)
+            ->where('status', '!=', 'pending')
+            ->with(['teacherProfile', 'subjects'])
+            ->when($subjectFilter !== '' && $role === 'teacher', fn ($builder) =>
+                $builder->whereHas('subjects', fn ($subjects) =>
+                    $subjects->where('name', $subjectFilter)->where('is_active', true)
+                )
+            )
+            ->when($search !== '', function ($builder) use ($search, $role) {
+                $builder->where(function ($searchQuery) use ($search, $role) {
+                    $searchQuery->where('name', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
+                    if ($role === 'teacher') {
+                        $searchQuery->orWhereHas('subjects', fn ($subjects) =>
+                            $subjects->where('name', 'like', "%{$search}%")->where('is_active', true)
+                        );
+                    }
+                });
+            })
+            ->orderBy('created_at', 'desc');
 
-        $users->transform(function($u) {
+        $users = $query->paginate($perPage);
+        $users->getCollection()->transform(function (User $u) {
             if ($u->role === 'student') {
-                $u->setAttribute(
-                    'student_birth_date',
-                    $u->date_of_birth?->toDateString()
-                );
-                $u->setAttribute(
-                    'guardian',
-                    $u->guardian_consent_at ? [
-                        'name' => $u->guardian_name,
-                        'phone' => $u->guardian_phone,
-                        'relationship' => $u->guardian_relationship,
-                        'consent_at' => $u->guardian_consent_at?->toIso8601String(),
-                    ] : null
-                );
+                $u->setAttribute('student_birth_date', $u->date_of_birth?->toDateString());
+                $u->setAttribute('guardian', $u->guardian_consent_at ? [
+                    'name' => $u->guardian_name,
+                    'phone' => $u->guardian_phone,
+                    'relationship' => $u->guardian_relationship,
+                    'consent_at' => $u->guardian_consent_at?->toIso8601String(),
+                ] : null);
+            }
+            if ($u->role === 'teacher') {
+                $activeSubjects = $u->subjects->where('is_active', true);
+                $u->setAttribute('subject_name', $activeSubjects->pluck('name')->first());
+                $u->setAttribute('subject_count', $activeSubjects->count());
+                $u->setAttribute('subject_data_warning', $activeSubjects->count() > 1 ? 'Tutor memiliki lebih dari satu mapel aktif dan perlu ditinjau.' : null);
             }
             if ($u->role === 'teacher' && $u->teacherProfile) {
                 $u->photo_url = \App\Support\PublicMedia::url($u->teacherProfile->photo);
-                $u->teacherProfile->setAttribute(
-                    'cv_url',
-                    $u->teacherProfile->cv_file
-                        ? "/teachers/{$u->id}/documents/cv_file"
-                        : null
-                );
+                $u->teacherProfile->setAttribute('cv_url', $u->teacherProfile->cv_file
+                    ? "/teachers/{$u->id}/documents/cv_file"
+                    : null);
             }
-            // Normalisasi status untuk frontend (opsional)
-            // Jika di DB 'rejected', frontend akan membacanya sebagai user terblokir
             return $u;
         });
 
-        return response()->json($users);
+        return response()->json([
+            'data' => $users->items(),
+            'subject_options' => $role === 'teacher'
+                ? TeacherSubject::query()->where('is_active', true)->whereNotNull('name')
+                    ->distinct()->orderBy('name')->pluck('name')->values()
+                : [],
+            'meta' => [
+                'current_page' => $users->currentPage(),
+                'last_page' => $users->lastPage(),
+                'per_page' => $users->perPage(),
+                'total' => $users->total(),
+            ],
+        ]);
     }
-
     public function updateUserStatus(
         Request $request,
         TeacherOfferReleaseService $offerReleaseService,
@@ -374,13 +403,15 @@ class AdminController extends Controller
     public function verifyPayment(
         Request $request,
         PackageCheckoutService $packageCheckoutService,
-        CheapClassService $cheapClassService
+        CheapClassService $cheapClassService,
+        PaymentReconciliationService $reconciliation
     )
     {
         $validated = $request->validate([
             'order_id' => 'required|exists:orders,id',
             'status' => 'required|in:paid,rejected',
             'reason' => 'nullable|string|max:500',
+            'actual_received_amount' => 'required_if:status,paid|nullable|numeric|min:1|max:999999999999.99',
         ]);
 
         $order = Order::findOrFail($validated['order_id']);
@@ -414,18 +445,55 @@ class AdminController extends Controller
             ], 422);
         }
 
+        if ($validated['status'] === 'rejected') {
+            if ($reconciliation->rejectCurrentSubmission($order, $reason, $request->user())) {
+                return response()->json([
+                    'message' => 'Bukti tambahan ditolak. Dana sebelumnya tetap tercatat dan murid dapat mengunggah bukti top-up baru.',
+                    'reconciliation' => 'underpaid',
+                ]);
+            }
+        } else {
+            $paymentResult = $reconciliation->verify(
+                $order,
+                (float) $validated['actual_received_amount'],
+                $request->user()
+            );
+            if ($paymentResult['result'] === 'underpaid') {
+                return response()->json([
+                    'message' => 'Pembayaran tercatat kurang Rp'.number_format($paymentResult['outstanding'], 0, ',', '.').'. Murid diminta melakukan top-up.',
+                    'reconciliation' => 'underpaid',
+                    'received_amount' => $paymentResult['received'],
+                    'outstanding_amount' => $paymentResult['outstanding'],
+                    'top_up_due_at' => $order->fresh()->top_up_due_at,
+                ]);
+            }
+        }
+
         if ($order->learning_package_id) {
             if ($validated['status'] === 'rejected') {
                 $packageCheckoutService->rejectPackagePayment($order, $reason, $request->user());
                 return response()->json(['message' => 'Pembayaran paket ditolak.']);
             }
             $result = $packageCheckoutService->activatePaidPackage($order, $request->user());
+            $surplus = $reconciliation->creditSurplusToWallet($order->fresh(), $request->user());
+            if ($surplus > 0) {
+                Notification::create([
+                    'user_id' => $order->user_id,
+                    'title' => 'Kelebihan pembayaran masuk ke saldo',
+                    'message' => 'Kelebihan Rp'.number_format($surplus, 0, ',', '.').' telah masuk ke Saldo BimbelKu.',
+                    'type' => 'success',
+                    'target_url' => '/student/history',
+                ]);
+            }
             return response()->json([
                 'message' => $result === 'refund_pending'
                     ? 'Pembayaran tercatat, tetapi sesi pertama sudah dimulai. Refund penuh masuk antrean admin.'
                     : ($result === 'no_teacher'
                         ? 'Pembayaran diterima, tetapi belum ada tutor yang tersedia.'
-                        : 'Pembayaran diterima dan pencarian tutor dimulai.'),
+                        : 'Pembayaran diterima dan pencarian tutor dimulai.')
+                    .($surplus > 0 ? ' Kelebihan Rp'.number_format($surplus, 0, ',', '.').' masuk ke Saldo BimbelKu.' : ''),
+                'reconciliation' => $order->fresh()->payment_reconciliation_status,
+                'surplus_amount' => $surplus,
             ]);
         }
 
@@ -442,7 +510,23 @@ class AdminController extends Controller
                     $cheapClassService->finalizeIfReady($cheapClass);
                 }
             }
-            return response()->json(['message' => $result['message']]);
+            $surplus = $validated['status'] === 'paid'
+                ? $reconciliation->creditSurplusToWallet($order->fresh(), $request->user())
+                : 0.0;
+            if ($surplus > 0) {
+                Notification::create([
+                    'user_id' => $order->user_id,
+                    'title' => 'Kelebihan pembayaran masuk ke saldo',
+                    'message' => 'Kelebihan Rp'.number_format($surplus, 0, ',', '.').' telah masuk ke Saldo BimbelKu.',
+                    'type' => 'success',
+                    'target_url' => '/student/history',
+                ]);
+            }
+            return response()->json([
+                'message' => $result['message'].($surplus > 0 ? ' Kelebihan Rp'.number_format($surplus, 0, ',', '.').' masuk ke Saldo BimbelKu.' : ''),
+                'reconciliation' => $order->fresh()->payment_reconciliation_status,
+                'surplus_amount' => $surplus,
+            ]);
         }
 
         return response()->json([
@@ -1051,6 +1135,17 @@ class AdminController extends Controller
             ->sortByDesc(fn (array $item) => ($item['tone'] === 'urgent' ? 2000 : ($item['tone'] === 'warning' ? 1000 : 0)) + $item['count'])
             ->values();
 
+        $chartStart = Carbon::today()->subDays(6);
+        $chartRows = collect(range(0, 6))->map(function (int $offset) use ($chartStart, $canClasses, $canPayments) {
+            $date = $chartStart->copy()->addDays($offset);
+            $sessions = $canClasses ? Booking::query()->whereDate('start_at', $date)->count() : 0;
+            $orders = $canPayments ? Order::query()->whereDate('created_at', $date)->count() : 0;
+            $completed = $canClasses ? Booking::query()->whereDate('start_at', $date)->whereIn('status', ['completed', 'student_confirmed'])->count() : 0;
+            $inProgress = $canClasses ? Booking::query()->whereDate('start_at', $date)->whereIn('status', ['in_progress', 'teacher_ready', 'student_ready'])->count() : 0;
+            $confirmed = $canClasses ? Booking::query()->whereDate('start_at', $date)->whereIn('status', ['confirmed', 'scheduled'])->count() : 0;
+            $attention = $canClasses ? Booking::query()->whereDate('start_at', $date)->whereIn('status', ['disputed', 'absence_review', 'admin_review_required', 'refund_pending', 'emergency_refund_pending'])->count() : 0;
+            return ['date' => $date->toDateString(), 'label' => $date->isoFormat('dd D'), 'sessions' => $sessions, 'orders' => $orders, 'confirmed' => $confirmed, 'in_progress' => $inProgress, 'completed' => $completed, 'attention' => $attention];
+        })->values();
         return response()->json([
             'revenue' => [
                 'today' => (float) $revenueToday,
@@ -1080,6 +1175,7 @@ class AdminController extends Controller
             ],
             'work_queue' => $workQueue,
             'matching_preview' => $matchingPreview,
+            'operational_chart' => $chartRows,
             'generated_at' => now()->toIso8601String(),
         ]);
     }
@@ -1123,14 +1219,8 @@ class AdminController extends Controller
     public function getSocials(Request $request)
     {
         $socials = Cache::remember('public.socials.v1', now()->addMinutes(10), fn () =>
-            SocialMedia::query()->orderBy('id')->get()->map(function (SocialMedia $item) {
-                return [
-                    'id' => $item->id,
-                    'name' => $item->name,
-                    'link' => $item->link,
-                    'icon_url' => \App\Support\PublicMedia::url($item->icon),
-                ];
-            })->values()->all()
+            SocialMedia::query()->where('is_active', true)->orderBy('sort_order')->orderBy('id')->get()
+                ->map(fn (SocialMedia $item) => $this->socialPayload($item, false))->values()->all()
         );
         $response = response()->json($socials);
         $response->setEtag(sha1((string) json_encode($socials)));
@@ -1138,8 +1228,13 @@ class AdminController extends Controller
         $response->setMaxAge(300);
         $response->headers->addCacheControlDirective('stale-while-revalidate', '60');
         $response->isNotModified($request);
-
         return $response;
+    }
+
+    public function getAdminSocials()
+    {
+        return response()->json(SocialMedia::query()->orderBy('sort_order')->orderBy('id')->get()
+            ->map(fn (SocialMedia $item) => $this->socialPayload($item, true))->values());
     }
 
     public function storeSocial(Request $request)
@@ -1147,45 +1242,122 @@ class AdminController extends Controller
         $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'link' => ['required', 'url:http,https', 'max:1000'],
-            'icon' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'icon' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'icon_url' => ['nullable', 'url:http,https', 'max:500'],
+            'icon_key' => ['nullable', Rule::in($this->socialCatalogKeys()), 'required_without_all:icon,icon_url'],
         ]);
 
-        $path = null;
-        if ($request->hasFile('icon')) {
-            $path = $request->file('icon')->store('social_icons', 'public');
-        }
-
+        $path = $this->resolveSocialIcon($request);
         try {
             $social = SocialMedia::create([
                 'name' => trim((string) $request->name),
-                'link' => $request->link,
+                'link' => trim((string) $request->link),
                 'icon' => $path,
+                'is_active' => true,
+                'sort_order' => ((int) SocialMedia::max('sort_order')) + 1,
             ]);
         } catch (\Throwable $exception) {
-            if ($path) {
-                Storage::disk('public')->delete($path);
-            }
+            $this->deleteSocialIcon($path);
             throw $exception;
         }
         Cache::forget('public.socials.v1');
+        return response()->json(['message' => 'Sosmed berhasil ditambah!', 'data' => $this->socialPayload($social, true)]);
+    }
 
-        return response()->json(['message' => 'Sosmed berhasil ditambah!', 'data' => $social]);
+    public function updateSocial(Request $request, $id)
+    {
+        $social = SocialMedia::findOrFail($id);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:100'],
+            'link' => ['required', 'url:http,https', 'max:1000'],
+            'icon' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'icon_url' => ['nullable', 'url:http,https', 'max:500'],
+            'icon_key' => ['nullable', Rule::in($this->socialCatalogKeys())],
+            'is_active' => ['sometimes', 'boolean'],
+            'sort_order' => ['sometimes', 'integer', 'min:0', 'max:1000'],
+        ]);
+        $oldIcon = $social->icon;
+        $newIcon = $this->resolveSocialIcon($request, false);
+        $social->name = trim((string) $data['name']);
+        $social->link = trim((string) $data['link']);
+        if ($newIcon !== null) $social->icon = $newIcon;
+        if (array_key_exists('is_active', $data)) $social->is_active = (bool) $data['is_active'];
+        if (array_key_exists('sort_order', $data)) $social->sort_order = (int) $data['sort_order'];
+        try { $social->save(); } catch (\Throwable $exception) { $this->deleteSocialIcon($newIcon); throw $exception; }
+        if ($newIcon !== null && $oldIcon !== $newIcon) $this->deleteSocialIcon($oldIcon);
+        Cache::forget('public.socials.v1');
+        return response()->json(['message' => 'Sosmed berhasil diperbarui.', 'data' => $this->socialPayload($social->fresh(), true)]);
+    }
+
+    public function reorderSocials(Request $request)
+    {
+        $data = $request->validate(['items' => ['required', 'array', 'max:100'], 'items.*.id' => ['required', 'integer', 'exists:social_medias,id'], 'items.*.sort_order' => ['required', 'integer', 'min:0', 'max:1000']]);
+        DB::transaction(function () use ($data) {
+            foreach ($data['items'] as $item) SocialMedia::whereKey($item['id'])->update(['sort_order' => $item['sort_order']]);
+        });
+        Cache::forget('public.socials.v1');
+        return response()->json(['message' => 'Urutan sosial media disimpan.']);
+    }
+
+    private function socialCatalogKeys(): array
+    {
+        return ['instagram', 'facebook', 'youtube', 'tiktok', 'whatsapp', 'linkedin', 'x'];
+    }
+
+    private function resolveSocialIcon(Request $request, bool $required = true): ?string
+    {
+        if ($request->filled('icon_key')) return 'catalog:'.strtolower(trim((string) $request->input('icon_key')));
+        if ($request->filled('icon_url')) return trim((string) $request->input('icon_url'));
+        if ($request->hasFile('icon')) return $request->file('icon')->store('social_icons', 'public');
+        return $required ? null : null;
+    }
+
+    private function deleteSocialIcon(?string $icon): void
+    {
+        if ($icon && !str_starts_with((string) $icon, 'catalog:') && !preg_match('#^https?://#i', (string) $icon)) Storage::disk('public')->delete($icon);
+    }
+
+    private function socialPayload(SocialMedia $item, bool $admin): array
+    {
+        $iconKey = str_starts_with((string) $item->icon, 'catalog:') ? substr((string) $item->icon, 8) : null;
+        if ($iconKey === 'twitter') $iconKey = 'x';
+        $payload = [
+            'id' => $item->id,
+            'name' => $item->name,
+            'link' => $item->link,
+            'icon_key' => $iconKey,
+            'icon_url' => $this->socialIconUrl($item->icon),
+        ];
+        if ($admin) { $payload['is_active'] = (bool) $item->is_active; $payload['sort_order'] = (int) $item->sort_order; }
+        return $payload;
+    }
+
+    private function socialIconUrl(?string $icon): ?string
+    {
+        if (blank($icon)) return null;
+        if (str_starts_with($icon, 'catalog:')) {
+            $key = strtolower(substr($icon, 8));
+            if ($key === 'twitter') $key = 'x';
+            $colors = [
+                'instagram' => 'E4405F',
+                'facebook' => '1877F2',
+                'youtube' => 'FF0000',
+                'tiktok' => '000000',
+                'whatsapp' => '25D366',
+                'linkedin' => '0A66C2',
+                'x' => '000000',
+            ];
+            return 'https://cdn.simpleicons.org/'.rawurlencode($key).'/'.($colors[$key] ?? '111827');
+        }
+        return \App\Support\PublicMedia::url($icon);
     }
 
     public function deleteSocial($id)
     {
         $social = SocialMedia::find($id);
-        if ($social) {
-            $icon = $social->icon;
-            $social->delete();
-            if ($icon) {
-                Storage::disk('public')->delete($icon);
-            }
-            Cache::forget('public.socials.v1');
-        }
+        if ($social) { $icon = $social->icon; $social->delete(); $this->deleteSocialIcon($icon); Cache::forget('public.socials.v1'); }
         return response()->json(['message' => 'Sosmed dihapus.']);
     }
-
     private function orderDetails(Order $order): array
     {
         if (is_array($order->class_details_snapshot)) {

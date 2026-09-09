@@ -37,7 +37,7 @@ const STUDENT_GROUPS: PageGroup[] = [
 const TEACHER_GROUPS: PageGroup[] = [
   { key: "teacher-dashboard", paths: ["/guru"], mobileKey: "home" },
   { key: "teacher-offers", paths: ["/guru/permintaan"], mobileKey: "offers" },
-  { key: "teacher-classes", paths: ["/guru/kelas"], mobileKey: "classes" },
+  { key: "teacher-classes", paths: ["/guru/kelas", "/guru/kelas-murah"], mobileKey: "classes" },
   { key: "teacher-schedule", paths: ["/guru/jadwal"], mobileKey: "classes" },
   { key: "teacher-messages", paths: ["/guru/pesan"], mobileKey: "messages" },
   { key: "teacher-account", paths: ["/guru/saya"], mobileKey: "account" },
@@ -158,6 +158,51 @@ export const hasMobileAttention = (
   if (!notification.target_url) return mobileKey === "account";
   return pageGroupForPath(role, notification.target_url)?.mobileKey === mobileKey;
 });
+
+export type StudentClassAttentionTab = "process" | "schedule" | "history";
+
+const attentionUrl = (value?: string | null): URL | null => {
+  if (!value?.startsWith("/")) return null;
+  try {
+    return new URL(value, "https://bimbelku.local");
+  } catch {
+    return null;
+  }
+};
+
+export const studentClassAttentionTab = (value?: string | null): StudentClassAttentionTab | null => {
+  const target = attentionUrl(value);
+  if (!target) return null;
+  const path = normalizeAttentionPath(target.pathname);
+
+  if (pathMatches(path, "/student/packages") || pathMatches(path, "/payment")) return "process";
+  if (!pathMatches(path, "/student/my-classes")) return null;
+
+  const tab = target.searchParams.get("tab");
+  if (tab === "process" || tab === "history") return tab;
+  return "schedule";
+};
+
+export const unreadIdsForStudentClassTab = (
+  tab: StudentClassAttentionTab,
+  notifications: AttentionNotification[],
+): number[] => notifications
+  .filter((notification) => !notification.is_read && studentClassAttentionTab(notification.target_url) === tab)
+  .map((notification) => notification.id);
+
+export const unreadIdsForTeacherClassScope = (
+  scope: "active" | "history",
+  notifications: AttentionNotification[],
+): number[] => notifications
+  .filter((notification) => {
+    if (notification.is_read) return false;
+    const target = attentionUrl(notification.target_url);
+    if (!target) return false;
+    const path = normalizeAttentionPath(target.pathname);
+    if (!pathMatches(path, "/guru/kelas") && !pathMatches(path, "/guru/kelas-murah")) return false;
+    return (target.searchParams.get("scope") === "history" ? "history" : "active") === scope;
+  })
+  .map((notification) => notification.id);
 
 export const attentionTargetLabel = (
   role: Exclude<AttentionRole, "admin">,

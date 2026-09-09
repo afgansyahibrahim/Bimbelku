@@ -5,6 +5,7 @@ import Reveal from "@/components/Reveal"; // Import Reveal
 import { getCached } from "@/lib/http";
 import RegistrationGuardLink from "@/components/RegistrationGuardLink";
 import StudentPackageLink from "@/components/StudentPackageLink";
+import SocialLogo from "@/components/SocialLogo";
 
 const Footer = () => {
   const currentYear = new Date().getFullYear();
@@ -12,11 +13,16 @@ const Footer = () => {
   const [socials, setSocials] = useState<any[]>([]);
 
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchData = async (force = false) => {
         try {
+            const socialsVersion = sessionStorage.getItem("bimbelku:socials-version");
             const [resSettings, resSocials] = await Promise.all([
               getCached("/settings/footer", { maxAgeMs: 5 * 60_000 }),
-              getCached("/socials", { maxAgeMs: 5 * 60_000 }),
+              getCached("/socials", {
+                maxAgeMs: 5 * 60_000,
+                force,
+                params: socialsVersion ? { v: socialsVersion } : undefined,
+              }),
             ]);
             setSettings(resSettings.data);
             setSocials(resSocials.data);
@@ -24,7 +30,10 @@ const Footer = () => {
             console.error("Gagal load footer");
         }
     };
-    fetchData();
+    void fetchData();
+    const refreshSocials = () => void fetchData(true);
+    window.addEventListener("bimbelku:socials-changed", refreshSocials);
+    return () => window.removeEventListener("bimbelku:socials-changed", refreshSocials);
   }, []);
 
   const address = settings?.footer_address || "-";
@@ -76,16 +85,15 @@ const Footer = () => {
                         href={item.link} 
                         target="_blank" 
                         rel="noreferrer" 
-                        className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-50 border border-slate-200 hover:bg-white hover:border-indigo-200 hover-shadow-md hover:shadow-indigo-100 hover-rise transition-all duration-300 group"
+                        className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 hover:bg-white hover:border-indigo-200 hover-shadow-md hover:shadow-indigo-100 hover-rise transition-all duration-300 group"
                         title={item.name}
                     >
-                        <img 
-                            src={item.icon_url} 
-                            alt={item.name} 
-                            loading="lazy"
-                            decoding="async"
-                            className="w-5 h-5 object-contain opacity-70 group-hover:opacity-100 transition-opacity"
+                        <SocialLogo
+                            iconKey={item.icon_key}
+                            iconUrl={item.icon_url}
+                            className="h-5 w-5 shrink-0 object-contain text-slate-900 opacity-70 transition-opacity group-hover:opacity-100"
                         />
+                        <span className="max-w-[12rem] truncate text-xs font-bold text-slate-700">{item.name}</span>
                     </a>
                 )) : (
                     <span className="text-xs text-slate-400 italic">Ikuti kami di media sosial</span>

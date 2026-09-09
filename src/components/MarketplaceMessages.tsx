@@ -66,17 +66,31 @@ type PendingMessage = {
   file: File | null;
 };
 
-const dateTime = (value?: string) => value
-  ? new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
-  : "-";
+const formatDate = (value: unknown, options: Intl.DateTimeFormatOptions, fallback: string) => {
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return fallback;
 
-const timeOnly = (value?: string) => value
-  ? new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit" }).format(new Date(value))
-  : "";
+  try {
+    return new Intl.DateTimeFormat("id-ID", options).format(date);
+  } catch {
+    return fallback;
+  }
+};
 
-const newToken = () => typeof crypto.randomUUID === "function"
-  ? crypto.randomUUID()
-  : `message-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const dateTime = (value?: string) => formatDate(value, { dateStyle: "medium", timeStyle: "short" }, "-");
+const timeOnly = (value?: string) => formatDate(value, { hour: "2-digit", minute: "2-digit" }, "");
+
+const newToken = () => {
+  try {
+    const randomUuid = globalThis.crypto?.randomUUID?.();
+    if (randomUuid) return randomUuid;
+  } catch {
+    // Browser lama atau origin non-secure dapat menolak randomUUID.
+  }
+
+  return `message-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
 
 export default function MarketplaceMessages({ role }: { role: "student" | "teacher" }) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -94,49 +108,70 @@ export default function MarketplaceMessages({ role }: { role: "student" | "teach
   const [chatError, setChatError] = useState(false);
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
+  const conversationRequestRef = useRef(0);
+  const chatRequestRef = useRef(0);
+  const handleMessageScroll = () => {
+    const container = messageListRef.current;
+    if (!container) return;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    stickToBottomRef.current = distanceFromBottom <= 80;
+  };
 
   const loadConversations = useCallback(async (quiet = false) => {
+    const requestId = ++conversationRequestRef.current;
     if (!quiet) setListLoading(true);
     setListError(false);
     try {
       const response = await http.get<{ data: Conversation[] }>("/conversations");
+      if (requestId !== conversationRequestRef.current) return;
       const items = Array.isArray(response.data.data) ? response.data.data : [];
       setConversations(items);
       if (requestedBooking && items.some((item) => item.booking_id === requestedBooking)) {
         setSelectedId(requestedBooking);
       }
     } catch (error) {
+      if (requestId !== conversationRequestRef.current) return;
       if (!quiet) {
         setListError(true);
         notify.error(getApiError(error, "Daftar percakapan gagal dimuat."));
       }
     } finally {
-      if (!quiet) setListLoading(false);
+      if (requestId === conversationRequestRef.current) setListLoading(false);
     }
   }, [requestedBooking]);
 
   const loadChat = useCallback(async (bookingId: number, quiet = false) => {
+    const requestId = ++chatRequestRef.current;
     if (!quiet) setChatLoading(true);
     setChatError(false);
     try {
       const response = await http.get<ChatData>(`/bookings/${bookingId}/learning-session?conversation=1`);
+      if (requestId !== chatRequestRef.current) return;
+      if (!response.data?.booking || !Array.isArray(response.data.messages) || !response.data.permissions) {
+        throw new Error("Payload percakapan tidak lengkap.");
+      }
       setChat(response.data);
       setConversations((current) => current.map((item) => item.booking_id === bookingId
         ? { ...item, unread_count: 0 }
         : item));
     } catch (error) {
+      if (requestId !== chatRequestRef.current) return;
       if (!quiet) {
         setChatError(true);
         notify.error(getApiError(error, "Percakapan gagal dibuka."));
       }
     } finally {
-      if (!quiet) setChatLoading(false);
+      if (requestId === chatRequestRef.current) setChatLoading(false);
     }
   }, []);
 
   useEffect(() => { void loadConversations(); }, [loadConversations]);
   useEffect(() => {
     if (!selectedId) {
+      chatRequestRef.current += 1;
+      stickToBottomRef.current = true;
       setChat(null);
       return;
     }
@@ -150,7 +185,9 @@ export default function MarketplaceMessages({ role }: { role: "student" | "teach
     return () => window.clearInterval(timer);
   }, [selectedId, loadChat, loadConversations]);
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end" });
+    if (stickToBottomRef.current) {
+      endRef.current?.scrollIntoView({ block: "end" });
+    }
   }, [chat?.messages.length, selectedId]);
 
   const filtered = useMemo(() => {
@@ -195,6 +232,7 @@ export default function MarketplaceMessages({ role }: { role: "student" | "teach
     setSending(true);
     setPending(null);
     const payload = new FormData();
+    stickToBottomRef.current = true;
     if (outgoing.body) payload.append("body", outgoing.body);
     if (outgoing.file) payload.append("attachment", outgoing.file);
     payload.append("client_token", outgoing.token);
@@ -212,8 +250,8 @@ export default function MarketplaceMessages({ role }: { role: "student" | "teach
   };
 
   return (
-    <div className="overflow-hidden rounded-[1.65rem] border border-slate-200 bg-white shadow-sm sm:rounded-[2rem]">
-      <div className="grid min-h-[72dvh] md:grid-cols-[21rem_minmax(0,1fr)] lg:grid-cols-[23rem_minmax(0,1fr)]">
+    <div className="flex h-full min-h-0 flex-1 basis-0 overflow-hidden rounded-[1.65rem] border border-slate-200 bg-white shadow-sm sm:rounded-[2rem]">
+      <div className="grid min-h-0 flex-1 md:grid-cols-[21rem_minmax(0,1fr)] lg:grid-cols-[23rem_minmax(0,1fr)]">
         <aside className={`${selectedId ? "hidden md:flex" : "flex"} min-w-0 flex-col border-r border-slate-200 bg-slate-50/60`}>
           <div className="border-b border-slate-200 bg-white p-4 sm:p-5">
             <div className="flex items-center justify-between gap-3">
@@ -234,7 +272,7 @@ export default function MarketplaceMessages({ role }: { role: "student" | "teach
               <button key={item.booking_id} type="button" onClick={() => openConversation(item.booking_id)} className={`mb-1 flex w-full min-w-0 items-start gap-3 rounded-2xl p-3 text-left transition sm:p-4 ${selectedId === item.booking_id ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200" : "hover:bg-white"}`}>
                 <span className={`grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-2xl ${selectedId === item.booking_id ? "bg-white/15" : "bg-indigo-100 text-indigo-600"}`}>{item.counterpart_avatar ? <img src={item.counterpart_avatar} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <UserRound size={19} />}</span>
                 <span className="min-w-0 flex-1">
-                  <span className="flex min-w-0 items-center justify-between gap-2"><span className="truncate text-sm font-black">{item.counterpart_name}</span><span className={`shrink-0 text-[10px] ${selectedId === item.booking_id ? "text-indigo-100" : "text-slate-400"}`}>{timeOnly(item.latest_message?.created_at || item.start_at)}</span></span>
+                  <span className="flex min-w-0 items-center justify-between gap-2"><span className="min-w-0 break-words whitespace-normal text-sm font-black leading-tight">{item.counterpart_name}</span><span className={`shrink-0 text-[10px] ${selectedId === item.booking_id ? "text-indigo-100" : "text-slate-400"}`}>{timeOnly(item.latest_message?.created_at || item.start_at)}</span></span>
                   <span className={`mt-1 block truncate text-xs font-bold ${selectedId === item.booking_id ? "text-indigo-100" : "text-indigo-600"}`}>{item.subject}</span>
                   <span className="mt-1 flex min-w-0 items-center justify-between gap-2"><span className={`truncate text-xs ${selectedId === item.booking_id ? "text-indigo-100/80" : "text-slate-500"}`}>{item.latest_message?.body || "Mulai percakapan kelas"}</span>{item.unread_count > 0 && <span className={`grid h-5 min-w-5 shrink-0 place-items-center rounded-full px-1 text-[10px] font-black ${selectedId === item.booking_id ? "bg-white text-indigo-700" : "bg-rose-500 text-white"}`}>{item.unread_count > 99 ? "99+" : item.unread_count}</span>}</span>
                 </span>
@@ -243,7 +281,7 @@ export default function MarketplaceMessages({ role }: { role: "student" | "teach
           </div>
         </aside>
 
-        <section className={`${selectedId ? "flex" : "hidden md:flex"} min-w-0 flex-col bg-white`}>
+        <section className={`${selectedId ? "flex" : "hidden md:flex"} h-full min-h-0 min-w-0 flex-col bg-white`}>
           {!selectedId ? (
             <div className="grid flex-1 place-items-center p-8 text-center"><div><MessageCircle className="mx-auto text-indigo-200" size={52} /><h2 className="mt-5 text-xl font-black text-slate-800">Pilih percakapan</h2><p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">Pesan, lampiran, dan status baca tetap terikat pada kelas yang sah.</p></div></div>
           ) : chatLoading ? (
@@ -255,11 +293,11 @@ export default function MarketplaceMessages({ role }: { role: "student" | "teach
               <header className="flex min-w-0 items-center gap-3 border-b border-slate-200 px-3 py-3 sm:px-5 sm:py-4">
                 <Button type="button" variant="ghost" size="icon" onClick={closeMobileConversation} className="shrink-0 rounded-xl md:hidden" aria-label="Kembali ke daftar percakapan"><ArrowLeft size={20} /></Button>
                 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-indigo-100 text-indigo-600"><UserRound size={18} /></span>
-                <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-black text-slate-900 sm:text-base">{chat.booking.subject}</h2><p className="mt-0.5 truncate text-[11px] font-bold text-slate-400">{dateTime(chat.booking.start_at)} · Chat BimbelKu</p></div>
+                <div className="min-w-0 flex-1"><h2 className="break-words text-sm font-black text-slate-900 sm:text-base">{chat.booking.subject}</h2><p className="mt-0.5 truncate text-[11px] font-bold text-slate-400">{dateTime(chat.booking.start_at)} · Chat BimbelKu</p></div>
                 <Button type="button" variant="ghost" size="icon" onClick={() => void loadChat(selectedId)} className="shrink-0 rounded-xl" aria-label="Muat ulang pesan"><RefreshCw size={17} /></Button>
               </header>
 
-              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/70 p-3 sm:p-5">
+              <div ref={messageListRef} onScroll={handleMessageScroll} className="h-0 min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/70 p-3 sm:p-5">
                 {chat.messages.length === 0 ? <div className="grid min-h-60 place-items-center text-center"><div><MessageCircle className="mx-auto text-slate-300" size={34} /><p className="mt-3 text-sm font-bold text-slate-600">Belum ada pesan pada kelas ini.</p></div></div> : chat.messages.map((item) => item.message_type === "system" ? (
                   <div key={item.id} className="flex justify-center py-1">
                     <div className="w-full max-w-xl rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-center shadow-sm">

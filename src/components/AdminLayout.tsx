@@ -28,7 +28,6 @@ import {
   Users,
   X,
 } from "lucide-react";
-import LogoutButton from "@/components/LogoutButton";
 import ProfileQuickMenu from "@/components/ProfileQuickMenu";
 import RoleQuickGuide from "@/components/RoleQuickGuide";
 import { ADMIN_PERMISSIONS, canAdmin } from "@/lib/adminPermissions";
@@ -45,6 +44,7 @@ interface AdminLayoutProps {
   children: ReactNode;
   title: string;
   subtitle?: string;
+  lockContentScroll?: boolean;
 }
 
 type NavigationItem = {
@@ -164,7 +164,7 @@ const readAdmin = () => {
   }
 };
 
-export default function AdminLayout({ children, title, subtitle = "Pusat operasional BimbelKu" }: AdminLayoutProps) {
+export default function AdminLayout({ children, title, subtitle = "Pusat operasional BimbelKu", lockContentScroll = false }: AdminLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [attentionNotifications, setAttentionNotifications] = useState<AttentionNotification[]>([]);
   const [operationalCounts, setOperationalCounts] = useState<OperationalAttentionCounts>(emptyOperationalCounts);
@@ -348,7 +348,7 @@ export default function AdminLayout({ children, title, subtitle = "Pusat operasi
               <p className="mt-0.5 text-[10px] font-black uppercase tracking-wider text-orange-600">{adminLabel}</p>
             </div>
           </div>
-          <LogoutButton accent="admin" />
+
         </div>
       </aside>
 
@@ -385,8 +385,8 @@ export default function AdminLayout({ children, title, subtitle = "Pusat operasi
           </div>
         </header>
 
-        <div className="mobile-app-content flex-1 overflow-x-hidden overflow-y-auto p-4 pb-[calc(7.25rem+env(safe-area-inset-bottom))] sm:px-6 sm:py-7 sm:pb-[calc(6.75rem+env(safe-area-inset-bottom))] xl:px-8 xl:pb-7">
-          <div className="mx-auto w-full min-w-0 max-w-[90rem] pb-12">{children}</div>
+        <div className={`mobile-app-content min-h-0 flex-1 overflow-x-hidden p-4 pb-[calc(7.25rem+env(safe-area-inset-bottom))] sm:px-6 sm:py-7 sm:pb-[calc(6.75rem+env(safe-area-inset-bottom))] xl:px-8 xl:pb-7 ${lockContentScroll ? "overflow-y-hidden" : "overflow-y-auto"}`}>
+          <div className="flex h-full min-h-0 flex-col mx-auto w-full min-w-0 max-w-[90rem] pb-12">{children}</div>
         </div>
         {!sidebarOpen && (
           <AdminMobileBottomNav

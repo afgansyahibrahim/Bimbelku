@@ -20,8 +20,8 @@ use App\Models\Promotion;
 use App\Models\Rating;
 use App\Models\Refund;
 use App\Models\SessionReport;
-use App\Models\SocialMedia;
 use App\Models\Setting;
+use App\Models\SocialMedia;
 use App\Models\TeacherAppeal;
 use App\Models\Tutorial;
 use App\Models\TutorialStep;
@@ -37,7 +37,7 @@ class AdminAuditService
     public function resolveTarget(Request $request): array
     {
         $routeCandidates = [
-            'bookingRequest', 'refund', 'payoutApproval', 'booking', 'bookingDispute',
+            'bookingRequest', 'teacherReplacement', 'refund', 'payoutApproval', 'booking', 'bookingDispute',
             'teacherAppeal', 'sessionReport', 'curriculumSubject', 'curriculumChapter',
             'hourlyRate', 'learningTopic', 'packagePlan', 'learningTimeSlot', 'promotion',
             'dynamicBanner', 'tutorial', 'tutorialStep', 'user', 'admin',
@@ -55,6 +55,7 @@ class AdminAuditService
             $genericModel = $this->modelForGenericIdPath($request->path());
             if ($genericModel) {
                 $model = $genericModel::query()->find((int) $genericId);
+
                 return [
                     'type' => $model ? class_basename($model) : class_basename($genericModel),
                     'id' => (int) $genericId,
@@ -102,7 +103,7 @@ class AdminAuditService
 
     public function snapshot(?Model $model): ?array
     {
-        if (!$model) {
+        if (! $model) {
             return null;
         }
 
@@ -245,7 +246,7 @@ class AdminAuditService
                 'created_at' => $log->created_at?->toISOString(),
             ];
             $expected = hash('sha256', json_encode($canonical, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-            if ($log->previous_hash !== $previousHash || !hash_equals((string) $log->entry_hash, $expected)) {
+            if ($log->previous_hash !== $previousHash || ! hash_equals((string) $log->entry_hash, $expected)) {
                 $valid = false;
                 break;
             }
@@ -268,6 +269,7 @@ class AdminAuditService
 
         if (is_numeric($value)) {
             $model = $this->modelForParameter($fallbackType)?->find((int) $value);
+
             return [
                 'type' => $model ? class_basename($model) : $fallbackType,
                 'id' => (int) $value,
@@ -283,6 +285,7 @@ class AdminAuditService
     {
         return match ($parameter) {
             'bookingRequest' => BookingRequest::class,
+            'teacherReplacement' => \App\Models\TeacherReplacementRequest::class,
             'refund' => Refund::class,
             'payoutApproval' => PayoutApproval::class,
             'booking' => Booking::class,
@@ -326,6 +329,7 @@ class AdminAuditService
         foreach ($payload as $key => $value) {
             if (in_array((string) $key, $sensitive, true)) {
                 $payload[$key] = '[REDACTED]';
+
                 continue;
             }
             if ($value instanceof \Illuminate\Http\UploadedFile) {
@@ -334,10 +338,12 @@ class AdminAuditService
                     'size' => $value->getSize(),
                     'mime' => $value->getMimeType(),
                 ];
+
                 continue;
             }
             if (is_array($value)) {
                 $payload[$key] = $this->sanitize($value);
+
                 continue;
             }
             if (in_array((string) $key, ['account_number', 'sender_account_number', 'destination_account_number'], true)) {

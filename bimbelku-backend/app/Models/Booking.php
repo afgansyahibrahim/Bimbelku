@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class Booking extends Model
 {
     protected $fillable = [
-        'booking_request_id', 'student_id', 'teacher_id', 'order_id', 'start_at', 'end_at',
+        'booking_request_id', 'replacement_of_booking_id', 'student_id', 'teacher_id', 'order_id', 'start_at', 'end_at',
         'duration_hours', 'learning_mode', 'class_type', 'hourly_rate', 'total_amount', 'status',
         'session_flow_version', 'tutor_ready_at', 'student_confirmed_at', 'session_focus_note',
         'tutor_ready_latitude', 'tutor_ready_longitude', 'tutor_ready_accuracy_meters', 'tutor_ready_ip_hash',
@@ -133,4 +133,13 @@ class Booking extends Model
         return $this->belongsTo(TeacherPayoutRequest::class, 'payout_request_id');
     }
 
+    public function replacementOf()
+    {
+        return $this->belongsTo(self::class, 'replacement_of_booking_id');
+    }
+
+    public function replacementBookings()
+    {
+        return $this->hasMany(self::class, 'replacement_of_booking_id');
+    }
 }

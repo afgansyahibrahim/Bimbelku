@@ -11,6 +11,7 @@ use App\Models\Setting;
 use App\Models\TeacherOffer;
 use App\Services\CheapClassService;
 use App\Services\TeacherMatchingService;
+use App\Services\PaymentReconciliationService;
 use App\Support\CheapClassSchema;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +24,8 @@ class ExpireBookingWorkflow extends Command
 
     public function handle(
         TeacherMatchingService $matchingService,
-        CheapClassService $cheapClassService
+        CheapClassService $cheapClassService,
+        PaymentReconciliationService $paymentReconciliation
     ): int {
         $stats = [
             'cheap_classes' => CheapClassSchema::status()['ready']
@@ -33,7 +35,7 @@ class ExpireBookingWorkflow extends Command
             'offers' => $this->expireOffers($matchingService),
             'matching' => $this->resumeMatching($matchingService),
             'matching_history' => $this->archivePastMatching(),
-            'package_payments' => $this->expirePackagePayments(),
+            'package_payments' => $this->expirePackagePayments($paymentReconciliation),
             'started' => $this->startDueBookings(),
             'reviews' => $this->queueCompletionReviews(),
         ];
@@ -127,21 +129,21 @@ class ExpireBookingWorkflow extends Command
         return $count;
     }
 
-    private function expirePackagePayments(): int
+    private function expirePackagePayments(PaymentReconciliationService $paymentReconciliation): int
     {
         $count = 0;
         Order::query()
             ->whereNotNull('learning_package_id')
-            ->whereIn('status', ['pending', 'rejected'])
+            ->whereIn('status', ['pending', 'rejected', 'partially_paid'])
             ->whereHas('learningPackage', fn ($query) => $query
                 ->whereNotNull('payment_due_at')
                 ->where('payment_due_at', '<=', now()))
             ->with(['learningPackage.subjects.bookingRequest.offers', 'learningPackage.subjects.sessions.booking.bookingRequest', 'learningPackage.promotionClaims'])
-            ->chunkById(100, function ($orders) use (&$count) {
+            ->chunkById(100, function ($orders) use (&$count, $paymentReconciliation) {
                 foreach ($orders as $order) {
-                    DB::transaction(function () use ($order, &$count) {
+                    DB::transaction(function () use ($order, &$count, $paymentReconciliation) {
                         $lockedOrder = Order::query()->lockForUpdate()->find($order->id);
-                        if (!$lockedOrder || !in_array($lockedOrder->status, ['pending', 'rejected'], true)) {
+                        if (!$lockedOrder || !in_array($lockedOrder->status, ['pending', 'rejected', 'partially_paid'], true)) {
                             return;
                         }
                         $package = $lockedOrder->learningPackage()
@@ -152,6 +154,9 @@ class ExpireBookingWorkflow extends Command
                             return;
                         }
 
+                        if ($lockedOrder->status === 'partially_paid') {
+                            $paymentReconciliation->returnExpiredPartialPayment($lockedOrder);
+                        }
                         $lockedOrder->update(['status' => 'expired']);
                         $package->update(['status' => 'payment_expired', 'payment_due_at' => null]);
                         foreach ($package->subjects as $subject) {

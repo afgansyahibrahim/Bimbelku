@@ -164,7 +164,7 @@ function PackageProgressDetail({ item, classes, onOpenReport }: { item: StudentP
   const reports = relatedClasses.filter((row) => row.workspace?.latest_report);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 pb-10">
+    <div className="w-full space-y-6 pb-10">
       <ProgressHeader
         type="Paket Belajar"
         title={item.plan?.name || "Paket Belajar"}
@@ -268,7 +268,7 @@ function CheapClassProgressDetail({ item }: { item: CheapClassProgress }) {
   const stats = cheapClassChapterStats(item);
   const sessions = item.sessions || [];
   return (
-    <div className="mx-auto max-w-5xl space-y-6 pb-10">
+    <div className="w-full space-y-6 pb-10">
       <ProgressHeader type="Kelas Kelompok" title={item.subject_name} subtitle={[item.education_level, item.grade, item.package_code].filter(Boolean).join(" · ")} percent={stats.percent} accent="brand" />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

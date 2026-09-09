@@ -109,7 +109,7 @@ Pastikan:
 - bila seluruh Bab lama selesai, tidak ada Bab yang otomatis dipilih;
 - tersedia badge `Selesai sebelumnya` / `Lanjutkan`;
 - murid dapat memilih Bab lanjutan atau Bab lama untuk penguatan;
-- rule tutor sama 24 jam dan tanpa tutor lama 72 jam tetap berlaku.
+- rule tutor sama 12 jam dan tanpa tutor lama 24 jam tetap berlaku.
 
 Jangan `reset` di tengah flow.
 

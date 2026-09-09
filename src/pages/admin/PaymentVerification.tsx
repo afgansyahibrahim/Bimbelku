@@ -30,6 +30,11 @@ type Payment = {
   wallet_reserved_amount?: number;
   wallet_applied_amount?: number;
   external_payment_amount?: number;
+  external_received_amount?: number;
+  payment_outstanding_amount?: number;
+  payment_surplus_amount?: number;
+  payment_reconciliation_status?: "underpaid" | "exact" | "overpaid" | null;
+  top_up_due_at?: string | null;
   status: string;
   payment_proof?: string | null;
   bank_name?: string | null;
@@ -93,6 +98,7 @@ const needsPriorityReview = (value?: string | null) => {
 
 const statusMap: Record<string, { label: string; className: string }> = {
   paid: { label: "Diterima", className: "bg-emerald-50 text-emerald-700" },
+  partially_paid: { label: "Kurang bayar", className: "bg-amber-50 text-amber-700" },
   rejected: { label: "Ditolak", className: "bg-rose-50 text-rose-700" },
   refund_pending: { label: "Menunggu refund", className: "bg-amber-50 text-amber-700" },
   refunded: { label: "Sudah direfund", className: "bg-indigo-50 text-indigo-700" },
@@ -110,6 +116,8 @@ export default function PaymentVerification() {
   const [proof, setProof] = useState<Payment | null>(null);
   const [rejecting, setRejecting] = useState<Payment | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [reconciling, setReconciling] = useState<Payment | null>(null);
+  const [actualReceived, setActualReceived] = useState("");
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -146,18 +154,21 @@ export default function PaymentVerification() {
     });
   }, [data, search, status, tab]);
 
-  const verify = async (payment: Payment, nextStatus: "paid" | "rejected", reason?: string) => {
+  const verify = async (payment: Payment, nextStatus: "paid" | "rejected", reason?: string, actualAmount?: number) => {
     setProcessingId(payment.id);
     try {
       const response = await http.post("/admin/verify-payment", {
         order_id: payment.id,
         status: nextStatus,
         reason: nextStatus === "rejected" ? reason : null,
+        actual_received_amount: nextStatus === "paid" ? actualAmount : null,
       });
       notify.success(response.data?.message || "Pembayaran berhasil diproses.");
       setProof(null);
       setRejecting(null);
       setRejectReason("");
+      setReconciling(null);
+      setActualReceived("");
       await load();
     } catch (error) {
       const details = getApiErrorDetails(error, "Pembayaran tidak dapat diproses.");
@@ -172,18 +183,33 @@ export default function PaymentVerification() {
     }
   };
 
-  const accept = async (payment: Payment) => {
+  const accept = (payment: Payment) => {
+    setReconciling(payment);
+    setActualReceived("");
+  };
+
+  const reconcile = async () => {
+    if (!reconciling) return;
+    const amount = Number(actualReceived.replace(/[^0-9]/g, ""));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      notify.error("Masukkan nominal dana yang benar-benar terlihat di mutasi rekening.");
+      return;
+    }
+    const required = reconciling.payment_outstanding_amount && reconciling.payment_outstanding_amount > 0
+      ? reconciling.payment_outstanding_amount
+      : (reconciling.external_payment_amount ?? reconciling.amount);
+    const difference = amount - required;
     const approved = await confirm({
-      title: "Terima pembayaran murid?",
-      description: payment.will_refund_if_accepted
-        ? payment.refund_reason_if_accepted === "capacity_full"
-          ? `Kapasitas peserta terverifikasi sudah penuh. Cocokkan ${rupiah(payment.external_payment_amount ?? payment.amount)} dengan mutasi rekening. Jika bukti valid, pembayaran akan masuk antrean refund penuh dan tidak menambah peserta.`
-          : `Kelas Kelompok ini sudah dibatalkan. Cocokkan ${rupiah(payment.external_payment_amount ?? payment.amount)} dengan mutasi rekening. Jika bukti valid, pembayaran akan masuk antrean refund penuh dan tidak mengaktifkan peserta.`
-        : `Cocokkan ${rupiah(payment.external_payment_amount ?? payment.amount)}, nama pengirim, dan rekening asal dengan mutasi rekening admin. Keputusan ini akan membuka alur pesanan berikutnya.`,
-      confirmText: "Terima pembayaran",
+      title: difference < 0 ? "Catat pembayaran kurang?" : difference > 0 ? "Catat kelebihan pembayaran?" : "Konfirmasi pembayaran tepat?",
+      description: difference < 0
+        ? `Dana masuk ${rupiah(amount)}. Masih kurang ${rupiah(Math.abs(difference))}; pesanan belum aktif dan murid akan diminta top-up.`
+        : difference > 0
+          ? `Dana masuk ${rupiah(amount)}. Kelebihan ${rupiah(difference)} akan masuk ke Saldo BimbelKu dan pesanan diproses.`
+          : `Dana masuk tepat ${rupiah(amount)}. Pesanan akan diproses setelah konfirmasi.`,
+      confirmText: "Konfirmasi nominal",
       tone: "warning",
     });
-    if (approved) await verify(payment, "paid");
+    if (approved) await verify(reconciling, "paid", undefined, amount);
   };
 
   const reject = async () => {
@@ -235,6 +261,7 @@ export default function PaymentVerification() {
                   options={[
                     { value: "all", label: "Semua status" },
                     { value: "paid", label: "Diterima" },
+                    { value: "partially_paid", label: "Kurang bayar" },
                     { value: "rejected", label: "Ditolak" },
                     { value: "refund_pending", label: "Menunggu refund" },
                     { value: "refunded", label: "Sudah direfund" },
@@ -284,6 +311,28 @@ export default function PaymentVerification() {
             <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-start gap-2"><button type="button" aria-label="Kembali ke daftar pembayaran" onClick={() => setRejecting(null)} className="grid h-10 w-10 place-items-center rounded-xl hover:bg-slate-100"><ArrowLeft size={18} /></button><div className="min-w-0 text-center"><p className="text-lg font-black text-slate-950">Tolak bukti pembayaran</p><p className="mt-1 break-words text-sm text-slate-500">{rejecting.will_refund_if_accepted ? (rejecting.refund_reason_if_accepted === "capacity_full" ? "Kapasitas peserta terverifikasi sudah penuh. Penolakan akan mengakhiri kursi anomali tanpa refund." : "Kelas sudah dibatalkan. Penolakan akan menyelesaikan pembatalan tanpa refund.") : rejecting.is_cheap_class && !rejecting.can_resubmit_if_rejected ? "Masa unggah ulang tidak tersedia; penolakan akan mengakhiri kursi." : "Tuliskan alasan yang dapat dipahami murid."}</p></div><button type="button" aria-label="Tutup" onClick={() => setRejecting(null)} className="grid h-10 w-10 place-items-center rounded-xl hover:bg-slate-100"><X size={18} /></button></div>
             <textarea autoFocus value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} maxLength={500} className="mt-5 min-h-32 w-full rounded-xl border border-slate-200 p-4 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" placeholder="Contoh: nominal pada bukti tidak sesuai dengan tagihan..." />
             <div className="mt-5 flex justify-end gap-2"><Button variant="outline" onClick={() => setRejecting(null)} className="rounded-xl">Batal</Button><Button onClick={() => void reject()} disabled={processingId === rejecting.id} className="rounded-xl bg-rose-600 hover:bg-rose-700">Tolak bukti</Button></div>
+          </div>
+        </div>
+      )}
+      {reconciling && (
+        <div className="fixed inset-0 z-[var(--layer-modal)] grid place-items-center bg-slate-950/60 p-3 backdrop-blur-sm sm:p-4">
+          <div role="dialog" aria-modal="true" className="w-full max-w-lg rounded-[1.75rem] bg-white p-5 shadow-2xl sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div><p className="text-lg font-black text-slate-950">Rekonsiliasi pembayaran</p><p className="mt-1 text-sm text-slate-500">{reconciling.order_id} · {reconciling.student?.name}</p></div>
+              <button type="button" aria-label="Tutup" onClick={() => setReconciling(null)} className="grid h-10 w-10 place-items-center rounded-xl hover:bg-slate-100"><X size={18} /></button>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 p-4 text-sm">
+              <div><p className="text-xs font-bold text-slate-400">Total tagihan</p><p className="mt-1 font-black">{rupiah(reconciling.amount)}</p></div>
+              <div><p className="text-xs font-bold text-slate-400">Transfer yang diperlukan</p><p className="mt-1 font-black">{rupiah(reconciling.payment_outstanding_amount && reconciling.payment_outstanding_amount > 0 ? reconciling.payment_outstanding_amount : (reconciling.external_payment_amount ?? reconciling.amount))}</p></div>
+              {Boolean(reconciling.external_received_amount) && <div className="col-span-2"><p className="text-xs font-bold text-slate-400">Sudah diterima sebelumnya</p><p className="mt-1 font-black text-indigo-700">{rupiah(reconciling.external_received_amount || 0)}</p></div>}
+            </div>
+            <label className="mt-5 block"><span className="text-sm font-black text-slate-800">Nominal dana yang masuk</span><div className="mt-2 flex h-12 items-center rounded-xl border border-slate-200 px-4 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100"><span className="mr-2 text-sm font-bold text-slate-500">Rp</span><input autoFocus inputMode="numeric" value={actualReceived} onChange={(event) => setActualReceived(event.target.value.replace(/[^0-9]/g, ""))} className="min-w-0 flex-1 bg-transparent text-lg font-black outline-none" placeholder="0" /></div></label>
+            {actualReceived && (() => {
+              const required = reconciling.payment_outstanding_amount && reconciling.payment_outstanding_amount > 0 ? reconciling.payment_outstanding_amount : (reconciling.external_payment_amount ?? reconciling.amount);
+              const difference = Number(actualReceived) - required;
+              return <div className={`mt-3 rounded-xl p-3 text-sm font-bold ${difference < 0 ? "bg-amber-50 text-amber-800" : difference > 0 ? "bg-indigo-50 text-indigo-800" : "bg-emerald-50 text-emerald-800"}`}>{difference < 0 ? `Kurang ${rupiah(Math.abs(difference))}` : difference > 0 ? `Lebih ${rupiah(difference)} · masuk Saldo BimbelKu` : "Nominal tepat"}</div>;
+            })()}
+            <div className="mt-5 flex justify-end gap-2"><Button variant="outline" onClick={() => setReconciling(null)} className="rounded-xl">Batal</Button><Button onClick={() => void reconcile()} disabled={processingId === reconciling.id} className="rounded-xl bg-slate-950">Konfirmasi nominal</Button></div>
           </div>
         </div>
       )}

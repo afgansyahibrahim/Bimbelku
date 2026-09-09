@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { KeyRound, Loader2, Mail, Phone, ShieldCheck, UserRound } from "lucide-react";
 import AdminLayout from "@/components/AdminLayout";
+import LogoutButton from "@/components/LogoutButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -79,6 +80,7 @@ export default function AdminProfile() {
             </div>
             <Button disabled={saving} className="mt-6 h-12 w-full rounded-xl bg-slate-950 font-black hover:bg-slate-800">{saving && <Loader2 size={17} className="mr-2 animate-spin" />}Perbarui kata sandi</Button>
           </form>
+          <LogoutButton accent="admin" className="lg:col-start-2" />
         </div>
       )}
     </AdminLayout>

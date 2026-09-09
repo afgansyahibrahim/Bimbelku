@@ -49,6 +49,8 @@ const Login = routeLazy(exactPath("/login"), () => import("./pages/Login"));
 const ForgotPassword = routeLazy(exactPath("/forgot-password"), () => import("./pages/ForgotPassword"));
 const ResetPassword = routeLazy(exactPath("/reset-password"), () => import("./pages/ResetPassword"));
 
+const VerifyEmail = routeLazy(exactPath('/verify-email'), () => import('./pages/VerifyEmail'));
+
 // 4. Halaman Admin
 const DashboardOverview = routeLazy(exactPath("/admin"), () => import("./pages/admin/DashboardOverview"));
 const AdminProfile = routeLazy(exactPath("/admin/profile"), () => import("./pages/admin/AdminProfile"));
@@ -258,6 +260,8 @@ const App = () => (
             <Route path="/terms" element={<TermsConditions />} />
             <Route path="/why-us" element={<WhyUs />} />
             <Route path="/access-denied" element={<AccessDenied />} />
+
+            <Route path={'/verify-email'} element={<VerifyEmail />} />
 
             {/* =========================================
                 2. RUTE ADMIN (Role: admin)

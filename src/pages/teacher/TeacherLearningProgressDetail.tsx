@@ -161,7 +161,7 @@ export default function TeacherLearningProgressDetail() {
 
   return (
     <TeacherLayout title="Progress Kelas">
-      <div className="mx-auto max-w-6xl space-y-6 pb-12">
+      <div className="w-full space-y-6 pb-12">
         <section className="relative overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-blue-800 p-5 text-white shadow-[0_24px_64px_rgba(15,23,42,0.20)] sm:rounded-[2rem] sm:p-8">
           <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-blue-400/20 blur-3xl" />
           <div aria-hidden="true" className="pointer-events-none absolute -bottom-28 left-1/3 h-56 w-56 rounded-full bg-indigo-400/15 blur-3xl" />

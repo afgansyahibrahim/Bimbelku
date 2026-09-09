@@ -3,12 +3,27 @@ import { API_BASE_URL } from "@/lib/http";
 import React, { useState, useEffect, useRef } from "react";
 import { 
   Send, MessageSquare, Clock, CheckCircle2, Loader2, 
-  ImagePlus, X, Paperclip, ChevronLeft, Lock, FileText, Search
+  ImagePlus, X, Paperclip, ChevronLeft, ChevronDown, Lock, FileText, Search
 } from "lucide-react";
 import axios from "axios";
 import { Card, CardContent } from "@/components/ui/card";
 import ProtectedImage from "@/components/ProtectedImage";
 import { validateUpload } from "@/lib/validation";
+
+const FAQS = [
+  { category: "Akun", question: "Bagaimana cara membuat akun?", answer: "Tekan Daftar, isi nama dan email, lalu buat kata sandi. Pilih Murid jika ingin belajar atau Tutor jika ingin mengajar." },
+  { category: "Akun", question: "Saya lupa kata sandi. Apa yang harus dilakukan?", answer: "Tekan Lupa kata sandi di halaman Masuk. Tulis emailmu, lalu ikuti petunjuk yang dikirim ke email." },
+  { category: "Pemesanan", question: "Bagaimana cara mencari tutor?", answer: "Pilih Cari Bimbingan, pilih mata pelajaran, jenjang, jadwal, dan cara belajar. Setelah itu sistem akan mencari tutor yang cocok." },
+  { category: "Pemesanan", question: "Berapa hari yang boleh dipilih dalam paket?", answer: "Paket 1 sesi hanya boleh memilih 1 hari. Paket 4 sesi boleh memilih paling banyak 2 hari. Beberapa sesi boleh berada di hari yang sama." },
+  { category: "Pemesanan", question: "Apakah saya bisa memilih tutor tertentu?", answer: "Kamu boleh memilih tutor yang tersedia. Sistem tetap memeriksa jadwal, mata pelajaran, cara belajar, dan jarak agar kelas aman." },
+  { category: "Pembayaran", question: "Bagaimana cara membayar pesanan?", answer: "Setelah pesanan dibuat, buka halaman pembayaran. Pilih metode yang tersedia, lalu ikuti petunjuknya sampai selesai." },
+  { category: "Pembayaran", question: "Apa yang terjadi setelah saya membayar?", answer: "Admin memeriksa pembayaran. Jika sudah benar, kelas dibuat dan kamu bisa melihat jadwal serta menghubungi tutor." },
+  { category: "Pembayaran", question: "Pembayaran saya belum terlihat. Mengapa?", answer: "Pemeriksaan bisa membutuhkan waktu. Pastikan bukti pembayaran jelas dan jumlahnya benar. Jika terlalu lama, kirim bantuan ke admin." },
+  { category: "Kelas", question: "Di mana saya melihat jadwal kelas?", answer: "Buka menu Kelas Saya. Di sana ada jadwal, nama tutor, cara belajar, dan tombol untuk masuk ke ruang belajar." },
+  { category: "Kelas", question: "Bagaimana cara mengirim pesan kepada tutor?", answer: "Buka menu Pesan, pilih kelasnya, lalu tulis pesan. Pesan hanya bisa dikirim pada kelas yang sudah sah." },
+  { category: "Kelas", question: "Saya tidak bisa hadir. Apa yang harus dilakukan?", answer: "Buka detail kelas secepatnya dan gunakan pilihan ubah jadwal jika tersedia. Jika ada masalah, segera beri tahu tutor dan admin." },
+  { category: "Tutor", question: "Bagaimana cara menjadi tutor?", answer: "Buat akun sebagai Tutor, lengkapi profil, pilih satu mata pelajaran utama, unggah dokumen yang diminta, lalu tunggu pemeriksaan admin." },
+] as const;
 
 export default function HelpCenter() {
   const [view, setView] = useState<"list" | "create" | "chat">("list");
@@ -21,11 +36,15 @@ export default function HelpCenter() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [faqSearch, setFaqSearch] = useState("");
+  const [openFaq, setOpenFaq] = useState<string | null>(null);
   
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
+  const chatMessagesRef = useRef<HTMLDivElement>(null);
+  const previousTicketRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const clearImage = () => {
@@ -79,10 +98,13 @@ export default function HelpCenter() {
 
   // --- AUTO SCROLL ---
   useEffect(() => {
-    if (view === "chat" && scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [activeTicket?.replies?.length, view]);
+    const container = chatMessagesRef.current;
+    if (view !== "chat" || !container) return;
+    const opened = previousTicketRef.current !== activeTicket?.id;
+    const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+    if (opened || nearBottom) scrollRef.current?.scrollIntoView({ behavior: opened ? "auto" : "smooth" });
+    previousTicketRef.current = activeTicket?.id || null;
+  }, [activeTicket?.id, activeTicket?.replies?.length, view]);
 
   const openChat = async (ticketId: number) => {
     setIsLoading(true);
@@ -159,7 +181,7 @@ export default function HelpCenter() {
   const filteredTickets = tickets.filter(t => t.subject.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-10rem)] min-h-[34rem] max-w-6xl flex-col font-sans animate-in fade-in duration-500 sm:h-[calc(100dvh-11rem)] xl:h-[82vh]">
+    <div className="mx-auto flex min-h-0 w-full flex-1 flex-col font-sans animate-in fade-in duration-500">
       
       {/* HEADER UTAMA */}
       <div className="mb-4 flex shrink-0 flex-col items-stretch justify-between gap-4 sm:mb-6 sm:flex-row sm:items-end">
@@ -182,7 +204,12 @@ export default function HelpCenter() {
         
         {/* VIEW 1: LIST TIKET */}
         {view === "list" && (
-           <div className="flex flex-col h-full">
+           <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
+              <section className="border-b border-slate-100 bg-indigo-50/50 p-4 sm:p-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-black uppercase tracking-[.15em] text-indigo-600">Jawaban cepat</p><h2 className="mt-1 text-xl font-black text-slate-900">Pertanyaan yang sering ditanyakan</h2><p className="mt-1 text-sm leading-6 text-slate-600">Jawaban singkat dengan bahasa sederhana.</p></div><div className="relative w-full sm:w-64"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16}/><input value={faqSearch} onChange={(e) => setFaqSearch(e.target.value)} placeholder="Cari jawaban..." className="h-11 w-full rounded-xl border border-indigo-100 bg-white pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-indigo-200" /></div></div>
+                <div className="mt-4 space-y-2">{FAQS.filter((faq) => (faq.category + " " + faq.question + " " + faq.answer).toLowerCase().includes(faqSearch.toLowerCase().trim())).map((faq) => { const key = faq.question; const expanded = openFaq === key; return <div key={key} className="rounded-xl border border-indigo-100 bg-white"><button type="button" onClick={() => setOpenFaq(expanded ? null : key)} className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left text-base font-bold leading-6 text-slate-800"><span><span className="mr-2 inline-block rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-black uppercase text-indigo-700">{faq.category}</span>{faq.question}</span><ChevronDown size={18} className={`shrink-0 text-indigo-500 transition ${expanded ? "rotate-180" : ""}`} /></button>{expanded && <p className="border-t border-indigo-50 px-4 pb-4 pt-3 text-base font-medium leading-7 text-slate-700">{faq.answer}</p>}</div>; })}</div>
+                <button type="button" onClick={() => setView("create")} className="mt-3 text-xs font-black text-indigo-700 hover:text-indigo-900">Tidak menemukan jawaban? Hubungi admin -&gt;</button>
+              </section>
               {/* Search Bar */}
               <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50/50 p-4 sm:p-6">
                   <div className="relative flex-1">
@@ -197,15 +224,15 @@ export default function HelpCenter() {
                   </div>
               </div>
 
-              {/* Scrollable List */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+              {/* Ticket List */}
+              <div className="space-y-3 p-4 sm:p-6">
                   {isLoading ? (
-                      <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                      <div className="flex min-h-48 flex-col items-center justify-center text-slate-400">
                           <Loader2 className="animate-spin mb-2 text-indigo-500" size={32}/>
                           <p>Memuat tiket...</p>
                       </div>
                   ) : filteredTickets.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center h-full text-slate-400 opacity-60">
+                      <div className="flex min-h-48 flex-col items-center justify-center text-center text-slate-400 opacity-60">
                           <MessageSquare size={64} className="mb-4 text-slate-300"/>
                           <p className="font-bold text-lg">Belum ada permintaan bantuan</p>
                           <p className="text-sm">Tekan "Ajukan Bantuan" untuk menghubungi admin.</p>
@@ -240,7 +267,7 @@ export default function HelpCenter() {
 
         {/* VIEW 2: FORM BUAT TIKET */}
         {view === "create" && (
-            <div className="flex h-full flex-col overflow-y-auto p-5 custom-scrollbar sm:p-8 lg:p-12">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5 custom-scrollbar sm:p-8 lg:p-12">
                  <button onClick={() => setView("list")} className="mb-6 text-slate-400 hover:text-indigo-600 font-bold flex items-center gap-2 transition w-fit">
                     <ChevronLeft size={20}/> Kembali ke List
                  </button>
@@ -302,7 +329,7 @@ export default function HelpCenter() {
 
         {/* VIEW 3: CHAT ROOM (REAL-TIME) */}
         {view === "chat" && activeTicket && (
-            <div className="flex flex-col h-full">
+            <div className="flex min-h-0 flex-1 flex-col">
                 {/* Header Chat */}
                 <div className="z-10 flex shrink-0 items-center justify-between border-b border-slate-100 bg-white p-4 sm:p-6">
                     <div className="flex items-center gap-4">
@@ -320,7 +347,7 @@ export default function HelpCenter() {
                 </div>
 
                 {/* Bubble Chat Area */}
-                <div className="flex-1 space-y-5 overflow-y-auto bg-slate-50/50 p-4 custom-scrollbar sm:p-6">
+                <div ref={chatMessagesRef} className="h-0 min-h-0 flex-1 space-y-5 overflow-y-auto bg-slate-50/50 p-4 custom-scrollbar sm:p-6">
                     {activeTicket.replies.map((reply: any) => {
                         const isMyChat = reply.user_id === activeTicket.user_id; 
 

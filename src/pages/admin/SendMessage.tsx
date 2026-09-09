@@ -1,61 +1,93 @@
 import { notify } from "@/lib/notify";
-import { API_BASE_URL } from "@/lib/http";
-import { useState, useEffect } from "react";
-import AdminLayout from "../../components/AdminLayout"; // Sesuaikan path import
-import axios from "axios";
+import http, { getApiError } from "@/lib/http";
+import { useCallback, useEffect, useRef, useState } from "react";
+import AdminLayout from "../../components/AdminLayout";
 import { 
-  Search, Send, User, CheckCircle2, X, MessageSquare, Loader2
+  Search, Send, X, MessageSquare, Loader2, RefreshCw,
 } from "lucide-react";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
 
+type NotificationRecipient = {
+  id: number;
+  name: string;
+  email: string;
+  role: "student" | "teacher";
+  status: string;
+  photo_url?: string | null;
+};
+
+type RecipientResponse = {
+  data?: NotificationRecipient[];
+  meta?: {
+    current_page?: number;
+    last_page?: number;
+    total?: number;
+  };
+};
+
 export default function SendMessage() {
   const confirm = useConfirmDialog();
-  const [users, setUsers] = useState<any[]>([]);
-  const [filteredUsers, setFilteredUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<NotificationRecipient[]>([]);
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [pageInfo, setPageInfo] = useState({ current: 1, last: 1, total: 0 });
+  const requestSequence = useRef(0);
   
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedUser, setSelectedUser] = useState<NotificationRecipient | null>(null);
   const [messageTitle, setMessageTitle] = useState("");
   const [messageBody, setMessageBody] = useState("");
   const [isSending, setIsSending] = useState(false);
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  useEffect(() => {
-    const lower = search.toLowerCase();
-    const filtered = users.filter(u => 
-        u.name.toLowerCase().includes(lower) || 
-        u.email.toLowerCase().includes(lower)
-    );
-    setFilteredUsers(filtered);
-  }, [search, users]);
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async (page = 1, append = false) => {
+    const sequence = ++requestSequence.current;
+    if (append) setIsLoadingMore(true);
+    else setIsLoading(true);
+    setLoadError("");
     try {
-        const token = localStorage.getItem("token");
-        // Kita pakai endpoint getUsers yang sudah ada di AdminController
-        // Asumsi: endpoint ini mengembalikan semua user (student & teacher)
-        // Kita panggil 2 kali untuk student dan teacher lalu gabung, atau buat endpoint khusus 'all-users'
-        // Di sini saya pakai trik panggil endpoint user yang sudah ada
-        const resStudent = await axios.get(`${API_BASE_URL}/admin/users?role=student`, { headers: { Authorization: `Bearer ${token}` }});
-        const resTeacher = await axios.get(`${API_BASE_URL}/admin/users?role=teacher`, { headers: { Authorization: `Bearer ${token}` }});
-        
-        const allUsers = [...resTeacher.data, ...resStudent.data];
-        setUsers(allUsers);
-        setFilteredUsers(allUsers);
+        const response = await http.get<RecipientResponse>("/admin/notifications/recipients", {
+          params: { q: search.trim() || undefined, page, per_page: 50 },
+        });
+        if (sequence !== requestSequence.current) return;
+        const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+        const meta = response.data?.meta;
+        setUsers((current) => {
+          if (!append) return rows;
+          const knownIds = new Set(current.map((item) => item.id));
+          return [...current, ...rows.filter((item) => !knownIds.has(item.id))];
+        });
+        setPageInfo({
+          current: Number(meta?.current_page) || page,
+          last: Number(meta?.last_page) || page,
+          total: Number(meta?.total) || rows.length,
+        });
     } catch (error) {
-        notify.error("Daftar pengguna gagal dimuat.");
+        if (sequence !== requestSequence.current) return;
+        const message = getApiError(error, "Daftar pengguna gagal dimuat.");
+        setLoadError(message);
+        if (!append) {
+          setUsers([]);
+          setPageInfo({ current: 1, last: 1, total: 0 });
+        }
+        notify.error(message);
     } finally {
+      if (sequence === requestSequence.current) {
         setIsLoading(false);
+        setIsLoadingMore(false);
+      }
     }
-  };
+  }, [search]);
 
-  const openModal = (user: any) => {
+  useEffect(() => {
+    requestSequence.current += 1;
+    const timer = window.setTimeout(() => void fetchUsers(), 250);
+    return () => window.clearTimeout(timer);
+  }, [fetchUsers]);
+
+  const openModal = (user: NotificationRecipient) => {
       setSelectedUser(user);
       setMessageTitle("");
       setMessageBody("");
@@ -78,21 +110,17 @@ export default function SendMessage() {
 
       setIsSending(true);
       try {
-          const token = localStorage.getItem("token");
-          await axios.post(`${API_BASE_URL}/admin/notifications/send`, {
+          await http.post("/admin/notifications/send", {
               user_id: selectedUser.id,
               title: messageTitle.trim(),
               message: messageBody.trim(),
               type: 'info'
-          }, {
-              headers: { Authorization: `Bearer ${token}` }
           });
           
           notify.success(`Pesan terkirim ke ${selectedUser.name}`);
           setIsModalOpen(false);
       } catch (error) {
-          console.error(error);
-          notify.error("Gagal mengirim pesan.");
+          notify.error(getApiError(error, "Gagal mengirim pesan."));
       } finally {
           setIsSending(false);
       }
@@ -122,21 +150,31 @@ export default function SendMessage() {
 
         {/* LIST USER */}
         {isLoading ? (
-            <div className="text-center py-20"><Loader2 className="animate-spin mx-auto text-indigo-600"/></div>
+            <div className="text-center py-20"><Loader2 className="animate-spin mx-auto text-indigo-600"/><p className="mt-3 text-sm font-semibold text-slate-500">Memuat pengguna...</p></div>
+        ) : loadError && users.length === 0 ? (
+            <div className="rounded-[2rem] border border-rose-100 bg-white px-6 py-12 text-center shadow-sm">
+                <p className="font-bold text-slate-800">Daftar pengguna belum dapat dimuat</p>
+                <p className="mt-2 text-sm text-slate-500">{loadError}</p>
+                <button type="button" onClick={() => void fetchUsers()} className="mt-5 inline-flex h-11 items-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white transition hover:bg-indigo-700">
+                    <RefreshCw size={16} /> Coba lagi
+                </button>
+            </div>
         ) : (
+          <>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {filteredUsers.map((user) => (
+                {users.map((user) => (
                     <div key={user.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm hover-shadow-md transition-all flex items-center justify-between group">
-                        <div className="flex items-center gap-4">
-                            <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white shadow-md ${user.role === 'teacher' ? 'bg-indigo-600' : 'bg-orange-500'}`}>
+                        <div className="flex min-w-0 items-center gap-4">
+                            <div className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full font-bold text-white shadow-md ${user.role === 'teacher' ? 'bg-indigo-600' : 'bg-orange-500'}`}>
                                 {user.photo_url ? (
                                     <img src={user.photo_url} alt={`Foto ${user.name}`} loading="lazy" decoding="async" className="w-full h-full rounded-full object-cover"/>
                                 ) : (
-                                    user.name.charAt(0).toUpperCase()
+                                    (user.name || "P").charAt(0).toUpperCase()
                                 )}
                             </div>
-                            <div>
-                                <h4 className="font-bold text-slate-800 line-clamp-1">{user.name}</h4>
+                            <div className="min-w-0">
+                                <h4 className="font-bold text-slate-800 line-clamp-1">{user.name || "Pengguna"}</h4>
+                                <p className="truncate text-xs text-slate-500">{user.email}</p>
                                 <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${user.role === 'teacher' ? 'bg-indigo-50 text-indigo-600' : 'bg-orange-50 text-orange-600'}`}>
                                     {user.role === 'teacher' ? 'Tutor' : 'Murid'}
                                 </span>
@@ -144,18 +182,29 @@ export default function SendMessage() {
                         </div>
                         
                         <button 
+                            type="button"
                             onClick={() => openModal(user)}
-                            className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm active:scale-95"
+                            className="ml-3 shrink-0 p-3 bg-slate-50 text-slate-400 rounded-xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm active:scale-95"
                             title="Kirim Pesan"
+                            aria-label={`Kirim pesan ke ${user.name || "pengguna"}`}
                         >
                             <Send size={18} />
                         </button>
                     </div>
                 ))}
-                {filteredUsers.length === 0 && (
-                    <div className="col-span-full text-center py-10 text-slate-400 italic">User tidak ditemukan.</div>
+                {users.length === 0 && (
+                    <div className="col-span-full text-center py-10 text-slate-400 italic">Pengguna tidak ditemukan.</div>
                 )}
             </div>
+            {pageInfo.current < pageInfo.last && (
+                <div className="mt-6 text-center">
+                    <button type="button" disabled={isLoadingMore} onClick={() => void fetchUsers(pageInfo.current + 1, true)} className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 shadow-sm transition hover:border-indigo-200 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">
+                        {isLoadingMore && <Loader2 size={16} className="animate-spin" />}
+                        Muat lebih banyak ({users.length} dari {pageInfo.total})
+                    </button>
+                </div>
+            )}
+          </>
         )}
 
         {/* MODAL KIRIM PESAN */}

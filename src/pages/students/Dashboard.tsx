@@ -68,7 +68,7 @@ type DashboardData = {
   active_disputes_count: number;
 };
 
-const activeStatuses = ["active", "payment_submitted", "awaiting_payment", "payment_rejected", "matching", "teacher_pending", "no_teacher", "refund_pending"];
+const activeStatuses = ["active", "payment_submitted", "awaiting_payment", "payment_rejected", "partially_paid", "matching", "teacher_pending", "no_teacher", "refund_pending"];
 
 const storedStudentName = () => {
   try {
@@ -375,8 +375,8 @@ function AdaptiveCard({ packageData, nextSession }: { packageData?: PackageData;
   if (packageData.status === "no_teacher") {
     return <ActionCard icon={Radar} eyebrow="Pencarian dijeda" title="Tutor Belum Tersedia" description="Perluas pencarian atau batalkan paket tanpa kehilangan voucher." to="/student/my-classes?tab=process" action="Atur Pencarian" />;
   }
-  if (["awaiting_payment", "payment_rejected"].includes(packageData.status) && packageData.latest_order) {
-    return <ActionCard icon={CreditCard} eyebrow={packageData.status === "payment_rejected" ? "Bukti perlu diperbaiki" : "Pesanan sudah diperiksa"} title="Selesaikan Pembayaran" description="Pencarian tutor dimulai setelah pembayaran dinyatakan diterima oleh sistem." to="/payment" action="Bayar Sekarang" />;
+  if (["awaiting_payment", "payment_rejected", "partially_paid"].includes(packageData.status) && packageData.latest_order) {
+    return <ActionCard icon={CreditCard} eyebrow={packageData.status === "partially_paid" ? "Pembayaran masih kurang" : packageData.status === "payment_rejected" ? "Bukti perlu diperbaiki" : "Pesanan sudah diperiksa"} title={packageData.status === "partially_paid" ? "Lunasi Sisa Pembayaran" : "Selesaikan Pembayaran"} description="Pencarian tutor dimulai setelah pembayaran dinyatakan lunas oleh sistem." to="/payment" action={packageData.status === "partially_paid" ? "Bayar Kekurangan" : "Bayar Sekarang"} />;
   }
   if (packageData.status === "payment_submitted") {
     return <ActionCard icon={RefreshCw} eyebrow="Bukti sudah masuk" title="Pembayaran Diperiksa Admin" description="Pencarian tutor akan dimulai segera setelah bukti disetujui." to="/student/history" action="Lihat Status" />;

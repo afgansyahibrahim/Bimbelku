@@ -16,7 +16,7 @@ class BookingRequest extends Model
         'total_amount', 'teacher_response_deadline', 'next_matching_at', 'payment_due_at', 'chapter',
         'learning_goal', 'search_radius_km', 'search_started_at',
         'search_expires_at', 'teacher_decision_deadline', 'teacher_rejection_reason', 'booking_id',
-        'package_subject_id',
+        'package_subject_id', 'teacher_replacement_request_id',
     ];
 
     protected $casts = [
@@ -79,6 +79,11 @@ class BookingRequest extends Model
     public function packageSubject()
     {
         return $this->belongsTo(PackageSubject::class);
+    }
+
+    public function teacherReplacement()
+    {
+        return $this->belongsTo(TeacherReplacementRequest::class, 'teacher_replacement_request_id');
     }
 
     public function matchingOperationLogs()

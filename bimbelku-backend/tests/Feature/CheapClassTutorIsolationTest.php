@@ -152,6 +152,7 @@ class CheapClassTutorIsolationTest extends TestCase
             'levels' => ['SD'],
             'is_active' => true,
             'is_online' => true,
+            'is_group_active' => true,
         ]);
         TeacherAvailability::create([
             'user_id' => $teacher->id,

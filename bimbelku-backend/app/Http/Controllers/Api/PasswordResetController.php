@@ -3,27 +3,50 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
+use App\Mail\ResetPasswordMail;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 
 class PasswordResetController extends Controller
 {
+    private const COOLDOWN_SECONDS = 60;
+
     // 1. KIRIM LINK RESET (Forgot Password)
     public function sendResetLink(Request $request)
     {
         $request->validate(['email' => 'required|email']);
         $email = mb_strtolower(trim((string) $request->email));
         $genericMessage = 'Jika email terdaftar, link reset akan dikirim.';
+        $cooldownKey = 'password-reset-email:'.hash_hmac(
+            'sha256',
+            $email,
+            (string) config('app.key')
+        );
+
+        if (RateLimiter::tooManyAttempts($cooldownKey, 1)) {
+            $seconds = max(1, RateLimiter::availableIn($cooldownKey));
+
+            return response()->json([
+                'message' => 'Tunggu sebelum meminta link reset kembali.',
+                'error_code' => 'password_reset_cooldown',
+                'retry_after_seconds' => $seconds,
+            ], 429, ['Retry-After' => (string) $seconds]);
+        }
+
+        // Berlaku juga untuk email yang tidak terdaftar agar respons tidak
+        // membocorkan keberadaan akun melalui perilaku cooldown.
+        RateLimiter::hit($cooldownKey, self::COOLDOWN_SECONDS);
 
         $user = User::where('email', $email)->first();
 
         // Keamanan: Jangan kasih tau kalau email gak ketemu
-        if (!$user) {
+        if (! $user) {
             return response()->json(['message' => $genericMessage], 200);
         }
 
@@ -35,7 +58,7 @@ class PasswordResetController extends Controller
             ['email' => $email],
             [
                 'token' => Hash::make($token),
-                'created_at' => Carbon::now()
+                'created_at' => Carbon::now(),
             ]
         );
 
@@ -44,12 +67,10 @@ class PasswordResetController extends Controller
 
         // Kirim Email
         try {
-            Mail::send('emails.reset_password', ['url' => $url], function ($message) use ($email) {
-                $message->to($email);
-                $message->subject('Reset Password BimbelKu');
-            });
+            Mail::to($email)->send(new ResetPasswordMail($url));
         } catch (\Throwable $exception) {
             DB::table('password_reset_tokens')->where('email', $email)->delete();
+            RateLimiter::clear($cooldownKey);
             report($exception);
         }
 
@@ -70,13 +91,14 @@ class PasswordResetController extends Controller
             ->where('email', $email)
             ->first();
 
-        if (!$record || !Hash::check((string) $request->token, (string) $record->token)) {
+        if (! $record || ! Hash::check((string) $request->token, (string) $record->token)) {
             return response()->json(['message' => 'Token tidak valid atau email salah.'], 400);
         }
 
         // Cek Expired (60 menit)
         if (Carbon::parse($record->created_at)->addMinutes(60)->isPast()) {
             DB::table('password_reset_tokens')->where('email', $email)->delete();
+
             return response()->json(['message' => 'Token sudah kadaluarsa.'], 400);
         }
 

@@ -9,7 +9,7 @@ Scope: penyederhanaan struktur akademik dan skalabilitas Monitoring Kelas Admin.
 1. Menghilangkan Subbab dari seluruh flow aktif pengguna agar murid/tutor cukup memahami **Mapel → Bab → Progress**.
 2. Menjaga histori paket lama tanpa migration destruktif.
 3. Mengubah Monitoring Kelas Admin agar tidak mengambil seluruh data sekaligus dan tetap nyaman pada mobile 320–430 px.
-4. Menjaga seluruh keputusan Tahap 1, payment, Saldo BimbelKu, renewal 24/72 jam, Paket Belajar, dan Kelas Kelompok.
+4. Menjaga seluruh keputusan Tahap 1, payment, Saldo BimbelKu, renewal 12/24 jam, Paket Belajar, dan Kelas Kelompok.
 
 ## A. Bab-only
 
@@ -116,9 +116,9 @@ Semua harus dijalankan ulang di Laragon pengguna setelah overlay dan `php artisa
 
 ## Tidak diubah
 
-- Paket Belajar baru: lead time 72 jam.
-- Renewal tanpa tutor lama: 72 jam.
-- Renewal tutor lama yang sama: 24 jam.
+- Paket Belajar baru: lead time 24 jam.
+- Renewal tanpa tutor lama: 24 jam.
+- Renewal tutor lama yang sama: 12 jam.
 - Lifecycle private PIN → attendance → target → checkout → hasil belajar → kamera → approval murid.
 - Kelas Kelompok tetap report tutor → verifikasi admin, tanpa PIN/foto/approval murid.
 - Saldo BimbelKu dan refund tender-preserving.

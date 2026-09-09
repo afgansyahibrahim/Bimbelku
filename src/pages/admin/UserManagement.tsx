@@ -17,29 +17,38 @@ export default function UserManagement() {
   const [activeTab, setActiveTab] = useState<"student" | "teacher">("student");
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [meta, setMeta] = useState({ current_page: 1, last_page: 1, total: 0 });
+  const [subjectFilter, setSubjectFilter] = useState("");
   
+  const [subjectOptions, setSubjectOptions] = useState<string[]>([]);
   // State Modal Detail
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setAppliedSearch(searchTerm.trim());
+      setPage(1);
+    }, 350);
+    return () => window.clearTimeout(timeoutId);
+  }, [searchTerm]);
   // 1. FETCH DATA DARI API
   const fetchUsers = useCallback(async () => {
     setIsLoading(true);
     try {
       const token = localStorage.getItem("token");
-      // Request ke: /api/admin/users?role=student ATAU ?role=teacher
-      const response = await axios.get(`${API_BASE_URL}/admin/users?role=${activeTab}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setUsers(response.data);
-    } catch (error) {
-      console.error(error);
-      notify.error("Gagal memuat data pengguna.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [activeTab]);
-
+      const params = new URLSearchParams({ role: activeTab, page: String(page), per_page: "20" });
+      if (subjectFilter) params.set("subject", subjectFilter);
+      if (appliedSearch) params.set("q", appliedSearch);
+      const response = await axios.get(API_BASE_URL + "/admin/users?" + params.toString(), { headers: { Authorization: "Bearer " + token } });
+      setUsers(response.data.data ?? []);
+      setMeta(response.data.meta ?? { current_page: 1, last_page: 1, total: 0 });
+      if (activeTab === "teacher") setSubjectOptions(response.data.subject_options ?? []);
+    } catch (error) { console.error(error); notify.error("Gagal memuat data pengguna."); }
+    finally { setIsLoading(false); }
+  }, [activeTab, subjectFilter, appliedSearch, page]);
   useEffect(() => {
     void fetchUsers();
   }, [fetchUsers]);
@@ -81,10 +90,7 @@ export default function UserManagement() {
     setModalOpen(true);
   };
 
-  const filteredUsers = users.filter(user => 
-    user.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    user.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredUsers = users;
 
   return (
     <AdminLayout title="Manajemen Akun Pengguna">
@@ -236,18 +242,20 @@ export default function UserManagement() {
            {/* TAB SWITCHER */}
            <div className="flex bg-gray-100/80 p-1 rounded-xl w-full sm:w-auto">
               <button 
-                onClick={() => setActiveTab("student")}
+                onClick={() => { setActiveTab("student"); setPage(1); }}
                 className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === "student" ? "bg-white text-orange-600 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
               >
                 <School size={16} /> Data Murid
               </button>
               <button 
-                onClick={() => setActiveTab("teacher")}
+                onClick={() => { setActiveTab("teacher"); setPage(1); }}
                 className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === "teacher" ? "bg-white text-orange-600 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
               >
                 <GraduationCap size={16} /> Data Tutor
               </button>
            </div>
+
+           {activeTab === "teacher" && <select value={subjectFilter} onChange={(e) => { setSubjectFilter(e.target.value); setPage(1); }} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm sm:w-52"><option value="">Semua mapel</option>{subjectOptions.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select>}
 
            {/* SEARCH BOX */}
            <div className="relative w-full sm:w-64">
@@ -262,6 +270,10 @@ export default function UserManagement() {
            </div>
         </div>
 
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-6 py-4 text-sm">
+          <span className="text-gray-500">Menampilkan {users.length} dari {meta.total} data</span>
+          <div className="flex items-center gap-2"><button type="button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="rounded-lg border border-gray-200 px-3 py-2 font-bold text-gray-600 disabled:opacity-40">Sebelumnya</button><span className="font-bold text-gray-700">Halaman {meta.current_page} / {meta.last_page}</span><button type="button" disabled={page >= meta.last_page} onClick={() => setPage((value) => Math.min(meta.last_page, value + 1))} className="rounded-lg border border-gray-200 px-3 py-2 font-bold text-gray-600 disabled:opacity-40">Berikutnya</button></div>
+        </div>
         {/* Kartu mobile */}
         <div className="divide-y divide-gray-100 md:hidden">
           {isLoading ? <div className="p-10 text-center text-sm text-gray-500"><Loader2 className="mr-2 inline animate-spin" />Memuat data...</div> : filteredUsers.length > 0 ? filteredUsers.map((u) => (
@@ -279,14 +291,14 @@ export default function UserManagement() {
               <tr>
                 <th className="px-6 py-4">Nama Lengkap</th>
                 <th className="px-6 py-4">Email</th>
-                <th className="px-6 py-4">Status</th>
+                {activeTab === "teacher" && <th className="px-6 py-4">Mapel</th>}<th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4 text-center">Detail</th>
                 <th className="px-6 py-4 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {isLoading ? (
-                  <tr><td colSpan={5} className="px-6 py-10 text-center text-gray-500"><Loader2 className="animate-spin inline mr-2"/> Memuat data...</td></tr>
+                  <tr><td colSpan={activeTab === "teacher" ? 6 : 5} className="px-6 py-10 text-center text-gray-500"><Loader2 className="animate-spin inline mr-2"/> Memuat data...</td></tr>
               ) : filteredUsers.length > 0 ? (
                 filteredUsers.map((u) => (
                   <tr key={u.id} className={`hover:bg-gray-50 transition-colors ${u.status === 'banned' ? 'bg-red-50/50' : ''}`}>
@@ -299,6 +311,7 @@ export default function UserManagement() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{u.email}</td>
+                    {activeTab === "teacher" && <td className="px-6 py-4 text-sm font-semibold text-gray-700"><span>{u.subject_name || "Belum diisi"}</span>{u.subject_data_warning && <span className="mt-1 block rounded-lg bg-amber-100 px-2 py-1 text-[10px] font-black leading-4 text-amber-800">{u.subject_data_warning}</span>}</td>}
                     <td className="px-6 py-4">
                       <span className={`flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded-full w-fit ${u.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${u.status === 'active' ? 'bg-green-600' : 'bg-red-600'}`}></span>
@@ -334,7 +347,7 @@ export default function UserManagement() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-gray-500">
+                  <td colSpan={activeTab === "teacher" ? 6 : 5} className="px-6 py-10 text-center text-gray-500">
                     Tidak ditemukan data {activeTab === 'student' ? 'murid' : 'tutor'} yang cocok.
                   </td>
                 </tr>

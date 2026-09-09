@@ -70,6 +70,11 @@ class StudentController extends Controller
             'wallet_reserved_amount' => (float) $order->wallet_reserved_amount,
             'wallet_applied_amount' => (float) $order->wallet_applied_amount,
             'external_payment_amount' => round(max(0, (float) $order->amount - (float) ($order->status === 'submitted' ? $order->wallet_reserved_amount : $order->wallet_applied_amount)), 2),
+            'external_received_amount' => (float) $order->external_received_amount,
+            'payment_outstanding_amount' => (float) $order->payment_outstanding_amount,
+            'payment_surplus_amount' => (float) $order->payment_surplus_amount,
+            'payment_reconciliation_status' => $order->payment_reconciliation_status,
+            'top_up_due_at' => $order->top_up_due_at,
             'payment_provider' => $order->payment_provider,
             'refund' => $order->refund,
         ]);

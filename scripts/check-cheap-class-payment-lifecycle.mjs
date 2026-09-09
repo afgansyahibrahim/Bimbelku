@@ -18,7 +18,12 @@ const checks = [
   [service.includes("abort_if(!$class->registration_deadline->isFuture()"), 'student cancellation closes exactly at the registration deadline'],
   [expireSeats.indexOf('$class = CheapClass::query()->lockForUpdate()') < expireSeats.indexOf('$locked = CheapClassEnrollment::query()'), 'seat expiry locks class before enrollment'],
   [expireSeats.indexOf('$locked = CheapClassEnrollment::query()') < expireSeats.indexOf('$order = Order::query()'), 'seat expiry locks enrollment before order'],
-  [expireSeats.includes("!in_array($order->status, ['pending', 'rejected'], true)"), 'seat expiry does not overwrite submitted or paid finance records'],
+  [
+    expireSeats.includes("!in_array($order->status, ['pending', 'rejected', 'partially_paid'], true)")
+      && expireSeats.includes("if ($order?->status === 'partially_paid')")
+      && expireSeats.includes('returnExpiredPartialPayment($order)'),
+    'seat expiry preserves submitted or paid records and returns partial funds',
+  ],
   [finalize.includes('Tutor tidak tersedia sampai pendaftaran berakhir.') && finalize.indexOf('teacherCanTeach') < finalize.indexOf("$submitted ="), 'missing tutor cancels the package before submitted proof can stall lifecycle'],
   [service.includes("'cancel_after_verification' => true") && service.includes('Pembayaran Kelas Kelompok belum selesai diverifikasi sebelum sesi pertama dimulai'), 'late verification goes directly to refund and package cancellation'],
   [test.includes('test_exact_seat_deadline_rejects_payment_and_expires_the_invoice'), 'feature test covers the exact payment boundary'],

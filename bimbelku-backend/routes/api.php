@@ -1,12 +1,10 @@
 <?php
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AdminAccessController;
-use App\Http\Controllers\Api\AdminClassController;
 use App\Http\Controllers\Api\AdminCheapClassController;
-use App\Http\Controllers\Api\AdminFinanceOperationsController;
+use App\Http\Controllers\Api\AdminClassController;
 use App\Http\Controllers\Api\AdminController;
+use App\Http\Controllers\Api\AdminFinanceOperationsController;
 use App\Http\Controllers\Api\AdminMatchingController;
 use App\Http\Controllers\Api\AdminRatingController;
 use App\Http\Controllers\Api\AdminSettingController;
@@ -14,9 +12,10 @@ use App\Http\Controllers\Api\AdminStageFiveController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CheapClassController;
 use App\Http\Controllers\Api\ClassroomController;
-use App\Http\Controllers\Api\CustomerWalletController;
 use App\Http\Controllers\Api\CurriculumChapterController;
 use App\Http\Controllers\Api\CurriculumSubjectController;
+use App\Http\Controllers\Api\CustomerWalletController;
+use App\Http\Controllers\Api\EmailVerificationController;
 use App\Http\Controllers\Api\HourlyRateController;
 use App\Http\Controllers\Api\LearningCatalogController;
 use App\Http\Controllers\Api\LearningSessionController;
@@ -30,26 +29,30 @@ use App\Http\Controllers\Api\PublicController;
 use App\Http\Controllers\Api\PublicMediaController;
 use App\Http\Controllers\Api\RatingController;
 use App\Http\Controllers\Api\ScheduleChangeController;
+use App\Http\Controllers\Api\ScheduleRecommendationController;
 use App\Http\Controllers\Api\SessionWorkflowController;
+use App\Http\Controllers\Api\StageFiveContentController;
 use App\Http\Controllers\Api\StudentController;
 use App\Http\Controllers\Api\StudentPackageController;
 use App\Http\Controllers\Api\StudentRefundController;
-use App\Http\Controllers\Api\TeacherController;
 use App\Http\Controllers\Api\TeacherCheapClassController;
+use App\Http\Controllers\Api\TeacherController;
 use App\Http\Controllers\Api\TeacherDocumentController;
 use App\Http\Controllers\Api\TeacherOfferController;
-use App\Http\Controllers\Api\ScheduleRecommendationController;
 use App\Http\Controllers\Api\TeacherOperationsController;
+use App\Http\Controllers\Api\TeacherReplacementController;
 use App\Http\Controllers\Api\TeacherScheduleController;
 use App\Http\Controllers\Api\TicketController;
 use App\Http\Controllers\Api\TutorAvailabilityController;
 use App\Http\Controllers\Api\UserController;
-use App\Http\Controllers\Api\StageFiveContentController;
+use Illuminate\Support\Facades\Route;
 
 Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:auth-register');
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:auth-login');
 Route::post('/forgot-password', [PasswordResetController::class, 'sendResetLink'])->middleware('throttle:auth-forgot-password');
 Route::post('/reset-password', [PasswordResetController::class, 'reset'])->middleware('throttle:auth-reset-password');
+Route::post('/email/verification/resend', [EmailVerificationController::class, 'resend'])->middleware('throttle:auth-email-verification-resend');
+Route::post('/email/verification/verify', [EmailVerificationController::class, 'verify'])->middleware('throttle:auth-email-verification-verify');
 
 Route::get('/learning-catalog', [LearningCatalogController::class, 'index']);
 Route::get('/settings/footer', [PublicController::class, 'getFooterSettings']);
@@ -104,6 +107,8 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         ->middleware('throttle:booking-message-send');
     Route::get('/classroom-messages/{classroomMessage}/attachment', [ProtectedFileController::class, 'classroomMessageAttachment']);
     Route::get('/teacher-appeals/{teacherAppeal}/evidence', [ProtectedFileController::class, 'teacherAppealEvidence']);
+    Route::get('/teacher-replacements/{teacherReplacement}/evidence', [ProtectedFileController::class, 'teacherReplacementEvidence'])
+        ->middleware('feature:teacher_replacement');
     Route::get('/bookings/{booking}/schedule-options', [ScheduleChangeController::class, 'options'])
         ->middleware('throttle:booking-schedule-options');
     Route::post('/bookings/{booking}/schedule-changes', [ScheduleChangeController::class, 'store'])
@@ -132,6 +137,8 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         Route::get('/student/wallet', [CustomerWalletController::class, 'show']);
         Route::get('/student/payment-pin/status', [PaymentPinController::class, 'status']);
         Route::post('/student/payment-pin', [PaymentPinController::class, 'set'])->middleware('throttle:student-payment-pin-set');
+        Route::post('/student/payment-pin/reset/request', [PaymentPinController::class, 'requestReset'])->middleware('throttle:student-payment-pin-reset-request');
+        Route::post('/student/payment-pin/reset', [PaymentPinController::class, 'reset'])->middleware('throttle:student-payment-pin-reset');
         Route::post('/student/refunds/{refund}/destination', [StudentRefundController::class, 'selectDestination'])
             ->middleware(['throttle:student-refund-destination', 'idempotency', 'finance.audit:refund_destination_select']);
         Route::get('/student/orders/{order}/wallet-quote', [CustomerWalletController::class, 'quote']);
@@ -153,6 +160,18 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         Route::post('/student/packages/{learningPackage}/reschedule', [StudentPackageController::class, 'reschedule'])
             ->middleware('throttle:student-package-reschedule');
         Route::post('/student/packages/{learningPackage}/cancel', [StudentPackageController::class, 'cancel']);
+        Route::post('/student/packages/{learningPackage}/subjects/{packageSubject}/teacher-replacements', [TeacherReplacementController::class, 'store'])
+            ->middleware(['feature:teacher_replacement', 'throttle:student-teacher-replacement', 'idempotency']);
+        Route::get('/student/teacher-replacements/{teacherReplacement}', [TeacherReplacementController::class, 'show'])
+            ->middleware('feature:teacher_replacement');
+        Route::post('/student/teacher-replacements/{teacherReplacement}/cancel', [TeacherReplacementController::class, 'cancel'])
+            ->middleware(['feature:teacher_replacement', 'throttle:student-teacher-replacement-action', 'idempotency']);
+        Route::post('/student/teacher-replacements/{teacherReplacement}/retry', [TeacherReplacementController::class, 'retry'])
+            ->middleware(['feature:teacher_replacement', 'throttle:student-teacher-replacement-action', 'idempotency']);
+        Route::post('/student/teacher-replacements/{teacherReplacement}/reschedule', [TeacherReplacementController::class, 'reschedule'])
+            ->middleware(['feature:teacher_replacement', 'throttle:student-teacher-replacement-action', 'idempotency']);
+        Route::post('/student/teacher-replacements/{teacherReplacement}/request-refund', [TeacherReplacementController::class, 'requestRefund'])
+            ->middleware(['feature:teacher_replacement', 'throttle:student-teacher-replacement-action', 'idempotency']);
         Route::get('/student/packages/{learningPackage}', [StudentPackageController::class, 'show']);
         Route::get('/student/vouchers', [StudentPackageController::class, 'vouchers']);
         Route::post('/student/promotions/preview', [StudentPackageController::class, 'previewPromotion'])
@@ -227,7 +246,11 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         Route::post('/cheap-classes/{cheapClass}/sessions/{session}/request-revision', [AdminCheapClassController::class, 'requestSessionReportRevision'])
             ->middleware(['throttle:admin-cheap-class-session-review', 'idempotency']);
         Route::get('/audit-log', [AdminAccessController::class, 'audit']);
+        Route::get('/audit-log/integrity', [AdminAccessController::class, 'auditIntegrity']);
+        Route::get('/audit-log/{adminAuditLog}', [AdminAccessController::class, 'auditDetail'])
+            ->whereNumber('adminAuditLog');
 
+        Route::get('/notifications/recipients', [NotificationController::class, 'recipients']);
         Route::post('/notifications/send', [NotificationController::class, 'send']);
 
         Route::get('/hourly-rates', [HourlyRateController::class, 'index']);
@@ -266,6 +289,14 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
         Route::post('/tutor-searches/{bookingRequest}/assign-teacher', [AdminMatchingController::class, 'assignTeacher'])
             ->middleware('throttle:admin-matching-assign-teacher');
         Route::get('/cases', [SessionWorkflowController::class, 'adminCases']);
+        Route::get('/teacher-replacements', [TeacherReplacementController::class, 'adminIndex'])
+            ->middleware('feature:teacher_replacement');
+        Route::get('/teacher-replacements/{teacherReplacement}', [TeacherReplacementController::class, 'adminShow'])
+            ->middleware('feature:teacher_replacement');
+        Route::post('/teacher-replacements/{teacherReplacement}/approve', [TeacherReplacementController::class, 'approve'])
+            ->middleware(['feature:teacher_replacement', 'throttle:admin-teacher-replacement-review', 'idempotency']);
+        Route::post('/teacher-replacements/{teacherReplacement}/reject', [TeacherReplacementController::class, 'reject'])
+            ->middleware(['feature:teacher_replacement', 'throttle:admin-teacher-replacement-review', 'idempotency']);
         Route::post('/teacher-appeals/{teacherAppeal}/resolve', [TeacherOperationsController::class, 'resolveAppeal']);
         Route::post('/disputes/{bookingDispute}/resolve', [SessionWorkflowController::class, 'resolveDispute']);
         Route::post('/session-reports/{sessionReport}/resolve', [SessionWorkflowController::class, 'resolveReport']);
@@ -275,7 +306,10 @@ Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
 
         Route::get('/tickets', [TicketController::class, 'index']);
         Route::post('/settings/footer', [AdminController::class, 'updateFooterSettings']);
+        Route::get('/admin-socials', [AdminController::class, 'getAdminSocials']);
         Route::post('/socials', [AdminController::class, 'storeSocial']);
+        Route::put('/socials/{id}', [AdminController::class, 'updateSocial']);
+        Route::post('/socials/reorder', [AdminController::class, 'reorderSocials']);
         Route::delete('/socials/{id}', [AdminController::class, 'deleteSocial']);
         Route::get('/classes', [AdminClassController::class, 'index']);
         Route::get('/classes/{id}', [AdminClassController::class, 'show']);

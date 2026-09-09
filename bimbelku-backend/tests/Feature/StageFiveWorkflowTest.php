@@ -401,5 +401,17 @@ class StageFiveWorkflowTest extends TestCase
             'class_type' => 'private',
             'package_subject_id' => $packageSubject->id,
         ]);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $student->id,
+            'title' => 'Semua tutor ditemukan',
+            'is_read' => false,
+            'target_url' => '/student/my-classes',
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $teacher->id,
+            'title' => 'Kelas baru aktif',
+            'is_read' => false,
+            'target_url' => '/guru/kelas',
+        ]);
     }
 }

@@ -20,14 +20,21 @@ class AdminStageFiveController extends Controller
 {
     private const INTERNAL_DESTINATIONS = [
         '/student/dashboard',
+        '/student/dashboard#tutorial',
         '/student/packages',
         '/student/my-classes?tab=process',
+        '/student/my-classes?tab=history',
         '/student/packages/new',
+        '/student/kelas-murah',
         '/student/vouchers',
         '/student/offers',
         '/student/my-classes',
+        '/student/progress',
+        '/student/messages',
         '/student/history',
+        '/student/notifications',
         '/student/profile',
+        '/student/account',
         '/student/help',
         '/guru',
         '/guru/permintaan',
@@ -147,7 +154,7 @@ class AdminStageFiveController extends Controller
         $newPath = null;
         try {
             if ($request->hasFile('image')) {
-                $newPath = $this->storePublicImage($request, 'stage-five/banners');
+                $newPath = $this->storeBannerImage($request);
                 $data['image_path'] = $newPath;
             }
             $banner = DynamicBanner::create($data);
@@ -166,7 +173,7 @@ class AdminStageFiveController extends Controller
         $oldPath = $dynamicBanner->image_path;
         $newPath = null;
         if ($request->hasFile('image')) {
-            $newPath = $this->storePublicImage($request, 'stage-five/banners');
+            $newPath = $this->storeBannerImage($request);
             $data['image_path'] = $newPath;
         }
         try {
@@ -470,6 +477,74 @@ class AdminStageFiveController extends Controller
             500,
             'Gambar gagal disimpan. Periksa izin tulis folder bimbelku-backend/storage/app/public.'
         );
+
+        return $path;
+    }
+
+    private function storeBannerImage(Request $request): string
+    {
+        $file = $request->file('image');
+        if (
+            !$file
+            || !function_exists('imagecreatefromstring')
+            || !function_exists('imagewebp')
+        ) {
+            return $this->storePublicImage($request, 'stage-five/banners');
+        }
+
+        $contents = @file_get_contents($file->getRealPath());
+        $source = is_string($contents) ? @imagecreatefromstring($contents) : false;
+        if (!$source) {
+            return $this->storePublicImage($request, 'stage-five/banners');
+        }
+
+        $sourceWidth = imagesx($source);
+        $sourceHeight = imagesy($source);
+        $scale = min(1, 1440 / max(1, $sourceWidth), 720 / max(1, $sourceHeight));
+        $targetWidth = max(1, (int) round($sourceWidth * $scale));
+        $targetHeight = max(1, (int) round($sourceHeight * $scale));
+        $target = imagecreatetruecolor($targetWidth, $targetHeight);
+
+        if (!$target) {
+            imagedestroy($source);
+            return $this->storePublicImage($request, 'stage-five/banners');
+        }
+
+        imagealphablending($target, false);
+        imagesavealpha($target, true);
+        $transparent = imagecolorallocatealpha($target, 0, 0, 0, 127);
+        imagefilledrectangle($target, 0, 0, $targetWidth, $targetHeight, $transparent);
+        imagecopyresampled(
+            $target,
+            $source,
+            0,
+            0,
+            0,
+            0,
+            $targetWidth,
+            $targetHeight,
+            $sourceWidth,
+            $sourceHeight
+        );
+
+        $disk = Storage::disk('public');
+        $directory = 'stage-five/banners';
+        $disk->makeDirectory($directory);
+        $path = $directory.'/'.\Illuminate\Support\Str::uuid().'.webp';
+
+        try {
+            $stored = imagewebp($target, $disk->path($path), 82);
+        } finally {
+            imagedestroy($target);
+            imagedestroy($source);
+        }
+
+        if (!$stored || !$disk->exists($path)) {
+            if ($disk->exists($path)) {
+                $disk->delete($path);
+            }
+            return $this->storePublicImage($request, 'stage-five/banners');
+        }
 
         return $path;
     }

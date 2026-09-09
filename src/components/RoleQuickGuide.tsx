@@ -275,6 +275,7 @@ function RoleQuickGuideContent({ role }: { role: Role }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
   const [spotlight, setSpotlight] = useState<Spotlight | null>(null);
+  const [viewportSize, setViewportSize] = useState(() => viewport());
   const touchStart = useRef<number | null>(null);
   const dialogRef = useRef<HTMLElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
@@ -384,6 +385,26 @@ function RoleQuickGuideContent({ role }: { role: Role }) {
 
   useEffect(() => {
     if (!open) return;
+    let frame = 0;
+    const refreshViewport = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        setViewportSize(viewport());
+      });
+    };
+
+    refreshViewport();
+    window.addEventListener("resize", refreshViewport);
+    window.visualViewport?.addEventListener("resize", refreshViewport);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", refreshViewport);
+      window.visualViewport?.removeEventListener("resize", refreshViewport);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") closeGuide();
       const focusableSelector = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -483,7 +504,7 @@ function RoleQuickGuideContent({ role }: { role: Role }) {
 
   const dialogStyle = useMemo<CSSProperties>(() => {
     if (typeof window === "undefined") return {};
-    const currentViewport = viewport();
+    const currentViewport = viewportSize;
     const margin = 12;
     const gap = 14;
     const width = Math.min(360, currentViewport.width - margin * 2);
@@ -527,7 +548,7 @@ function RoleQuickGuideContent({ role }: { role: Role }) {
     if (roomBelow >= minimumUsableHeight && roomBelow >= roomAbove) return { left: closeLeft, top: spotlight.top + spotlight.height + gap, width, maxHeight: roomBelow };
     if (roomAbove >= minimumUsableHeight) return { left: closeLeft, bottom: currentViewport.height - spotlight.top + gap, width, maxHeight: roomAbove };
     return { left: closeLeft, top: margin, width, maxHeight: viewportMaxHeight };
-  }, [spotlight]);
+  }, [spotlight, viewportSize]);
 
   const tutorialOverlay = open && typeof document !== "undefined" ? (
     <div

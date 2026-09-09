@@ -64,6 +64,8 @@ const sessionSchedulePreview = (first: Date | null, weekdays: number[], sessionC
   return result;
 };
 
+const subjectLimitForSessionCount = (sessionCount: number) => sessionCount >= 12 ? 3 : sessionCount >= 8 ? 2 : 1;
+
 const initialForm = () => {
   const opening = minimumStart(0);
   const suggestedLearningDay = new Date(opening);
@@ -110,7 +112,8 @@ export default function CheapClassManagement() {
       && (!form.grade || item.grades.includes(form.grade))
   ), [subjects, form.education_level, form.grade]);
   const selectedSubjectNames = useMemo(() => form.subjects.map((item) => item.subject_name).filter(Boolean), [form.subjects]);
-  const subjectsReady = form.subjects.length >= 1 && form.subjects.length <= 3
+  const maximumSubjects = subjectLimitForSessionCount(Number(form.session_count || 1));
+  const subjectsReady = form.subjects.length >= 1 && form.subjects.length <= maximumSubjects
     && form.subjects.every((item) => Boolean(item.subject_name && item.curriculum_chapter_id));
   const normalTotal = Number(form.price_per_session || 0) * Number(form.session_count || 0);
   const finalTotal = form.use_custom_price ? Number(form.custom_price_per_student || 0) : normalTotal;
@@ -247,7 +250,7 @@ export default function CheapClassManagement() {
   };
 
   return <AdminLayout title="Kelas Kelompok">
-    <div className="mx-auto max-w-7xl space-y-7 pb-12">
+    <div className="w-full space-y-7 pb-12">
       <section className="rounded-[2rem] bg-gradient-to-br from-indigo-800 via-violet-800 to-fuchsia-800 px-7 py-8 text-white shadow-xl">
         <p className="text-xs font-black uppercase tracking-[.2em] text-indigo-100">Kelas online bersama</p>
         <h1 className="mt-3 text-3xl font-black">Kelas Kelompok dikelola admin</h1>
@@ -266,7 +269,7 @@ export default function CheapClassManagement() {
           </div>
 
           <div className="mt-5 rounded-2xl border border-slate-200 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-black text-slate-900">Mata pelajaran paket</p><p className="mt-1 text-xs text-slate-500">Pilih minimal 1 dan maksimal 3 mapel. Setiap mapel memiliki bab katalog sendiri.</p></div><span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">{form.subjects.length}/3 mapel</span></div>
+            <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-black text-slate-900">Mata pelajaran paket</p><p className="mt-1 text-xs text-slate-500">Paket 1 atau 4 sesi memakai 1 mapel, paket 8 sesi maksimal 2 mapel, dan paket 12 sesi maksimal 3 mapel.</p></div><span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">{form.subjects.length}/{maximumSubjects} mapel</span></div>
             <div className="mt-4 space-y-3">
               {form.subjects.map((selection, index) => {
                 const availableChapters = chapters.filter((item) => item.subject_name === selection.subject_name && item.education_level === form.education_level && item.grade === form.grade);
@@ -277,11 +280,11 @@ export default function CheapClassManagement() {
                 </div>;
               })}
             </div>
-            <Button type="button" variant="outline" disabled={!form.grade || form.subjects.length >= 3 || compatibleSubjects.length <= form.subjects.length} onClick={() => setForm((current) => ({ ...current, subjects: [...current.subjects, { subject_name: "", curriculum_chapter_id: "" }] }))} className="mt-3 w-full rounded-xl border-indigo-200 text-indigo-700 hover:bg-indigo-50"><Plus className="mr-2" size={16} />Tambah mapel</Button>
+            <Button type="button" variant="outline" disabled={!form.grade || form.subjects.length >= maximumSubjects || compatibleSubjects.length <= form.subjects.length} onClick={() => setForm((current) => ({ ...current, subjects: [...current.subjects, { subject_name: "", curriculum_chapter_id: "" }] }))} className="mt-3 w-full rounded-xl border-indigo-200 text-indigo-700 hover:bg-indigo-50"><Plus className="mr-2" size={16} />Tambah mapel</Button>
           </div>
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <Field label="Jumlah sesi dalam satu paket"><Select value={form.session_count} onValueChange={(value) => setForm((current) => ({ ...current, session_count: value, weekdays: current.weekdays.slice(0, Math.min(4, Number(value))) }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[1, 4, 8, 12].map((count) => <SelectItem key={count} value={String(count)}>{count} sesi</SelectItem>)}</SelectContent></Select></Field>
+            <Field label="Jumlah sesi dalam satu paket"><Select value={form.session_count} onValueChange={(value) => setForm((current) => ({ ...current, session_count: value, subjects: current.subjects.slice(0, subjectLimitForSessionCount(Number(value))), weekdays: current.weekdays.slice(0, Math.min(4, Number(value))) }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[1, 4, 8, 12].map((count) => <SelectItem key={count} value={String(count)}>{count} sesi</SelectItem>)}</SelectContent></Select></Field>
             <Field label="Tanggal pembukaan pendaftaran"><Input required type="date" min={todayValue()} value={form.registration_open_date} onChange={(event) => setForm((current) => ({ ...current, registration_open_date: event.target.value }))} /></Field>
             <Field label="Jam pembukaan pendaftaran"><Input required type="time" step="3600" value={form.registration_open_time} onChange={(event) => setForm((current) => ({ ...current, registration_open_time: event.target.value }))} /></Field>
             <Field label="Jam seluruh sesi"><Input required type="time" step="3600" value={form.start_time} onChange={(event) => setForm((current) => ({ ...current, start_time: event.target.value }))} /></Field>

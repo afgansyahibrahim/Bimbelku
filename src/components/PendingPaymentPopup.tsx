@@ -194,7 +194,7 @@ export default function PendingPaymentPopup() {
     <>
       {/* === WIDGET STICKY (POJOK KANAN BAWAH) === */}
       <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] left-3 right-3 z-[60] min-w-0 overflow-visible animate-in slide-in-from-bottom-5 fade-in duration-500 sm:left-auto sm:right-4 sm:w-[min(340px,calc(100vw-2rem))] xl:bottom-6 xl:right-6">
-        <div className="group relative min-w-0 w-full overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-[0_20px_50px_rgba(0,0,0,0.1)] transition-all hover-scale-102 sm:rounded-[2rem] sm:p-5">
+        <div className="group relative max-h-[calc(100dvh-5.75rem-env(safe-area-inset-bottom))] min-w-0 w-full overflow-x-hidden overflow-y-auto rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-[0_20px_50px_rgba(0,0,0,0.1)] transition-all hover-scale-102 sm:rounded-[2rem] sm:p-5">
           
           {/* Progress Bar Sisa Waktu */}
           <div className="absolute top-0 left-0 h-1.5 bg-indigo-600 transition-all duration-1000" 

@@ -71,6 +71,20 @@ export default function Login() {
       const axios = axiosModule?.default;
       const isAxiosError = axios ? axios.isAxiosError(error) : false;
       const status = isAxiosError ? (error as { response?: { status?: number } }).response?.status : undefined;
+      const errorData = isAxiosError
+        ? (error as { response?: { data?: { error_code?: string; email?: string } } }).response?.data
+        : undefined;
+      if (errorData?.error_code === 'email_not_verified' && errorData.email) {
+        notify.warning('Email belum diverifikasi', {
+          description: 'Masukkan kode OTP yang telah dikirim ke email Anda.',
+        });
+        const verifyParams = new URLSearchParams({ email: errorData.email });
+        if (requestedRedirect) verifyParams.set("redirect", requestedRedirect);
+        navigate('/verify-email?' + verifyParams.toString(), {
+          state: { email: errorData.email, redirect: requestedRedirect },
+        });
+        return;
+      }
       const message = isAxiosError
         ? ((error as { response?: { data?: { message?: string } } }).response?.data)?.message
           || "Gagal masuk. Periksa email/password."

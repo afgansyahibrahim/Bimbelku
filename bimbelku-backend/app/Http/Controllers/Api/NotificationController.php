@@ -4,10 +4,55 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Notification;
+use App\Models\User;
+use App\Support\PublicMedia;
 use Illuminate\Http\Request;
 
 class NotificationController extends Controller
 {
+    public function recipients(Request $request)
+    {
+        $validated = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'between:10,50'],
+        ]);
+        $search = trim((string) ($validated['q'] ?? ''));
+        $perPage = (int) ($validated['per_page'] ?? 30);
+
+        $recipients = User::query()
+            ->select(['id', 'name', 'email', 'role', 'status', 'avatar'])
+            ->whereIn('role', ['student', 'teacher'])
+            ->where('status', '!=', 'pending')
+            ->with('teacherProfile:id,user_id,photo')
+            ->when($search !== '', fn ($query) => $query->where(function ($lookup) use ($search) {
+                $lookup->where('name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%");
+            }))
+            ->orderBy('name')
+            ->orderBy('id')
+            ->paginate($perPage);
+
+        return response()->json([
+            'data' => $recipients->getCollection()->map(fn (User $user) => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'role' => $user->role,
+                'status' => $user->status,
+                'photo_url' => PublicMedia::url(
+                    $user->role === 'teacher' ? $user->teacherProfile?->photo : $user->avatar
+                ),
+            ])->values(),
+            'meta' => [
+                'current_page' => $recipients->currentPage(),
+                'last_page' => $recipients->lastPage(),
+                'per_page' => $recipients->perPage(),
+                'total' => $recipients->total(),
+            ],
+        ]);
+    }
+
     public function send(Request $request)
     {
         $validated = $request->validate([
@@ -38,7 +83,7 @@ class NotificationController extends Controller
             ->where('user_id', $request->user()->id)
             ->when(($validated['status'] ?? 'all') === 'unread', fn ($item) => $item->where('is_read', false))
             ->when(($validated['status'] ?? 'all') === 'read', fn ($item) => $item->where('is_read', true))
-            ->when(!empty($validated['type']), fn ($item) => $item->where('type', $validated['type']))
+            ->when(! empty($validated['type']), fn ($item) => $item->where('type', $validated['type']))
             ->latest();
 
         $unreadQuery = Notification::query()
@@ -48,7 +93,7 @@ class NotificationController extends Controller
 
         $notifications = $query->limit((int) ($validated['per_page'] ?? 20))->get();
         $notifications->each(function (Notification $notification) use ($role) {
-            if (!$notification->target_url) {
+            if (! $notification->target_url) {
                 $notification->target_url = $this->legacyTargetUrl($role, (string) $notification->title);
             }
         });
@@ -125,6 +170,7 @@ class NotificationController extends Controller
                 'Profil diterima murid' => '/guru/kelas',
                 'Pembayaran murid sedang diperiksa' => '/guru/kelas',
                 'Pembayaran murid diterima' => '/guru/kelas',
+                'Kelas baru aktif' => '/guru/kelas',
                 'Sesi dibatalkan karena pembayaran terlambat' => '/guru/kelas',
                 'Sesi dikonfirmasi' => '/guru/kelas',
                 'Murid mengajukan keberatan' => '/guru/kelas',
@@ -166,7 +212,7 @@ class NotificationController extends Controller
         $notification = Notification::query()
             ->where('user_id', $request->user()->id)
             ->findOrFail($id);
-        if (!$notification->is_read) {
+        if (! $notification->is_read) {
             $notification->update(['is_read' => true]);
         }
 

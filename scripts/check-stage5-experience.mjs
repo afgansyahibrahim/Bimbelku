@@ -120,9 +120,24 @@ for (const route of [
   expect(app.includes(route), `frontend wajib menyediakan ${route}`);
 }
 
-expect(banner.includes("4000"), "banner dashboard wajib berganti setiap empat detik");
-expect(banner.includes("onTouchStart"), "banner wajib mendukung geser pada layar sentuh");
+expect(
+  banner.includes("12_000")
+    && banner.includes("5_000")
+    && banner.includes("(value + 1) % items.length"),
+  "banner wajib menunda rotasi awal, lalu berulang dari slide terakhir ke pertama",
+);
+expect(
+  banner.includes("onPointerDown") && banner.includes("onPointerUp"),
+  "banner wajib mendukung geser pada layar sentuh dan stylus",
+);
 expect(guide.includes("/content/tutorials"), "tutorial wajib dimuat dari CRUD backend");
+expect(adminPage.includes('"/student/dashboard#tutorial", "Buka Tutorial Dashboard"'), "form banner wajib menyediakan trigger tutorial dashboard");
+expect(
+  adminController.includes("'/student/dashboard#tutorial'")
+    && banner.includes('isDashboardTutorialDestination')
+    && banner.includes('window.dispatchEvent(new CustomEvent("bimbelku:open-tutorial"'),
+  "banner tutorial dashboard wajib lolos validasi dan membuka tutorial umum murid tanpa navigasi",
+);
 expect(dashboard.includes("DynamicBannerCarousel"), "dashboard murid wajib memakai banner dinamis");
 expect(builder.includes("/student/packages/quote"), "builder paket wajib meminta hitungan harga dari server");
 expect(builder.includes("promotion_claim_id"), "builder wajib mendukung Voucher Saya");

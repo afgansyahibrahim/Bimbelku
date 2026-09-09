@@ -20,6 +20,12 @@ import {
 import axios from "axios";
 import { EDUCATION_LEVELS, GRADES_BY_EDUCATION_LEVEL } from "@/lib/educationCatalog";
 
+const savedText = (value: unknown, fallback: string): string => {
+  if (value === undefined) return fallback;
+  if (value === null) return "";
+  return String(value);
+};
+
 export default function Profile() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -75,7 +81,10 @@ export default function Profile() {
     const fetchUser = async () => {
       setError(null);
       try {
-        const response = await getCached("/user", { maxAgeMs: 60_000, force: true });
+        const [response, defaultCover] = await Promise.all([
+          getCached("/user", { maxAgeMs: 60_000, force: true }),
+          getCached<{ url?: string }>("/settings/teacher-cover", { maxAgeMs: 5 * 60_000 }).catch(() => ({ data: {} })),
+        ]);
         
         // Asumsi response backend mengembalikan { name, email, avatar_url }
         // Jika backend mengirim 'photo' atau 'avatar', sesuaikan di sini
@@ -85,7 +94,7 @@ export default function Profile() {
             email: userData.email,
             phone: sanitizePhoneInput(userData.phone || ""),
             avatar_url: userData.avatar_url || userData.photo_url || null,
-            profile_cover_url: userData.profile_cover_url || null,
+            profile_cover_url: userData.profile_cover_url || defaultCover.data?.url || null,
             password_updated_at: userData.password_updated_at || null,
             student_birth_date: userData.student_birth_date || null,
             student_education_level: userData.student_education_level || "SD",
@@ -137,14 +146,17 @@ export default function Profile() {
     // call fetchUser directly via a helper
     const fetchUser = async () => {
       try {
-        const response = await getCached("/user", { maxAgeMs: 60_000, force: true });
+        const [response, defaultCover] = await Promise.all([
+          getCached("/user", { maxAgeMs: 60_000, force: true }),
+          getCached<{ url?: string }>("/settings/teacher-cover", { maxAgeMs: 5 * 60_000 }).catch(() => ({ data: {} })),
+        ]);
         const userData = response.data;
         setUser({
             name: sanitizePersonName(userData.name || ""),
             email: userData.email,
             phone: sanitizePhoneInput(userData.phone || ""),
             avatar_url: userData.avatar_url || userData.photo_url || null,
-            profile_cover_url: userData.profile_cover_url || null,
+            profile_cover_url: userData.profile_cover_url || defaultCover.data?.url || null,
             password_updated_at: userData.password_updated_at || null,
             student_birth_date: userData.student_birth_date || null,
             student_education_level: userData.student_education_level || "SD",
@@ -312,11 +324,13 @@ export default function Profile() {
       formData.append("grade", user.grade);
       formData.append("school_name", user.school_name);
       formData.append("learning_needs", user.learning_needs);
-      formData.append("address", user.address);
-      formData.append("maps_link", user.maps_link);
-      formData.append("latitude", user.latitude);
-      formData.append("longitude", user.longitude);
-      formData.append("location_consent", user.location_consent_at ? "1" : "0");
+      const submittedAddress = user.address.trim();
+      const keepsLocation = submittedAddress.length > 0;
+      formData.append("address", submittedAddress);
+      formData.append("maps_link", keepsLocation ? user.maps_link : "");
+      formData.append("latitude", keepsLocation ? user.latitude : "");
+      formData.append("longitude", keepsLocation ? user.longitude : "");
+      formData.append("location_consent", keepsLocation && user.location_consent_at ? "1" : "0");
       
       // Trik Laravel: Gunakan POST tapi simulasi PUT agar file terbaca
       formData.append("_method", "PUT"); 
@@ -334,27 +348,34 @@ export default function Profile() {
         }
       });
 
-      const savedAddress = response.data?.data?.address ?? user.address;
-      const savedLatitude = response.data?.data?.latitude?.toString() ?? user.latitude;
-      const savedLongitude = response.data?.data?.longitude?.toString() ?? user.longitude;
+      const savedData = response.data?.data;
+      const savedAddress = savedText(savedData?.address, submittedAddress);
+      const savedMapsLink = savedText(savedData?.maps_link, keepsLocation ? user.maps_link : "");
+      const savedLatitude = savedText(savedData?.latitude, keepsLocation ? user.latitude : "");
+      const savedLongitude = savedText(savedData?.longitude, keepsLocation ? user.longitude : "");
+      const savedLocationConsent = savedData?.location_consent_at === undefined
+        ? (keepsLocation ? user.location_consent_at : null)
+        : savedData.location_consent_at
+          ? String(savedData.location_consent_at)
+          : null;
 
       setSelectedFile(null);
       setSelectedCover(null);
       setUser((current) => ({
         ...current,
-        name: response.data?.data?.name ?? current.name,
-        phone: response.data?.data?.phone ?? current.phone,
-        avatar_url: response.data?.data?.avatar_url ?? current.avatar_url,
-        profile_cover_url: response.data?.data?.profile_cover_url ?? current.profile_cover_url,
-        student_education_level: response.data?.data?.student_education_level ?? current.student_education_level,
-        grade: response.data?.data?.grade ?? current.grade,
-        school_name: response.data?.data?.school_name ?? current.school_name,
-        learning_needs: response.data?.data?.learning_needs ?? current.learning_needs,
+        name: savedText(savedData?.name, current.name),
+        phone: savedText(savedData?.phone, current.phone),
+        avatar_url: savedData?.avatar_url ?? current.avatar_url,
+        profile_cover_url: savedData?.profile_cover_url ?? current.profile_cover_url,
+        student_education_level: savedText(savedData?.student_education_level, current.student_education_level),
+        grade: savedText(savedData?.grade, current.grade),
+        school_name: savedText(savedData?.school_name, current.school_name),
+        learning_needs: savedText(savedData?.learning_needs, current.learning_needs),
         address: savedAddress,
-        maps_link: response.data?.data?.maps_link ?? current.maps_link,
+        maps_link: savedMapsLink,
         latitude: savedLatitude,
         longitude: savedLongitude,
-        location_consent_at: response.data?.data?.location_consent_at ?? current.location_consent_at,
+        location_consent_at: savedLocationConsent,
       }));
       if (avatarPreviewUrlRef.current) {
         URL.revokeObjectURL(avatarPreviewUrlRef.current);
@@ -412,9 +433,9 @@ export default function Profile() {
             {/* === 1. HEADER & AVATAR === */}
             <div className="relative overflow-hidden rounded-[2rem] border border-slate-100 bg-white p-5 shadow-xl shadow-slate-200/50 sm:p-8 md:rounded-[2.5rem] md:p-10">
                 <div
-                  className="absolute left-0 top-0 h-32 w-full bg-gradient-to-r from-blue-600 to-indigo-700 bg-cover bg-center"
+                  className="absolute left-0 top-0 h-32 w-full bg-gradient-to-r from-slate-700 to-slate-500 bg-cover bg-center"
                   style={user.profile_cover_url ? {
-                    backgroundImage: `linear-gradient(90deg, rgba(37,99,235,.48), rgba(67,56,202,.56)), url("${user.profile_cover_url}")`,
+                    backgroundImage: `linear-gradient(90deg, rgba(15,23,42,.42), rgba(71,85,105,.36)), url("${user.profile_cover_url}")`,
                   } : undefined}
                 />
                 <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
@@ -437,7 +458,7 @@ export default function Profile() {
                 <div className="relative z-10 mt-14 flex flex-col items-center gap-5 md:mt-12 md:flex-row md:gap-8">
                     {/* Avatar Circle */}
                     <div className="relative group shrink-0 mx-auto md:mx-0">
-                        <div className="h-28 w-28 rounded-full bg-white p-1.5 shadow-2xl ring-4 ring-blue-50/50 sm:h-36 sm:w-36">
+                        <div className="h-28 w-28 rounded-full bg-white p-1.5 shadow-2xl ring-4 ring-slate-200 sm:h-36 sm:w-36">
                             <div className="w-full h-full rounded-full bg-slate-100 overflow-hidden relative">
                                 {user.avatar_url ? (
                                     <img src={user.avatar_url} alt="Foto profil murid" loading="lazy" decoding="async" className="w-full h-full object-cover"/>
@@ -478,7 +499,7 @@ export default function Profile() {
                     </div>
 
                     {/* Text Info */}
-                    <div className="mb-2 min-w-0 flex-1 text-center md:mb-0 md:text-left">
+                    <div className="mb-2 min-w-0 flex-1 text-center md:mb-0 md:translate-y-7 md:text-left">
                         <h1 className="mb-1 break-words text-2xl font-black text-slate-900 sm:text-3xl">{user.name}</h1>
                         <p className="mb-4 flex min-w-0 items-center justify-center gap-2 break-all text-sm font-medium text-slate-500 md:justify-start">
                             <Mail size={16}/> {user.email}

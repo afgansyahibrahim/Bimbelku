@@ -11,15 +11,14 @@ use App\Models\Order;
 use App\Models\PackageChapter;
 use App\Models\PackageSession;
 use App\Models\PackageSessionChapterLog;
-use App\Models\ParticipantAttendance;
 use App\Models\PromotionClaim;
 use App\Models\Refund;
 use App\Models\SessionReport;
 use App\Models\TeacherAppeal;
-use App\Models\Setting;
+use App\Models\TeacherReplacementRequest;
 use App\Services\CustomerWalletService;
+use App\Services\PartialPackageRefundService;
 use App\Services\TeacherPointService;
-use App\Support\PackageChapterProgress;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -36,7 +35,7 @@ class SessionWorkflowController extends Controller
             'evidence' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
         ]);
 
-        if (!in_array($booking->status, ['confirmed', 'in_progress'], true)) {
+        if (! in_array($booking->status, ['confirmed', 'in_progress'], true)) {
             return response()->json(['message' => 'Ketidakhadiran tidak dapat dilaporkan pada status ini.'], 422);
         }
         if (now()->lt($booking->start_at->copy()->addMinutes(15))) {
@@ -54,7 +53,7 @@ class SessionWorkflowController extends Controller
         try {
             $report = DB::transaction(function () use ($request, $booking, $participant, $validated, $path) {
                 $lockedBooking = Booking::query()->lockForUpdate()->findOrFail($booking->id);
-                if (!in_array($lockedBooking->status, ['confirmed', 'in_progress'], true)) {
+                if (! in_array($lockedBooking->status, ['confirmed', 'in_progress'], true)) {
                     abort(422, 'Ketidakhadiran tidak dapat dilaporkan pada status ini.');
                 }
                 if (now()->lt($lockedBooking->start_at->copy()->addMinutes(15))) {
@@ -361,7 +360,7 @@ class SessionWorkflowController extends Controller
             'evidence' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
         ]);
 
-        if (!in_array($booking->status, ['confirmed', 'in_progress'], true)) {
+        if (! in_array($booking->status, ['confirmed', 'in_progress'], true)) {
             return response()->json(['message' => 'Ketidakhadiran tutor tidak dapat dilaporkan pada status ini.'], 422);
         }
         if (now()->lt($booking->start_at->copy()->addMinutes(15))) {
@@ -380,7 +379,7 @@ class SessionWorkflowController extends Controller
         try {
             $report = DB::transaction(function () use ($request, $booking, $participant, $validated, $path) {
                 $lockedBooking = Booking::query()->lockForUpdate()->findOrFail($booking->id);
-                if (!in_array($lockedBooking->status, ['confirmed', 'in_progress'], true)) {
+                if (! in_array($lockedBooking->status, ['confirmed', 'in_progress'], true)) {
                     abort(422, 'Ketidakhadiran tutor tidak dapat dilaporkan pada status ini.');
                 }
                 if (now()->lt($lockedBooking->start_at->copy()->addMinutes(15))) {
@@ -448,14 +447,14 @@ class SessionWorkflowController extends Controller
         return response()->json([
             'session_reports' => SessionReport::query()
                 ->when($active, fn ($query) => $query->where('status', 'pending'))
-                ->when(!$active, fn ($query) => $query->where('status', '!=', 'pending'))
+                ->when(! $active, fn ($query) => $query->where('status', '!=', 'pending'))
                 ->with(['booking.teacher', 'reportedStudent', 'reporter', 'teacher', 'reviewer'])
                 ->latest()
                 ->limit(200)
                 ->get(),
             'disputes' => BookingDispute::query()
                 ->when($active, fn ($query) => $query->where('status', 'pending'))
-                ->when(!$active, fn ($query) => $query->where('status', '!=', 'pending'))
+                ->when(! $active, fn ($query) => $query->where('status', '!=', 'pending'))
                 ->with(['booking.teacher', 'booking.latestLearningProgressReport', 'student', 'resolver'])
                 ->latest()
                 ->limit(200)
@@ -463,7 +462,7 @@ class SessionWorkflowController extends Controller
             'completion_reviews' => Booking::query()
                 ->whereNotNull('admin_review_required_at')
                 ->when($active, fn ($query) => $query->where('status', 'admin_review_required'))
-                ->when(!$active, fn ($query) => $query->where('status', '!=', 'admin_review_required'))
+                ->when(! $active, fn ($query) => $query->where('status', '!=', 'admin_review_required'))
                 ->with(['teacher', 'participants.student', 'latestLearningProgressReport'])
                 ->latest('admin_review_required_at')
                 ->limit(200)
@@ -476,7 +475,7 @@ class SessionWorkflowController extends Controller
                 ->get(),
             'teacher_appeals' => TeacherAppeal::query()
                 ->when($active, fn ($query) => $query->where('status', 'pending'))
-                ->when(!$active, fn ($query) => $query->where('status', '!=', 'pending'))
+                ->when(! $active, fn ($query) => $query->where('status', '!=', 'pending'))
                 ->with(['teacher:id,name,email', 'pointEntry.booking.bookingRequest:id,subject_name'])
                 ->latest()
                 ->limit(200)
@@ -494,6 +493,28 @@ class SessionWorkflowController extends Controller
                     'reviewed_at' => $appeal->reviewed_at,
                     'created_at' => $appeal->created_at,
                 ]),
+            'teacher_replacements' => config('features.teacher_replacement')
+                ? TeacherReplacementRequest::query()
+                    ->when($active, fn ($query) => $query->whereIn('status', TeacherReplacementRequest::OPEN_STATUSES))
+                    ->when(! $active, fn ($query) => $query->whereNotIn('status', TeacherReplacementRequest::OPEN_STATUSES))
+                    ->with([
+                        'student:id,name,email',
+                        'oldTeacher:id,name',
+                        'newTeacher:id,name',
+                        'reviewer:id,name',
+                        'package:id,package_code,status',
+                        'subject:id,subject_name,status',
+                        'sessions.packageSession',
+                        'sessions.oldBooking.reports',
+                        'sessions.oldBooking.disputes',
+                    ])
+                    ->latest()
+                    ->limit(200)
+                    ->get()
+                : [],
+            'features' => [
+                'teacher_replacement' => (bool) config('features.teacher_replacement'),
+            ],
             'scope' => $scope,
         ]);
     }
@@ -607,7 +628,7 @@ class SessionWorkflowController extends Controller
             ]);
 
             if ($lockedReport->type === 'teacher_emergency') {
-                if (!$accepted) {
+                if (! $accepted) {
                     $pointService->change(
                         $booking->teacher_id,
                         -((int) ($validated['penalty_points'] ?? 20)),
@@ -626,6 +647,7 @@ class SessionWorkflowController extends Controller
                     'type' => $accepted ? 'info' : 'warning',
                     'target_url' => '/guru/performa',
                 ]);
+
                 return;
             }
 
@@ -696,14 +718,14 @@ class SessionWorkflowController extends Controller
                         'payout_status' => $otherPendingReports
                             ? 'locked'
                             : $booking->payout_status,
-                        'admin_review_required_at' => !$otherPendingReports
+                        'admin_review_required_at' => ! $otherPendingReports
                             && $restoredStatus === 'admin_review_required'
                             ? now()
                             : null,
                     ]);
                 }
 
-                if (!$accepted) {
+                if (! $accepted) {
                     Notification::create([
                         'user_id' => $lockedReport->reported_by,
                         'title' => 'Laporan ketidakhadiran tutor diputuskan',
@@ -714,6 +736,7 @@ class SessionWorkflowController extends Controller
                         'target_url' => '/student/my-classes',
                     ]);
                 }
+
                 return;
             }
 
@@ -829,7 +852,8 @@ class SessionWorkflowController extends Controller
     public function completeRefund(
         Request $request,
         Refund $refund,
-        CustomerWalletService $wallets
+        CustomerWalletService $wallets,
+        PartialPackageRefundService $partialPackageRefunds
     ) {
         $validated = $request->validate([
             'proof' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
@@ -842,8 +866,8 @@ class SessionWorkflowController extends Controller
             return response()->json(['message' => 'Refund ini sudah diproses.'], 422);
         }
         if (
-            !in_array($refund->destination_method, ['bank_transfer', 'bimbelku_balance'], true)
-            || !$refund->destination_selected_at
+            ! in_array($refund->destination_method, ['bank_transfer', 'bimbelku_balance'], true)
+            || ! $refund->destination_selected_at
         ) {
             return response()->json([
                 'message' => 'Murid belum memilih tujuan refund. Tunggu pilihan rekening/e-wallet atau Saldo BimbelKu.',
@@ -877,7 +901,7 @@ class SessionWorkflowController extends Controller
                 'message' => 'Tujuan refund rekening/e-wallet belum lengkap. Minta murid memperbarui pilihan refund.',
             ], 422);
         }
-        if ($isBankTransfer && $requestedBreakdown['external_funded_amount'] > 0.009 && !$request->hasFile('proof')) {
+        if ($isBankTransfer && $requestedBreakdown['external_funded_amount'] > 0.009 && ! $request->hasFile('proof')) {
             return response()->json([
                 'message' => 'Bukti transfer refund wajib diunggah untuk bagian refund yang dikembalikan ke rekening/e-wallet.',
                 'errors' => ['proof' => ['Bukti transfer refund wajib diunggah.']],
@@ -899,6 +923,7 @@ class SessionWorkflowController extends Controller
                 $wallets,
                 $requestedDestinationMethod,
                 $requestedDestinationVersion,
+                $partialPackageRefunds,
                 &$walletTransaction,
                 &$completedBreakdown
             ) {
@@ -945,7 +970,7 @@ class SessionWorkflowController extends Controller
                         422,
                         'Tujuan refund rekening/e-wallet belum lengkap.'
                     );
-                    abort_if(!$path, 422, 'Bukti transfer refund wajib diunggah untuk bagian refund rekening/e-wallet.');
+                    abort_if(! $path, 422, 'Bukti transfer refund wajib diunggah untuk bagian refund rekening/e-wallet.');
 
                     // Store credit tidak dapat dicairkan. Jika pesanan dulu dibayar
                     // sebagian dengan Saldo BimbelKu, bagian tersebut otomatis
@@ -974,12 +999,17 @@ class SessionWorkflowController extends Controller
                     'processed_at' => now(),
                     'notes' => $validated['notes'] ?? null,
                 ]);
-                $lockedRefund->order->update(['status' => 'refunded']);
-                $this->restorePromotionClaimForRefund($lockedRefund->order, (string) $lockedRefund->reason);
-                $participant = $lockedRefund->order->participant;
-                $participant?->update(['status' => 'refunded']);
-                $participant?->bookingRequest?->update(['status' => 'refunded']);
-                $lockedRefund->order->cheapClassEnrollment?->update(['status' => 'refunded']);
+                $isTeacherReplacement = $lockedRefund->source_type === 'teacher_replacement';
+                if (! $isTeacherReplacement) {
+                    $lockedRefund->order->update(['status' => 'refunded']);
+                    $this->restorePromotionClaimForRefund($lockedRefund->order, (string) $lockedRefund->reason);
+                    $participant = $lockedRefund->order->participant;
+                    $participant?->update(['status' => 'refunded']);
+                    $participant?->bookingRequest?->update(['status' => 'refunded']);
+                    $lockedRefund->order->cheapClassEnrollment?->update(['status' => 'refunded']);
+                } else {
+                    $partialPackageRefunds->completeTeacherReplacementRefund($lockedRefund->fresh());
+                }
 
                 $remainingRefunds = $lockedRefund->booking?->refunds()->where('status', 'pending')->count() ?? 0;
                 if ($lockedRefund->booking && $remainingRefunds === 0) {
@@ -1079,7 +1109,7 @@ class SessionWorkflowController extends Controller
             'tutor tidak hadir',
         ], true);
 
-        if (!$platformFault || !$order->learning_package_id) {
+        if (! $platformFault || ! $order->learning_package_id) {
             return;
         }
 
@@ -1094,13 +1124,14 @@ class SessionWorkflowController extends Controller
                 'released_at' => now(),
             ]);
     }
+
     private function queueRefund(
         BookingParticipant $participant,
         Booking $booking,
         string $reason
     ): ?Refund {
         $order = $participant->order;
-        if (!$order || $order->status !== 'paid') {
+        if (! $order || $order->status !== 'paid') {
             return null;
         }
 
@@ -1138,7 +1169,7 @@ class SessionWorkflowController extends Controller
             ->where('booking_id', $booking->id)
             ->first();
 
-        if (!$packageSession) {
+        if (! $packageSession) {
             return;
         }
 
@@ -1160,7 +1191,7 @@ class SessionWorkflowController extends Controller
         foreach ($logs as $log) {
             /** @var PackageChapter|null $chapter */
             $chapter = $chapters->get((int) $log->package_chapter_id);
-            if (!$chapter) {
+            if (! $chapter) {
                 continue;
             }
 
@@ -1201,6 +1232,7 @@ class SessionWorkflowController extends Controller
 
         if ($unsettled) {
             $booking->update(['status' => 'awaiting_student_approval']);
+
             return;
         }
 
@@ -1236,9 +1268,13 @@ class SessionWorkflowController extends Controller
         if ($booking->learningProgressReports()->exists()) {
             return 'awaiting_student_approval';
         }
-        if (now()->lt($booking->start_at)) return 'confirmed';
-        if ($booking->student_confirmed_at && now()->lt($booking->end_at)) return 'in_progress';
+        if (now()->lt($booking->start_at)) {
+            return 'confirmed';
+        }
+        if ($booking->student_confirmed_at && now()->lt($booking->end_at)) {
+            return 'in_progress';
+        }
+
         return 'admin_review_required';
     }
-
 }

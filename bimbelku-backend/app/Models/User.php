@@ -25,6 +25,7 @@ class User extends Authenticatable
         'name',
         'email',
         'email_verified_at',
+        'email_verification_required_at',
         'phone',
         'password',
         'payment_pin_hash',
@@ -91,6 +92,7 @@ class User extends Authenticatable
 
     protected $casts = [
         'email_verified_at' => 'datetime',
+        'email_verification_required_at' => 'datetime',
         'password' => 'hashed',
         'password_updated_at' => 'datetime',
         'terms_accepted_at' => 'datetime',

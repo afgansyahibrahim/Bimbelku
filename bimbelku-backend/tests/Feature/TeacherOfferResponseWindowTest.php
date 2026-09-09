@@ -150,7 +150,7 @@ class TeacherOfferResponseWindowTest extends TestCase
         $bookingRequest = $this->makeRequest($student, 'online');
         $bookingRequest->update([
             'status' => 'no_teacher',
-            'search_started_at' => now()->subHours(13),
+            'search_started_at' => now()->subHours(25),
             'next_matching_at' => now()->subMinute(),
         ]);
         $matchingService = app(TeacherMatchingService::class);

@@ -1,5 +1,5 @@
 import { notify } from "@/lib/notify";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertCircle,
@@ -23,7 +23,9 @@ import axios from "axios";
 
 import OrderProgress from "@/components/OrderProgress";
 import { useConfirmDialog } from "@/components/ConfirmDialogProvider";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import http, { getApiError, getCached } from "@/lib/http";
+import { validateUpload } from "@/lib/validation";
 
 type PackageData = {
   id: number;
@@ -47,6 +49,21 @@ type PackageData = {
     allocated_sessions: number;
     status: string;
     teacher?: { id: number; name: string; avatar_url?: string | null } | null;
+    can_request_teacher_replacement?: boolean;
+    teacher_replacement?: {
+      id: number;
+      replacement_code: string;
+      status: string;
+      reason_code: string;
+      reason_detail: string;
+      review_notes?: string | null;
+      remaining_sessions: number;
+      can_cancel: boolean;
+      can_retry: boolean;
+      can_reschedule: boolean;
+      can_request_refund: boolean;
+      sessions: Array<{ id: number; start_at?: string | null; end_at?: string | null; status: string }>;
+    } | null;
     sessions?: Array<{ id: number; start_at?: string | null; status?: string; booking_id?: number | null }> | null;
     matching?: {
       reason_code?: string | null;
@@ -96,6 +113,18 @@ const labels: Record<string, string> = {
   cancelled: "Dibatalkan",
 };
 
+const replacementLabels: Record<string, string> = {
+  pending_review: "Menunggu pemeriksaan admin",
+  matching: "Mencari guru pengganti",
+  teacher_pending: "Menunggu jawaban guru",
+  no_teacher: "Guru belum tersedia",
+  completed: "Guru pengganti ditemukan",
+  rejected: "Pengajuan tidak disetujui",
+  cancelled: "Pengajuan dibatalkan",
+  refund_pending: "Refund sesi tersisa diproses",
+  refunded: "Refund sesi tersisa selesai",
+};
+
 type PackageListResponse = PackageData[] | { data?: PackageData[] };
 type PackageScope = "active" | "history";
 
@@ -134,6 +163,12 @@ export default function PackageProcessList({ scope }: { scope: PackageScope }) {
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState<number | null>(null);
   const [expandedHistory, setExpandedHistory] = useState<Set<number>>(new Set());
+  const [replacementTarget, setReplacementTarget] = useState<{ packageId: number; subject: NonNullable<PackageData["subjects"]>[number] } | null>(null);
+  const [replacementReason, setReplacementReason] = useState("communication");
+  const [replacementDetail, setReplacementDetail] = useState("");
+  const [replacementEvidence, setReplacementEvidence] = useState<File | null>(null);
+  const [rescheduleTarget, setRescheduleTarget] = useState<NonNullable<NonNullable<PackageData["subjects"]>[number]["teacher_replacement"]> | null>(null);
+  const [replacementSchedules, setReplacementSchedules] = useState<string[]>([]);
 
   const load = useCallback(async (force = false) => {
     setError(null);
@@ -211,6 +246,98 @@ export default function PackageProcessList({ scope }: { scope: PackageScope }) {
     }
   };
 
+  const submitReplacement = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!replacementTarget) return;
+    setProcessing(replacementTarget.packageId);
+    try {
+      const payload = new FormData();
+      payload.append("reason_code", replacementReason);
+      payload.append("reason_detail", replacementDetail);
+      if (replacementEvidence) payload.append("evidence", replacementEvidence);
+      const response = await http.post(
+        "/student/packages/" + replacementTarget.packageId + "/subjects/" + replacementTarget.subject.id + "/teacher-replacements",
+        payload,
+      );
+      notify.success(response.data.message);
+      setReplacementTarget(null);
+      setReplacementDetail("");
+      setReplacementEvidence(null);
+      await load(true);
+    } catch (error) {
+      notify.error(getApiError(error));
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  const selectReplacementEvidence = (file: File | null) => {
+    const validationError = validateUpload(file, {
+      label: "Bukti penggantian guru",
+      maxSizeMb: 5,
+      extensions: ["jpg", "jpeg", "png", "webp", "pdf"],
+    });
+    if (validationError) {
+      notify.error(validationError);
+      setReplacementEvidence(null);
+      return;
+    }
+    setReplacementEvidence(file);
+  };
+
+  const replacementAction = async (replacementId: number, action: "cancel" | "retry" | "request-refund") => {
+    const descriptions = {
+      cancel: "Pengajuan dibatalkan sebelum admin memeriksanya.",
+      retry: "Sistem akan memeriksa kandidat guru baru sekali lagi.",
+      "request-refund": "Hanya nilai sesi tersisa yang masuk antrean refund. Paket dan sesi yang sudah selesai tetap utuh.",
+    };
+    const approved = await confirm({
+      title: action === "cancel" ? "Batalkan pengajuan?" : action === "retry" ? "Cari guru lagi?" : "Ajukan refund sesi tersisa?",
+      description: descriptions[action],
+      confirmText: action === "request-refund" ? "Ajukan refund" : "Lanjutkan",
+      tone: action === "request-refund" ? "danger" : "warning",
+    });
+    if (!approved) return;
+    setProcessing(replacementId);
+    try {
+      const response = await http.post("/student/teacher-replacements/" + replacementId + "/" + action);
+      notify.success(response.data.message);
+      await load(true);
+    } catch (error) {
+      notify.error(getApiError(error));
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  const openReplacementReschedule = (replacement: NonNullable<NonNullable<PackageData["subjects"]>[number]["teacher_replacement"]>) => {
+    setRescheduleTarget(replacement);
+    setReplacementSchedules(replacement.sessions.map((session) => {
+      const date = validDate(session.start_at);
+      if (!date) return "";
+      const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+      return local.toISOString().slice(0, 16);
+    }));
+  };
+
+  const submitReplacementReschedule = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!rescheduleTarget) return;
+    setProcessing(rescheduleTarget.id);
+    try {
+      const response = await http.post("/student/teacher-replacements/" + rescheduleTarget.id + "/reschedule", {
+        schedules: replacementSchedules,
+      });
+      notify.success(response.data.message);
+      setRescheduleTarget(null);
+      await load(true);
+    } catch (error) {
+      notify.error(getApiError(error));
+    } finally {
+      setProcessing(null);
+    }
+  };
+
   useEffect(() => {
     if (scope !== "history") setExpandedHistory(new Set());
   }, [scope]);
@@ -245,7 +372,7 @@ export default function PackageProcessList({ scope }: { scope: PackageScope }) {
               const sessionUsage = Math.round((Number(item.used_sessions || 0) / Math.max(1, Number(item.total_sessions || 0))) * 100);
               const displayStatus = packageDisplayStatus(item);
               const canViewProgress = ["matching", "teacher_pending", "no_teacher", "active", "completed", "refunded"].includes(displayStatus);
-              const needsPayment = ["awaiting_payment", "payment_rejected"].includes(item.status) && item.latest_order;
+              const needsPayment = ["awaiting_payment", "payment_rejected", "partially_paid"].includes(item.status) && item.latest_order;
               const canCancelSearch = ["matching", "teacher_pending", "no_teacher"].includes(item.status);
               const retryableSubjects = subjects.filter((subject) => subject.status === "no_teacher" && subject.matching?.can_retry);
               const canRetry = retryableSubjects.length > 0;
@@ -361,6 +488,24 @@ export default function PackageProcessList({ scope }: { scope: PackageScope }) {
                               </div>
                             )}
                             {nextLabel && <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500"><Clock3 size={14} /> {nextLabel}</p>}
+                            {subject.teacher_replacement && (
+                              <div className="mt-3 rounded-2xl border border-violet-200 bg-violet-50 p-3 text-xs text-violet-950">
+                                <p className="font-black">{replacementLabels[subject.teacher_replacement.status] || subject.teacher_replacement.status}</p>
+                                <p className="mt-1 leading-5">{subject.teacher_replacement.remaining_sessions} sesi tersisa · {subject.teacher_replacement.replacement_code}</p>
+                                {subject.teacher_replacement.review_notes && <p className="mt-2 rounded-xl bg-white/70 p-2 leading-5">Catatan admin: {subject.teacher_replacement.review_notes}</p>}
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {subject.teacher_replacement.can_cancel && <button type="button" disabled={processing === subject.teacher_replacement.id} onClick={() => void replacementAction(subject.teacher_replacement!.id, "cancel")} className="rounded-xl border border-violet-200 bg-white px-3 py-2 font-black">Batalkan</button>}
+                                  {subject.teacher_replacement.can_retry && <button type="button" disabled={processing === subject.teacher_replacement.id} onClick={() => void replacementAction(subject.teacher_replacement!.id, "retry")} className="rounded-xl bg-indigo-600 px-3 py-2 font-black text-white">Cari lagi</button>}
+                                  {subject.teacher_replacement.can_reschedule && <button type="button" onClick={() => openReplacementReschedule(subject.teacher_replacement!)} className="rounded-xl border border-indigo-200 bg-white px-3 py-2 font-black text-indigo-700">Ubah jadwal</button>}
+                                  {subject.teacher_replacement.can_request_refund && <button type="button" disabled={processing === subject.teacher_replacement.id} onClick={() => void replacementAction(subject.teacher_replacement!.id, "request-refund")} className="rounded-xl border border-rose-200 bg-white px-3 py-2 font-black text-rose-700">Refund sisa sesi</button>}
+                                </div>
+                              </div>
+                            )}
+                            {subject.can_request_teacher_replacement && (
+                              <button type="button" onClick={() => setReplacementTarget({ packageId: item.id, subject })} className="mt-3 inline-flex min-h-10 items-center rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-black text-rose-700 hover:bg-rose-50">
+                                Ajukan Ganti Guru
+                              </button>
+                            )}
                             {item.can_renew && subject.teacher && scope !== "history" && (
                               <Link to={`/student/packages/new?renew=${item.id}&subject=${subject.id}`} className="mt-4 inline-flex rounded-xl bg-white px-3 py-2 text-xs font-black text-indigo-700 shadow-sm">
                                 Perpanjang dengan Tutor Ini
@@ -395,6 +540,44 @@ export default function PackageProcessList({ scope }: { scope: PackageScope }) {
             {scope === "active" && <Link to="/student/packages/new" className="mt-5 inline-flex rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white">Pilih Paket</Link>}
           </div>
         )}
+        <Dialog open={Boolean(replacementTarget)} onOpenChange={(open) => !open && setReplacementTarget(null)}>
+          <DialogContent className="max-h-[92dvh] overflow-x-hidden overflow-y-auto rounded-[1.5rem] sm:max-w-lg sm:rounded-[2rem]">
+            <DialogHeader>
+              <DialogTitle>Ajukan Ganti Guru</DialogTitle>
+              <DialogDescription className="break-words">{replacementTarget ? replacementTarget.subject.name + " · Tutor " + (replacementTarget.subject.teacher?.name || "-") : ""}</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={submitReplacement} className="min-w-0 space-y-4">
+              <div className="rounded-2xl bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-900">Admin akan memeriksa pengajuan. Jika disetujui, hanya sesi mendatang yang dibekukan; progress dan sesi selesai tetap utuh.</div>
+              <label className="block min-w-0 text-sm font-black text-slate-700">Alasan
+                <select value={replacementReason} onChange={(event) => setReplacementReason(event.target.value)} className="mt-2 block h-12 w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-white px-3">
+                  <option value="communication">Masalah komunikasi</option>
+                  <option value="schedule">Masalah jadwal</option>
+                  <option value="learning_fit">Metode belajar kurang cocok</option>
+                  <option value="teacher_unavailable">Guru tidak dapat melanjutkan</option>
+                  <option value="conduct">Sikap atau perilaku</option>
+                  <option value="other">Lainnya</option>
+                </select>
+              </label>
+              <label className="block min-w-0 text-sm font-black text-slate-700">Penjelasan
+                <textarea required minLength={20} maxLength={2000} value={replacementDetail} onChange={(event) => setReplacementDetail(event.target.value)} className="mt-2 block min-h-32 w-full min-w-0 max-w-full resize-y rounded-xl border border-slate-200 p-3 font-normal" placeholder="Jelaskan masalah dan dampaknya pada proses belajar." />
+              </label>
+              <label className="block min-w-0 text-sm font-black text-slate-700">Bukti opsional
+                <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(event) => selectReplacementEvidence(event.target.files?.[0] || null)} className="mt-2 block w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-slate-200 p-3 text-xs font-normal file:mr-2 file:max-w-[8rem] file:truncate" />
+              </label>
+              <div className="grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => setReplacementTarget(null)} className="min-h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-black">Kembali</button><button disabled={processing !== null || replacementDetail.trim().length < 20} className="min-h-11 w-full rounded-xl bg-indigo-600 px-3 text-sm font-black text-white disabled:opacity-50">{processing !== null ? "Mengirim..." : "Kirim pengajuan"}</button></div>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={Boolean(rescheduleTarget)} onOpenChange={(open) => !open && setRescheduleTarget(null)}>
+          <DialogContent className="max-h-[92dvh] overflow-x-hidden overflow-y-auto rounded-[1.5rem] sm:max-w-lg sm:rounded-[2rem]">
+            <DialogHeader><DialogTitle>Ubah jadwal sesi tersisa</DialogTitle><DialogDescription>Semua jadwal paling cepat 24 jam dari sekarang dan menggunakan menit 00.</DialogDescription></DialogHeader>
+            <form onSubmit={submitReplacementReschedule} className="min-w-0 space-y-3">
+              {replacementSchedules.map((value, index) => <label key={index} className="block min-w-0 text-sm font-black text-slate-700">Sesi {index + 1}<input required type="datetime-local" step={3600} value={value} onChange={(event) => setReplacementSchedules((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} className="mt-2 block h-12 w-full min-w-0 max-w-full rounded-xl border border-slate-200 px-3 text-sm font-normal" /></label>)}
+              <div className="grid gap-2 pt-2 sm:grid-cols-2"><button type="button" onClick={() => setRescheduleTarget(null)} className="min-h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-black">Kembali</button><button disabled={processing !== null || replacementSchedules.some((value) => !value)} className="min-h-11 w-full rounded-xl bg-indigo-600 px-3 text-sm font-black text-white disabled:opacity-50">{processing !== null ? "Menyimpan..." : "Simpan jadwal"}</button></div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
   );
 }

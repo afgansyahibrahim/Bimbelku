@@ -6,6 +6,7 @@ use App\Models\Booking;
 use App\Models\FinancialJournal;
 use App\Models\FinancialLedgerEntry;
 use App\Models\Order;
+use App\Models\PaymentSubmission;
 use App\Models\Payout;
 use App\Models\Refund;
 use App\Models\Setting;
@@ -24,7 +25,13 @@ class FinancialLedgerService
         $external = round(max(0, $total - $wallet), 2);
         $entries = [];
         if ($external > 0) {
-            $entries[] = ['account' => 'platform_cash', 'side' => 'debit', 'amount' => $external];
+            $entries[] = [
+                'account' => $order->payment_reconciliation_status
+                    ? 'customer_payment_deposits'
+                    : 'platform_cash',
+                'side' => 'debit',
+                'amount' => $external,
+            ];
         }
         if ($wallet > 0) {
             $entries[] = ['account' => 'customer_wallet_liability', 'side' => 'debit', 'amount' => $wallet];
@@ -38,6 +45,57 @@ class FinancialLedgerService
             $order->id,
             "Dana tagihan {$order->order_id} diterima",
             $entries
+        );
+    }
+
+    public function recordExternalPaymentReceipt(PaymentSubmission $submission): FinancialJournal
+    {
+        $amount = round((float) $submission->received_amount, 2);
+
+        return $this->record(
+            "payment_submission:{$submission->id}:received",
+            'external_payment_received',
+            PaymentSubmission::class,
+            $submission->id,
+            "Dana transfer pembayaran #{$submission->id} diterima",
+            [
+                ['account' => 'platform_cash', 'side' => 'debit', 'amount' => $amount],
+                ['account' => 'customer_payment_deposits', 'side' => 'credit', 'amount' => $amount],
+            ]
+        );
+    }
+
+    public function recordOverpaymentCredited(Order $order): FinancialJournal
+    {
+        $amount = round((float) $order->payment_surplus_amount, 2);
+
+        return $this->record(
+            "order:{$order->id}:overpayment_wallet_credit",
+            'overpayment_wallet_credit',
+            Order::class,
+            $order->id,
+            "Kelebihan pembayaran {$order->order_id} masuk ke Saldo BimbelKu",
+            [
+                ['account' => 'customer_payment_deposits', 'side' => 'debit', 'amount' => $amount],
+                ['account' => 'customer_wallet_liability', 'side' => 'credit', 'amount' => $amount],
+            ]
+        );
+    }
+
+    public function recordExpiredPartialPaymentCredited(Order $order): FinancialJournal
+    {
+        $amount = round((float) $order->external_received_amount, 2);
+
+        return $this->record(
+            "order:{$order->id}:expired_partial_wallet_credit",
+            'expired_partial_wallet_credit',
+            Order::class,
+            $order->id,
+            "Dana parsial {$order->order_id} dikembalikan ke Saldo BimbelKu",
+            [
+                ['account' => 'customer_payment_deposits', 'side' => 'debit', 'amount' => $amount],
+                ['account' => 'customer_wallet_liability', 'side' => 'credit', 'amount' => $amount],
+            ]
         );
     }
 

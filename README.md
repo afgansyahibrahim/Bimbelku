@@ -104,6 +104,10 @@ SEED_DEMO_USERS=false
 
 Project memakai satu admin utama. Halaman autentikator dan alur persetujuan admin kedua sudah dihentikan. Keamanan tindakan sensitif tetap menggunakan pembatasan role, validasi admin utama, idempotensi, bukti transfer, dan audit berantai. Pada produksi gunakan `APP_ENV=production`, `APP_DEBUG=false`, kata sandi admin kuat, HTTPS, serta konfigurasi email dan database produksi yang benar.
 
+Penggantian guru aktif secara default (`FEATURE_TEACHER_REPLACEMENT=true`). Nilai
+`false` hanya digunakan sebagai emergency kill switch; setelah mengubahnya,
+jalankan `php artisan config:clear`.
+
 Lanjutkan:
 
 ```bash
@@ -167,9 +171,33 @@ Jangan menjalankan `php artisan migrate:fresh` pada database yang berisi data pe
 
 ## Konfigurasi email
 
-Reset kata sandi memakai konfigurasi `MAIL_*` Laravel. Pada instalasi lokal, `MAIL_MAILER=log` menulis tautan reset ke log. Pada produksi, gunakan SMTP atau penyedia email yang benar.
+OTP verifikasi akun, reset PIN pembayaran, dan reset kata sandi memakai konfigurasi `MAIL_*` Laravel. Pada instalasi lokal, `MAIL_MAILER=log` sengaja menulis email ke `bimbelku-backend/storage/logs/laravel.log`.
 
-Pastikan `FRONTEND_URL` mengarah ke origin frontend. Nilai ini juga menjadi daftar origin CORS yang diizinkan. Beberapa origin dapat dipisahkan dengan koma.
+Untuk pengiriman gratis dengan Brevo SMTP, aktifkan Transactional Email, autentikasi domain/alamat pengirim, lalu buat SMTP key. Gunakan SMTP login dan SMTP key dari halaman **Settings > SMTP & API**; jangan memakai password akun atau API key dan jangan commit rahasianya:
+
+```dotenv
+MAIL_MAILER=smtp
+MAIL_SCHEME=smtp
+MAIL_HOST=smtp-relay.brevo.com
+MAIL_PORT=587
+MAIL_USERNAME=LOGIN_SMTP_BREVO
+MAIL_PASSWORD=SMTP_KEY_BREVO
+MAIL_FROM_ADDRESS=noreply@domain-terverifikasi.id
+MAIL_FROM_NAME="${APP_NAME}"
+```
+
+Port 587 adalah pilihan utama. Jika jaringan memblokirnya, Brevo juga menyediakan port 2525.
+
+Setelah mengubah environment produksi, muat ulang konfigurasi Laravel:
+
+```bash
+php artisan optimize:clear
+php artisan config:cache
+```
+
+Kegagalan pengiriman OTP mengembalikan respons sementara dan membatalkan kode yang baru dibuat, sehingga pengguna dapat langsung mencoba kirim ulang tanpa menunggu cooldown.
+
+Pastikan `FRONTEND_URL` berisi tepat satu origin frontend kanonis karena nilai ini digunakan untuk membuat link email. Gunakan `FRONTEND_ORIGINS` sebagai daftar origin CORS yang diizinkan dan pisahkan beberapa origin dengan koma.
 
 ## Akun demo opsional
 

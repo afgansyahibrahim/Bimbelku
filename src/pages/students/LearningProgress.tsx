@@ -92,7 +92,7 @@ export default function LearningProgress() {
 
   return (
     <StudentLayout title="Perkembangan Belajar">
-      <div className="mx-auto max-w-5xl space-y-5 pb-10 sm:space-y-6">
+      <div className="w-full space-y-5 pb-10 sm:space-y-6">
         <section className="relative overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-blue-800 p-5 text-white shadow-xl sm:rounded-[2rem] sm:p-8">
           <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-blue-400/20 blur-3xl" />
           <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 left-1/3 h-52 w-52 rounded-full bg-indigo-400/15 blur-3xl" />

@@ -9,6 +9,8 @@ use App\Models\Setting;
 use App\Models\TeacherOffer;
 use App\Services\PackageCheckoutService;
 use App\Services\TeacherMatchingService;
+use App\Services\TeacherReplacementService;
+use App\Support\TeacherReplacementState;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -62,7 +64,7 @@ class TeacherOfferController extends Controller
 
             if ($request) {
                 $perStudentAmount = (float) $request->total_amount;
-                $request->setAttribute('source_label', 'Paket Belajar');
+                $request->setAttribute('source_label', $request->teacher_replacement_request_id ? 'Guru Pengganti · Paket Belajar' : 'Paket Belajar');
                 $request->setAttribute('commission_percent', $effectiveCommission);
                 $request->setAttribute('amount_per_student', $perStudentAmount);
                 $request->setAttribute('gross_amount_minimum', $perStudentAmount);
@@ -71,7 +73,7 @@ class TeacherOfferController extends Controller
                     'estimated_net_amount',
                     round($perStudentAmount * (100 - $effectiveCommission) / 100)
                 );
-                if ($request->student && !$canSeeFullAddress) {
+                if ($request->student && ! $canSeeFullAddress) {
                     $request->student->setAttribute('name', 'Murid BimbelKu');
                 }
                 $request->student?->setVisible(['id', 'name']);
@@ -85,7 +87,7 @@ class TeacherOfferController extends Controller
                 $request->unsetRelation('booking');
             }
 
-            if (!$canSeeFullAddress && $request) {
+            if (! $canSeeFullAddress && $request) {
                 $request->setAttribute('address', null);
                 $request->setAttribute('maps_link', null);
                 $request->setAttribute('latitude', null);
@@ -112,11 +114,19 @@ class TeacherOfferController extends Controller
     public function accept(
         Request $request,
         TeacherOffer $teacherOffer,
-        PackageCheckoutService $packageCheckoutService
+        PackageCheckoutService $packageCheckoutService, TeacherReplacementService $replacementService
     ) {
         abort_unless($teacherOffer->teacher_id === $request->user()->id, 403);
 
         $teacherOffer->loadMissing('bookingRequest.packageSubject');
+        if ($teacherOffer->bookingRequest?->teacher_replacement_request_id) {
+            $result = $replacementService->acceptOffer($teacherOffer, $request->user());
+
+            return response()->json([
+                'message' => 'Permintaan guru pengganti diterima. Sesi tersisa sudah dialihkan kepadamu.',
+                'data' => $result,
+            ]);
+        }
         if ($teacherOffer->bookingRequest?->package_subject_id) {
             $result = $packageCheckoutService->acceptPackageOffer($teacherOffer, $request->user());
 
@@ -157,8 +167,9 @@ class TeacherOfferController extends Controller
             $bookingRequest = BookingRequest::query()
                 ->lockForUpdate()
                 ->findOrFail($teacherOffer->booking_request_id);
-            $bookingRequest->loadMissing('packageSubject.package');
-            $isRenewal = (bool) $bookingRequest->packageSubject?->package?->renewal_of_id;
+            $bookingRequest->loadMissing(['packageSubject.package', 'teacherReplacement']);
+            $isReplacement = (bool) $bookingRequest->teacher_replacement_request_id;
+            $isRenewal = ! $isReplacement && (bool) $bookingRequest->packageSubject?->package?->renewal_of_id;
             $offer = TeacherOffer::query()->lockForUpdate()->findOrFail($teacherOffer->id);
             if ($offer->status !== 'pending') {
                 abort(422, 'Penawaran ini sudah diproses.');
@@ -169,7 +180,8 @@ class TeacherOfferController extends Controller
 
             if (
                 $bookingRequest->status !== 'teacher_pending'
-                || (int) $bookingRequest->matched_teacher_id !== (int) $request->user()->id
+                || ($bookingRequest->matched_teacher_id
+                    && (int) $bookingRequest->matched_teacher_id !== (int) $request->user()->id)
             ) {
                 abort(422, 'Permintaan ini sudah dialihkan atau dibatalkan.');
             }
@@ -178,7 +190,7 @@ class TeacherOfferController extends Controller
                 'status' => 'rejected',
                 'responded_at' => now(),
                 'rejection_reason' => $validated['reason']
-                    .(!empty($validated['note']) ? ': '.$validated['note'] : ''),
+                    .(! empty($validated['note']) ? ': '.$validated['note'] : ''),
             ]);
 
             if ($isRenewal) {
@@ -217,14 +229,24 @@ class TeacherOfferController extends Controller
                 ->where('expires_at', '>', now())
                 ->max('expires_at');
             $bookingRequest->update($otherDeadline ? [
-                    'status' => 'teacher_pending',
-                    'matched_teacher_id' => null,
-                    'teacher_response_deadline' => $otherDeadline,
-                ] : [
-                    'status' => 'matching',
-                    'matched_teacher_id' => null,
-                    'teacher_response_deadline' => null,
+                'status' => 'teacher_pending',
+                'matched_teacher_id' => null,
+                'teacher_response_deadline' => $otherDeadline,
+            ] : [
+                'status' => 'matching',
+                'matched_teacher_id' => null,
+                'teacher_response_deadline' => null,
+            ]);
+            if ($isReplacement) {
+                TeacherReplacementState::assertCanTransition(
+                    (string) $bookingRequest->teacherReplacement?->status,
+                    $otherDeadline ? TeacherReplacementState::TEACHER_PENDING : TeacherReplacementState::MATCHING,
+                );
+                $bookingRequest->teacherReplacement?->update([
+                    'status' => $otherDeadline ? 'teacher_pending' : 'matching',
+                    'version' => DB::raw('version + 1'),
                 ]);
+            }
 
             return ['expired' => false];
         });

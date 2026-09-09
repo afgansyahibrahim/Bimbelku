@@ -117,6 +117,11 @@ class StageSixBTeacherOperationsTest extends TestCase
         ]);
 
         Sanctum::actingAs($teacher);
+        $this->getJson('/api/teacher/salary')
+            ->assertOk()
+            ->assertJsonPath('balances.available', 80000)
+            ->assertJsonPath('bank.account_number_masked', str_repeat("\u{2022}", 6).'7890');
+
         $this->postJson('/api/teacher/payout-requests', [
             'booking_ids' => [$booking->id],
         ], ['Idempotency-Key' => 'stage6b-payout-request-0001'])

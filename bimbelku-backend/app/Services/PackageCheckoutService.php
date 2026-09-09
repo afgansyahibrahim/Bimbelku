@@ -26,8 +26,7 @@ class PackageCheckoutService
 {
     public function __construct(
         private readonly TeacherMatchingService $matchingService,
-    ) {
-    }
+    ) {}
 
     public function calculateDiscount(
         Promotion $promotion,
@@ -47,7 +46,7 @@ class PackageCheckoutService
         $this->assertTarget($promotion->target_modes, $mode, 'Promo tidak berlaku untuk metode belajar ini.');
 
         $targetSubjects = $promotion->target_subjects ?? [];
-        if ($targetSubjects && !collect($subjects)->contains(
+        if ($targetSubjects && ! collect($subjects)->contains(
             fn (string $subject) => in_array($subject, $targetSubjects, true)
         )) {
             abort(422, 'Promo tidak berlaku untuk mata pelajaran yang dipilih.');
@@ -141,7 +140,7 @@ class PackageCheckoutService
     {
         $subject->loadMissing(['package.student', 'sessions', 'preferredTeacher.teacherProfile.subjects']);
         $request = $subject->bookingRequest;
-        if (!$request) {
+        if (! $request) {
             return null;
         }
 
@@ -149,7 +148,7 @@ class PackageCheckoutService
         if ($preferred && $this->preferredTeacherCanReceive($preferred, $request, $subject)) {
             return DB::transaction(function () use ($preferred, $request) {
                 $lockedRequest = BookingRequest::query()->lockForUpdate()->findOrFail($request->id);
-                if (!in_array($lockedRequest->status, ['matching', 'no_teacher'], true)) {
+                if (! in_array($lockedRequest->status, ['matching', 'no_teacher'], true)) {
                     return $lockedRequest->offers()
                         ->where('status', 'pending')
                         ->latest('offered_at')
@@ -297,7 +296,7 @@ class PackageCheckoutService
 
             $package->refresh()->load('subjects');
             $allAccepted = $package->subjects->every(fn (PackageSubject $item) => $item->status === 'accepted');
-            if (!$allAccepted) {
+            if (! $allAccepted) {
                 $package->update(['status' => 'teacher_pending']);
                 Notification::create([
                     'user_id' => $package->student_id,
@@ -434,7 +433,7 @@ class PackageCheckoutService
             ->with('bookingRequest')
             ->get()
             ->each(function (PackageSubject $subject) use (&$noTeacher) {
-                if (!$this->dispatchSubject($subject)) {
+                if (! $this->dispatchSubject($subject)) {
                     $subject->update(['status' => 'no_teacher']);
                     $noTeacher = true;
                 }
@@ -685,11 +684,24 @@ class PackageCheckoutService
             'type' => 'success',
             'target_url' => '/student/my-classes',
         ]);
+
+        $package->subjects
+            ->groupBy('assigned_teacher_id')
+            ->each(function ($subjects, $teacherId) use ($package) {
+                $subjectNames = $subjects->pluck('subject_name')->filter()->unique()->join(', ');
+                Notification::create([
+                    'user_id' => (int) $teacherId,
+                    'title' => 'Kelas baru aktif',
+                    'message' => "Pembayaran paket {$package->package_code} sudah diterima. Jadwal {$subjectNames} kini tersedia di Kelas Saya.",
+                    'type' => 'success',
+                    'target_url' => '/guru/kelas',
+                ]);
+            });
     }
 
     private function assertTarget(?array $targets, string|int $value, string $message): void
     {
-        if ($targets && !in_array($value, $targets, false)) {
+        if ($targets && ! in_array($value, $targets, false)) {
             abort(422, $message);
         }
     }
@@ -700,7 +712,7 @@ class PackageCheckoutService
             return false;
         }
         $profile = $teacher->teacherProfile;
-        if (!$profile?->verified_at || !$profile->is_accepting_requests || $profile->points <= 0) {
+        if (! $profile?->verified_at || ! $profile->is_accepting_requests || $profile->points <= 0) {
             return false;
         }
         $profile->setRelation('user', $teacher);
@@ -708,13 +720,12 @@ class PackageCheckoutService
             return false;
         }
 
-        return $subject->sessions->every(fn (PackageSession $session) =>
-            !$this->matchingService->teacherHasConflict(
-                $teacher->id,
-                $session->scheduled_start_at,
-                $session->scheduled_end_at
-            )
-            && !$this->teacherHasPackageConflict(
+        return $subject->sessions->every(fn (PackageSession $session) => ! $this->matchingService->teacherHasConflict(
+            $teacher->id,
+            $session->scheduled_start_at,
+            $session->scheduled_end_at
+        )
+            && ! $this->teacherHasPackageConflict(
                 $teacher->id,
                 $session->scheduled_start_at,
                 $session->scheduled_end_at,

@@ -630,6 +630,17 @@ class AdminCheapClassController extends Controller
             'curriculum_chapter_id' => $data['curriculum_chapter_id'],
         ]];
 
+        $maximumSubjects = match ((int) $data['session_count']) {
+            12 => 3,
+            8 => 2,
+            default => 1,
+        };
+        abort_if(
+            count($requestedSubjects) > $maximumSubjects,
+            422,
+            "Paket {$data['session_count']} sesi maksimal memiliki {$maximumSubjects} mata pelajaran."
+        );
+
         $normalizedSubjects = [];
         $seenSubjectIds = [];
         foreach ($requestedSubjects as $requestedSubject) {

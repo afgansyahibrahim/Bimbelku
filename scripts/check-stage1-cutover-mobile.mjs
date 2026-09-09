@@ -14,6 +14,7 @@ const baseSelect = read("src/components/ui/select.tsx");
 const subjectCombobox = read("src/components/SubjectCombobox.tsx");
 const css = read("src/index.css");
 const packageLink = read("src/components/StudentPackageLink.tsx");
+const blockedDialog = read("src/components/StudentPackageBlockedDialog.tsx");
 const packageRoute = read("src/components/StudentPackageRoute.tsx");
 const dynamicBanner = read("src/components/DynamicBannerCarousel.tsx");
 
@@ -30,8 +31,8 @@ expect(app.includes('exactPath("/student/packages/new", "/search", "/student/fin
 expect(app.includes('legacyParams.set("subject_name", subjectName)'), "Parameter mapel lama belum dipertahankan");
 expect(packageLink.includes('currentUser.role === "student"'), "Akses Paket Baru belum dijaga berdasarkan peran");
 expect(packageLink.includes("onNavigate?.()"), "Menu mobile belum ditutup setelah navigasi Paket Baru/ke dashboard");
-expect(packageLink.includes('dashboardByRole'), "Tujuan dashboard CTA terblokir belum dibatasi berdasarkan role yang dikenal");
-expect(app.includes('import StudentPackageRoute from "./components/StudentPackageRoute"'), "Guard khusus Paket Belajar belum dipasang");
+expect(blockedDialog.includes('dashboardByRole'), "Tujuan dashboard CTA terblokir belum dibatasi berdasarkan role yang dikenal");
+expect(app.includes('const StudentPackageRoute = lazy(() => import("./components/StudentPackageRoute"))'), "Guard khusus Paket Belajar belum dipasang");
 expect(app.includes('<Route element={<StudentPackageRoute />}>'), "Rute Paket Belajar belum memakai guard khusus");
 expect(!packageRoute.includes('/access-denied'), "Guard Paket Belajar masih mengirim admin/tutor ke Access Denied");
 expect(packageRoute.includes('user.role === "student"'), "Guard Paket Belajar belum mengizinkan murid secara eksplisit");

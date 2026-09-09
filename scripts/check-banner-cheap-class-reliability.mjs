@@ -59,8 +59,8 @@ expect(
   "rute halaman Kelas Kelompok admin wajib dipetakan ke content.manage",
 );
 expect(
-  contentController.includes("no-store, max-age=0, must-revalidate"),
-  "respons banner publik tidak boleh tersimpan di cache browser",
+  contentController.includes("public, max-age=60, stale-while-revalidate=300"),
+  "respons banner publik wajib memakai cache singkat agar dashboard ringan tanpa menahan perubahan terlalu lama",
 );
 expect(
   !contentController.includes('Cache::remember("content.banners'),
@@ -71,8 +71,10 @@ expect(
   "simpan banner tidak boleh bergantung pada tabel cache Laravel",
 );
 expect(
-  bannerCarousel.includes("force: true") && bannerCarousel.includes("maxAgeMs: 0"),
-  "carousel wajib meminta banner terbaru ketika dashboard dimuat",
+  bannerCarousel.includes("maxAgeMs: 60_000")
+    && bannerCarousel.includes("readCachedBanners")
+    && !bannerCarousel.includes("force: true"),
+  "carousel wajib memakai cache singkat/session tanpa memaksa request baru setiap dashboard dimuat",
 );
 expect(
   bannerCarousel.includes("Array.isArray(response.data)"),
@@ -87,12 +89,16 @@ expect(
   "banner tutor wajib dirender pada dashboard tutor",
 );
 expect(
-  mediaController.includes("Storage::disk('public')") && publicMedia.includes("/api/public-media/"),
-  "foto publik wajib dapat dibuka melalui API tanpa bergantung pada storage:link",
+  mediaController.includes("Storage::disk('public')")
+    && mediaController.includes("max-age=31536000, immutable")
+    && publicMedia.includes("/api/public-media/"),
+  "foto publik wajib dapat dibuka melalui API dan memakai cache immutable tanpa bergantung pada storage:link",
 );
 expect(
-  !bannerCarousel.includes("/storage/") && bannerCarousel.includes("publicMediaUrl"),
-  "carousel wajib membentuk URL foto dari alamat API aktif",
+  !bannerCarousel.includes("/storage/")
+    && !bannerCarousel.includes("publicMediaUrl")
+    && bannerCarousel.includes("banner.image_url"),
+  "carousel wajib memakai URL tervalidasi backend agar path media yatim tidak memicu 404 LCP",
 );
 expect(
   cheapClassController.includes("CheapClassSchema::status()")

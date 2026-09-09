@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { AlertCircle, ArrowRight, BookOpen, CalendarDays, CheckCircle2, Clock3, CreditCard, Loader2, Users } from "lucide-react";
+import { AlertCircle, ArrowRight, BarChart3, BookOpen, CalendarDays, CheckCircle2, Clock3, CreditCard, Loader2, Users } from "lucide-react";
 import StudentLayout from "@/components/StudentLayout";
 import { Button } from "@/components/ui/button";
 import http, { getApiError } from "@/lib/http";
@@ -69,6 +69,7 @@ const stateLabel: Record<string, string> = {
   seat_held: "Kursi ditahan",
   payment_submitted: "Bukti sedang diperiksa",
   payment_rejected: "Bukti perlu dikirim ulang",
+  partially_paid: "Pembayaran masih kurang",
   confirmed_enrollment: "Peserta terkonfirmasi",
   payment_expired: "Waktu pembayaran berakhir",
   cancellation_pending: "Kelas dibatalkan, bukti masih diperiksa",
@@ -200,7 +201,7 @@ export default function CheapClasses() {
 
 function ClassCard({ item, working, onJoin, onCancel }: { item: CheapClass; working: boolean; onJoin: () => void; onCancel: () => void }) {
   const enrollment = item.enrollment;
-  const payable = enrollment && ["seat_held", "payment_rejected"].includes(enrollment.status) && ["pending", "rejected"].includes(enrollment.order_status || "");
+  const payable = enrollment && ["seat_held", "payment_rejected", "partially_paid"].includes(enrollment.status) && ["pending", "rejected", "partially_paid"].includes(enrollment.order_status || "");
   const needsProofReview = enrollment?.status === "payment_submitted";
   const hasAcceptedPayment = enrollment?.status === "confirmed" && enrollment?.order_status === "paid";
   const hasLearningAccess = ["confirmed", "completed"].includes(item.status) && hasAcceptedPayment;
@@ -255,7 +256,7 @@ function ClassCard({ item, working, onJoin, onCancel }: { item: CheapClass; work
       {waitingForClassConfirmation && <div className="rounded-xl bg-emerald-50 p-3 text-xs font-bold leading-5 text-emerald-800">Pembayaranmu sudah diverifikasi. Kelas akan dikonfirmasi setelah syarat minimum peserta terpenuhi dan seluruh bukti yang relevan selesai diperiksa.</div>}
       {enrollment?.status === "cancellation_pending" && <div className="rounded-xl bg-amber-50 p-3 text-xs font-bold leading-5 text-amber-800">Kelas sudah dibatalkan, tetapi bukti yang telanjur dikirim tetap diperiksa admin. Jika transfer valid, dana masuk antrean refund penuh.</div>}
       {hasLearningAccess && <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2 text-sm font-black text-slate-600"><CheckCircle2 size={17} />Telah bergabung</div><Link to={`/student/my-classes?cheap_class=${item.id}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-indigo-700 shadow-sm ring-1 ring-slate-200 hover:bg-indigo-50">Buka di Kelas Saya <ArrowRight size={15} /></Link></div>}
-      {item.status === "completed" && hasAcceptedPayment && <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4 text-xs font-bold leading-5 text-violet-800">Seluruh sesi sudah diverifikasi admin. Kelas masuk Riwayat dan progress akhir tetap bisa kamu lihat.</div>}
+      {item.status === "completed" && hasAcceptedPayment && <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4 text-xs font-bold leading-5 text-violet-800"><p>Seluruh sesi sudah diverifikasi admin. Kelas masuk Riwayat dan progress akhir tetap bisa kamu lihat.</p><Link to={`/student/progress/cheap-class/${item.id}`} className="mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-violet-700 shadow-sm ring-1 ring-violet-200 hover:bg-violet-100"><BarChart3 size={16} />Lihat Progress</Link></div>}
 
       {hasActions && <div className="flex flex-col gap-2 sm:flex-row">
         {item.can_join && <Button disabled={working} onClick={onJoin} className="h-11 flex-1 rounded-xl bg-indigo-600 font-black hover:bg-indigo-700">{working && <Loader2 className="mr-2 animate-spin" size={16} />}{enrollment && ["cancelled", "payment_expired"].includes(enrollment.status) ? "Gabung Lagi" : "Gabung Kelas Kelompok"}</Button>}

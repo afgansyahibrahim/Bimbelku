@@ -23,7 +23,9 @@ class PublicMediaController extends Controller
 
         return response()->file($disk->path($path), [
             'Content-Type' => $disk->mimeType($path) ?: 'application/octet-stream',
-            'Cache-Control' => 'public, max-age=86400, stale-while-revalidate=604800',
+            // Nama file upload selalu unik dan tidak pernah ditimpa, sehingga
+            // browser aman menyimpan media ini dalam cache jangka panjang.
+            'Cache-Control' => 'public, max-age=31536000, immutable',
             'X-Content-Type-Options' => 'nosniff',
         ]);
     }

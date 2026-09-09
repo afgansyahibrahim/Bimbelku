@@ -101,7 +101,7 @@ export default function CheapClassRecurring() {
   };
 
   return <AdminLayout title="Paket Berulang">
-    <div className="mx-auto max-w-7xl space-y-6 pb-12">
+    <div className="w-full space-y-6 pb-12">
       <section className="overflow-hidden rounded-[2rem] bg-gradient-to-br from-violet-800 via-indigo-800 to-slate-950 px-6 py-7 text-white shadow-xl sm:px-8">
         <Link to="/admin/kelas-murah" className="inline-flex items-center gap-2 text-sm font-black text-violet-100 hover:text-white"><ArrowLeft size={16} /> Kembali ke pembuatan paket</Link>
         <div className="mt-6 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">

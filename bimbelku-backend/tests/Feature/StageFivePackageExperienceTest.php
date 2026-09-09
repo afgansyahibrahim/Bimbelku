@@ -245,6 +245,58 @@ class StageFivePackageExperienceTest extends TestCase
             ->assertJsonPath('message', 'Semua jadwal hanya boleh memakai menit 00.');
     }
 
+    public function test_four_session_package_limits_unique_weekdays_across_all_subjects(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-30 10:00:00', 'Asia/Jakarta'));
+        $this->seed(CurriculumCatalogSeeder::class);
+        $this->seed(StageFiveExperienceSeeder::class);
+
+        $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
+        Sanctum::actingAs($student);
+
+        $plan = PackagePlan::query()->where('slug', 'bulanan-dasar')->firstOrFail();
+        $plan->update(['maximum_subjects' => 2]);
+        $subjects = CurriculumSubject::query()
+            ->where('is_active', true)
+            ->whereHas('chapters', fn ($query) => $query
+                ->where('education_level', 'SMP')
+                ->where('grade', 'Kelas 7')
+                ->where('is_active', true))
+            ->limit(2)
+            ->get();
+        $this->assertCount(2, $subjects);
+
+        $payloadSubjects = $subjects->values()->map(function (CurriculumSubject $subject, int $index) {
+            $chapter = $subject->chapters()
+                ->where('education_level', 'SMP')
+                ->where('grade', 'Kelas 7')
+                ->where('is_active', true)
+                ->firstOrFail();
+            $dayOffset = $index * 2;
+
+            return [
+                'curriculum_subject_id' => $subject->id,
+                'curriculum_chapter_ids' => [$chapter->id],
+                'learning_goal' => 'Menguji batas hari unik seluruh paket.',
+                'weekdays' => [1 + $dayOffset, 2 + $dayOffset],
+                'schedules' => $index === 0
+                    ? ['2026-08-03 15:00:00', '2026-08-04 15:00:00']
+                    : ['2026-08-05 15:00:00', '2026-08-06 15:00:00'],
+            ];
+        })->all();
+
+        $this->postJson('/api/student/packages', [
+            'package_plan_id' => $plan->id,
+            'education_level' => 'SMP',
+            'grade' => 'Kelas 7',
+            'learning_mode' => 'online',
+            'subjects' => $payloadSubjects,
+        ], ['Idempotency-Key' => 'stage5-package-weekday-union'])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Jumlah hari belajar unik pada seluruh paket melebihi batas paket.');
+    }
+
+
     public function test_package_quote_accepts_one_or_two_hour_sessions(): void
     {
         $this->seed(CurriculumCatalogSeeder::class);

@@ -14,8 +14,8 @@ const requiredFiles = [
   "src/components/AppErrorBoundary.tsx",
   "bimbelku-backend/tests/Feature/CheckpointFiveFinalRegressionTest.php",
   "scripts/run-final-regression.ps1",
-  "AUDIT_CHECKPOINT_5_REGRESI_AKHIR_DAN_DOKUMENTASI_2026-08-03.md",
-  "FINAL_AUDIT_SUMMARY_WEBSITE_BIMBELKU_2026-08-03.md",
+  "README.md",
+  "testing.md",
 ];
 for (const file of requiredFiles) expect(exists(file), `${file} belum tersedia.`);
 

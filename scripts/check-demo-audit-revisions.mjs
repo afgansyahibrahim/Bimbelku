@@ -29,7 +29,7 @@ expect(profile.includes('(min-width: 1024px)') && profile.includes("lg:absolute"
 expect(profile.includes("Profil Saya") && profile.includes("Pengaturan") && profile.includes("Bantuan"), "isi profile menu lengkap");
 expect(admin.includes("OperationalAttentionCounts") && admin.includes("attentionCount"), "sidebar admin memakai badge jumlah operasional");
 expect(adminController.includes("monitoring_attention") && adminController.includes("matching_attention"), "backend menyediakan hitungan perhatian admin");
-expect(matching.includes("min(72") && matching.includes("?? 72"), "pencarian tutor dibatasi 72 jam");
+expect(matching.includes("min(24") && matching.includes("?? 24"), "pencarian tutor dibatasi 24 jam");
 expect(cases.includes('setScope("active")') && cases.includes('setScope("history")'), "pusat kasus memisahkan aktif dan riwayat");
 expect(caseBackend.includes("['active', 'history']"), "API kasus memisahkan aktif dan riwayat");
 expect(hub.includes("grid-cols-[2.5rem_minmax(0,1fr)_2.5rem]") && hub.includes("Tutup Ruang Belajar"), "header Ruang Belajar simetris");

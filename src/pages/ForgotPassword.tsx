@@ -1,6 +1,7 @@
 import { notify } from "@/lib/notify";
 import { API_BASE_URL } from "@/lib/apiBase";
-import { useState } from "react";
+import { getApiErrorDetails } from "@/lib/http";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Loader2, ArrowLeft, Mail } from "lucide-react";
 
@@ -8,6 +9,17 @@ const ForgotPassword = () => {
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSent, setIsSent] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+
+    const timer = window.setTimeout(() => {
+      setCooldownSeconds((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
+
+    return () => window.clearTimeout(timer);
+  }, [cooldownSeconds]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -16,10 +28,16 @@ const ForgotPassword = () => {
     try {
       const { default: axios } = await import("axios");
       await axios.post(`${API_BASE_URL}/forgot-password`, { email });
+      setCooldownSeconds(60);
       setIsSent(true);
       notify.success("Email terkirim! Cek inbox/spam Anda.");
-    } catch (error: any) {
-      notify.error("Gagal mengirim permintaan.");
+    } catch (error: unknown) {
+      const details = getApiErrorDetails(error, "Gagal mengirim permintaan.");
+      if (details.code === "password_reset_cooldown") {
+        setCooldownSeconds(details.retryAfterSeconds || 60);
+        setIsSent(true);
+      }
+      notify.error(details.message);
     } finally {
       setIsLoading(false);
     }
@@ -70,9 +88,13 @@ const ForgotPassword = () => {
             </p>
             <button 
               onClick={() => setIsSent(false)} 
-              className="mt-4 text-xs font-bold text-green-600 hover:underline"
+              type="button"
+              disabled={cooldownSeconds > 0}
+              className="mt-4 text-xs font-bold text-green-600 hover:underline disabled:cursor-not-allowed disabled:text-green-400 disabled:no-underline"
             >
-              Kirim ulang?
+              {cooldownSeconds > 0
+                ? `Kirim ulang dalam ${cooldownSeconds} detik`
+                : "Kirim ulang"}
             </button>
           </div>
         )}

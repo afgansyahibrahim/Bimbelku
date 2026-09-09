@@ -34,6 +34,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import http, { getApiError, getCached } from "@/lib/http";
+import { announceNavigationAttentionChanged, unreadIdsForTeacherClassScope, type AttentionNotification } from "@/lib/navigationAttention";
 import { isValidHttpUrl, validateUpload } from "@/lib/validation";
 import TeacherCheapClasses from "./CheapClasses";
 
@@ -223,6 +224,7 @@ export default function ManageClasses() {
   const [impact, setImpact] = useState("");
   const [hubBookingId, setHubBookingId] = useState<number | null>(null);
   const [hubReturnClass, setHubReturnClass] = useState<TeacherClass | null>(null);
+  const [classAttention, setClassAttention] = useState<AttentionNotification[]>([]);
   const [hubInitialTab, setHubInitialTab] = useState<"session" | "progress">("session");
   const [classScope, setClassScope] = useState<ClassScope>("active");
   const [methodFilter, setMethodFilter] = useState<MethodFilter>("all");
@@ -249,6 +251,21 @@ export default function ManageClasses() {
     }
     setClassKind(nextKind);
     setSearchParams(next, { replace: true });
+  };
+
+  const openClassScope = async (scope: ClassScope) => {
+    setClassScope(scope);
+    const ids = unreadIdsForTeacherClassScope(scope, classAttention);
+    if (!ids.length) return;
+
+    const idSet = new Set(ids);
+    setClassAttention((current) => current.filter((item) => !idSet.has(item.id)));
+    try {
+      await http.post("/notifications/read-batch", { ids });
+      announceNavigationAttentionChanged();
+    } catch {
+      // Polling layout akan mengembalikan indikator bila status baca gagal disimpan.
+    }
   };
 
   useEffect(() => { void loadClasses(); }, []);
@@ -446,7 +463,7 @@ export default function ManageClasses() {
   };
 
   return (
-    <TeacherLayout title="Kelas Saya">
+    <TeacherLayout title="Kelas Saya" onAttentionNotificationsChange={setClassAttention}>
       <div className="mx-auto max-w-7xl space-y-7 pb-12">
         <section data-tour="teacher-classes-hero" className="flex flex-col justify-between gap-5 rounded-[1.7rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-5 text-white shadow-xl sm:rounded-[2rem] sm:p-7 md:flex-row md:items-end">
           <div><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-200">Pelaksanaan sesi</p><h1 className="mt-3 text-2xl font-black sm:text-3xl">Kelas yang sudah dipesan</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/75">Kelola kelas privat dan kelompok dari satu halaman, mulai dari konfirmasi hadir sampai hasil belajar. Kelas yang selesai tetap dapat dibuka dari tab Riwayat.</p></div>
@@ -461,8 +478,7 @@ export default function ManageClasses() {
 
         <section className="rounded-[1.5rem] border border-slate-100 bg-white p-2 shadow-sm">
           <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-slate-100 p-1.5">
-            <button type="button" onClick={() => setClassScope("active")} aria-pressed={classScope === "active"} className={`min-h-11 rounded-xl px-3 text-sm font-black transition ${classScope === "active" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:bg-white/70"}`}>Aktif</button>
-            <button type="button" onClick={() => setClassScope("history")} aria-pressed={classScope === "history"} className={`min-h-11 rounded-xl px-3 text-sm font-black transition ${classScope === "history" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:bg-white/70"}`}>Riwayat</button>
+            {([['active', 'Aktif'], ['history', 'Riwayat']] as const).map(([scope, label]) => <button key={scope} type="button" onClick={() => void openClassScope(scope)} aria-pressed={classScope === scope} className={`relative min-h-11 rounded-xl px-3 text-sm font-black transition ${classScope === scope ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:bg-white/70"}`}>{label}{unreadIdsForTeacherClassScope(scope, classAttention).length > 0 && <span aria-label={`Ada pembaruan baru di ${label}`} className="absolute right-3 top-2.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />}</button>)}
           </div>
         </section>
 

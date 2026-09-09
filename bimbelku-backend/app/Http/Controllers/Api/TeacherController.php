@@ -267,12 +267,14 @@ class TeacherController extends Controller
     )
     {
         $validated = $request->validate([
-            'subjects' => ['required', 'array', 'min:1', 'max:4'],
+            'subjects' => ['required', 'array', 'size:1'],
             'subjects.*.name' => ['required', 'string', 'max:120'],
             'subjects.*.levels' => ['required', 'array', 'min:1'],
             'subjects.*.levels.*' => ['required', \Illuminate\Validation\Rule::in(EducationCatalog::LEVELS)],
             'subjects.*.is_online' => ['required', 'boolean'],
             'subjects.*.is_offline' => ['required', 'boolean'],
+            'subjects.*.is_private_active' => ['sometimes', 'boolean'],
+            'subjects.*.is_group_active' => ['sometimes', 'boolean'],
         ]);
 
         $normalizedSubjects = [];
@@ -308,7 +310,7 @@ class TeacherController extends Controller
             if (isset($seenCatalogIds[$catalogSubject->id])) {
                 return response()->json([
                     'message' => 'Mata pelajaran tutor tidak boleh duplikat.',
-                    'errors' => ['subjects' => ['Pilih 1–4 mata pelajaran yang berbeda.']],
+                    'errors' => ['subjects' => ['Pilih tepat 1 mata pelajaran.']],
                 ], 422);
             }
             $seenCatalogIds[$catalogSubject->id] = true;
@@ -319,6 +321,8 @@ class TeacherController extends Controller
                 'levels' => $levels,
                 'is_online' => (bool) $item['is_online'],
                 'is_offline' => (bool) $item['is_offline'],
+                'is_private_active' => (bool) ($item['is_private_active'] ?? true),
+                'is_group_active' => (bool) ($item['is_group_active'] ?? false),
             ];
         }
 
@@ -353,6 +357,8 @@ class TeacherController extends Controller
                         'levels' => array_values($levels),
                         'is_online' => (bool) $subject->is_online,
                         'is_offline' => (bool) $subject->is_offline,
+                        'is_private_active' => (bool) $subject->is_private_active,
+                        'is_group_active' => (bool) ($subject->is_group_active ?? false),
                     ];
                 })
                 ->sortBy(fn ($subject) => sprintf('%010d:%s', $subject['curriculum_subject_id'], $subject['name']))
@@ -366,6 +372,8 @@ class TeacherController extends Controller
                     'levels' => array_values($subject['levels']),
                     'is_online' => (bool) $subject['is_online'],
                     'is_offline' => (bool) $subject['is_offline'],
+                    'is_private_active' => (bool) $subject['is_private_active'],
+                    'is_group_active' => (bool) $subject['is_group_active'],
                 ])
                 ->sortBy(fn ($subject) => sprintf('%010d:%s', $subject['curriculum_subject_id'], $subject['name']))
                 ->values()
@@ -396,7 +404,8 @@ class TeacherController extends Controller
                     'is_active' => true,
                     'is_online' => $subject['is_online'],
                     'is_offline' => $subject['is_offline'],
-                    'is_private_active' => true,
+                    'is_private_active' => $subject['is_private_active'],
+                    'is_group_active' => $subject['is_group_active'],
                 ]);
             }
 
@@ -430,7 +439,7 @@ class TeacherController extends Controller
         return response()->json([
             'message' => $reverificationRequired
                 ? 'Kompetensi mengajar diperbarui. Akun masuk pemeriksaan ulang dan sesi login ditutup.'
-                : 'Kompetensi 1–4 mata pelajaran dan jenjang berhasil disimpan. Harga ditentukan oleh admin.',
+                : 'Satu mata pelajaran utama dan jenjang berhasil disimpan. Harga ditentukan oleh admin.',
             'reverification_required' => $reverificationRequired,
         ]);
     }

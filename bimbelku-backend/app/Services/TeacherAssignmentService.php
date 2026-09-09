@@ -7,7 +7,6 @@ use App\Models\MatchingOperationLog;
 use App\Models\Notification;
 use App\Models\PackageSession;
 use App\Models\TeacherOffer;
-use App\Models\TeacherProfile;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -18,8 +17,8 @@ class TeacherAssignmentService
     public function __construct(
         private readonly TeacherMatchingService $matchingService,
         private readonly PackageCheckoutService $packageCheckoutService,
-    ) {
-    }
+        private readonly TeacherReplacementService $teacherReplacementService,
+    ) {}
 
     public function candidateSummaries(BookingRequest $bookingRequest, string $search = ''): Collection
     {
@@ -75,10 +74,10 @@ class TeacherAssignmentService
 
         $teacher->loadMissing(['teacherProfile.subjects', 'availabilities']);
         $profile = $teacher->teacherProfile;
-        if (!$profile?->verified_at) {
+        if (! $profile?->verified_at) {
             return 'Tutor belum lolos verifikasi.';
         }
-        if (!$profile->is_accepting_requests) {
+        if (! $profile->is_accepting_requests) {
             return 'Tutor sedang tidak menerima permintaan.';
         }
         if ((int) $profile->points <= 0) {
@@ -94,8 +93,11 @@ class TeacherAssignmentService
         }
 
         if ($bookingRequest->package_subject_id) {
-            $bookingRequest->loadMissing('packageSubject.sessions');
-            foreach ($bookingRequest->packageSubject?->sessions ?? collect() as $session) {
+            $bookingRequest->loadMissing(['packageSubject.sessions', 'teacherReplacement.sessions.packageSession']);
+            $sessions = $bookingRequest->teacherReplacement
+                ? $bookingRequest->teacherReplacement->sessions->pluck('packageSession')
+                : ($bookingRequest->packageSubject?->sessions ?? collect());
+            foreach ($sessions as $session) {
                 if ($this->matchingService->teacherHasConflict(
                     $teacher->id,
                     $session->scheduled_start_at,
@@ -111,7 +113,7 @@ class TeacherAssignmentService
                 )) {
                     return 'Salah satu jadwal paket bertabrakan dengan paket lain yang ditangani tutor.';
                 }
-                if (!$this->teacherAvailableAt(
+                if (! $this->teacherAvailableAt(
                     $teacher,
                     $session->scheduled_start_at,
                     $session->scheduled_end_at
@@ -141,6 +143,11 @@ class TeacherAssignmentService
         string $reason
     ): array {
         return DB::transaction(function () use ($bookingRequest, $teacher, $admin, $reason) {
+            if ($bookingRequest->teacher_replacement_request_id) {
+                \App\Models\TeacherReplacementRequest::query()
+                    ->lockForUpdate()
+                    ->findOrFail($bookingRequest->teacher_replacement_request_id);
+            }
             $lockedRequest = BookingRequest::query()
                 ->with([
                     'packageSubject.package',
@@ -227,7 +234,7 @@ class TeacherAssignmentService
                     'matching_attempts' => DB::raw('matching_attempts + 1'),
                 ]);
 
-            if ($lockedRequest->package_subject_id) {
+            if ($lockedRequest->package_subject_id && ! $lockedRequest->teacher_replacement_request_id) {
                 $lockedRequest->packageSubject?->update(['status' => 'teacher_pending']);
                 $lockedRequest->packageSubject?->package?->update(['status' => 'teacher_pending']);
             }
@@ -251,7 +258,7 @@ class TeacherAssignmentService
                     'teacher_name' => $teacher->name,
                     'manual_offer_id' => $manualOffer->id,
                     'affected_request_ids' => $requestIds->values()->all(),
-                    'source_type' => 'package',
+                    'source_type' => $lockedRequest->teacher_replacement_request_id ? 'teacher_replacement' : 'package',
                 ],
             ]);
 
@@ -278,6 +285,13 @@ class TeacherAssignmentService
             410,
             'Flow pemesanan langsung lama sudah dipensiunkan. Gunakan Paket Belajar.'
         );
+
+        if ($teacherOffer->bookingRequest?->teacher_replacement_request_id) {
+            return [
+                'type' => 'teacher_replacement',
+                'data' => $this->teacherReplacementService->acceptOffer($teacherOffer, $teacher),
+            ];
+        }
 
         return [
             'type' => 'package',

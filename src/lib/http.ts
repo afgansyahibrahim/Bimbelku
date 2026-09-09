@@ -166,6 +166,9 @@ http.interceptors.request.use((config) => {
     || url.includes("/admin/payout")
     || url.includes("/admin/refunds/")
     || /\/student\/refunds\/\d+\/destination$/.test(url)
+    || /\/student\/packages\/\d+\/subjects\/\d+\/teacher-replacements$/.test(url)
+    || /\/student\/teacher-replacements\/\d+\/(?:cancel|retry|reschedule|request-refund)$/.test(url)
+    || /\/admin\/teacher-replacements\/\d+\/(?:approve|reject)$/.test(url)
   );
   if (financialMutation && !config.headers["Idempotency-Key"]) {
     const slot = `${method}:${url}`;

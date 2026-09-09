@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import StudentLayout from "@/components/StudentLayout";
+import LogoutButton from "@/components/LogoutButton";
 import { getCached } from "@/lib/http";
 import { NAVIGATION_ATTENTION_CHANGED_EVENT, normalizeAttentionPath, pageGroupForPath, type AttentionNotification } from "@/lib/navigationAttention";
 
@@ -170,6 +171,7 @@ export default function Account() {
             { label: "Pusat Bantuan", description: "Temukan jawaban atau kirim permintaan bantuan.", to: "/student/help", icon: MessageSquareText },
             { label: "Syarat dan ketentuan", description: "Baca aturan layanan BimbelKu.", to: "/terms", state: { from: "/student/account" }, icon: FileText },
           ]} />
+          <LogoutButton accent="student" className="lg:col-start-2" />
         </div>
       </div>
     </StudentLayout>

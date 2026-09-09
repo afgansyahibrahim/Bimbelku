@@ -51,6 +51,8 @@ interface TeachingSubjectState {
   levels: string[];
   is_online: boolean;
   is_offline: boolean;
+  is_private_active: boolean;
+  is_group_active: boolean;
 }
 
 interface ProfileState {
@@ -96,7 +98,7 @@ const initialState: ProfileState = {
   userStatus: "",
   documentUrls: {},
   documentFiles: {},
-  teachingSubjects: [{ name: "", levels: [], is_online: true, is_offline: true }],
+  teachingSubjects: [{ name: "", levels: [], is_online: true, is_offline: true, is_private_active: true, is_group_active: false }],
 };
 
 export default function TeacherProfile() {
@@ -133,13 +135,15 @@ export default function TeacherProfile() {
       setSubjectOptions(catalogResponse?.data.subject_options || []);
       const { user, profile: teacherProfile } = response.data;
       const teachingSubjects: TeachingSubjectState[] = Array.isArray(teacherProfile.subjects) && teacherProfile.subjects.length > 0
-        ? teacherProfile.subjects.slice(0, 4).map((subject: any) => ({
+        ? teacherProfile.subjects.slice(0, 1).map((subject: any) => ({
             name: subject?.name || "",
             levels: Array.isArray(subject?.levels) ? subject.levels : [],
             is_online: subject?.is_online ?? true,
             is_offline: subject?.is_offline ?? true,
+            is_private_active: subject?.is_private_active ?? true,
+            is_group_active: subject?.is_group_active ?? false,
           }))
-        : [{ name: "", levels: [], is_online: true, is_offline: true }];
+        : [{ name: "", levels: [], is_online: true, is_offline: true, is_private_active: true, is_group_active: false }];
       setProfile({
         name: sanitizePersonName(user.name || ""),
         email: user.email || "",
@@ -291,8 +295,8 @@ export default function TeacherProfile() {
 
   const saveSubject = async () => {
     const entries = profile.teachingSubjects;
-    if (entries.length < 1 || entries.length > 4) {
-      notify.error("Pilih minimal 1 dan maksimal 4 mata pelajaran.");
+    if (entries.length !== 1) {
+      notify.error("Pilih tepat 1 mata pelajaran sesuai bidang utama kamu.");
       return;
     }
     const names = entries.map((item) => item.name.trim());
@@ -329,6 +333,8 @@ export default function TeacherProfile() {
           levels: item.levels,
           is_online: item.is_online,
           is_offline: item.is_offline,
+          is_private_active: item.is_private_active,
+          is_group_active: item.is_group_active,
         })),
       });
       notify.success(response.data.message);
@@ -372,12 +378,12 @@ export default function TeacherProfile() {
 
   const addTeachingSubject = () => {
     setProfile((current) => {
-      if (current.teachingSubjects.length >= 4) return current;
+      if (current.teachingSubjects.length >= 1) return current;
       return {
         ...current,
         teachingSubjects: [
           ...current.teachingSubjects,
-          { name: "", levels: [], is_online: true, is_offline: true },
+          { name: "", levels: [], is_online: true, is_offline: true, is_private_active: true, is_group_active: false },
         ],
       };
     });
@@ -432,7 +438,7 @@ export default function TeacherProfile() {
         <section
           className="relative overflow-hidden rounded-[1.7rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 bg-cover bg-center p-5 text-white shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-500 sm:rounded-[2rem] sm:px-7 sm:py-8"
           style={profile.profileCover ? {
-            backgroundImage: `linear-gradient(120deg, rgba(2,6,23,.88), rgba(49,46,129,.78), rgba(76,29,149,.68)), url("${profile.profileCover}")`,
+            backgroundImage: `url("${profile.profileCover}")`,
           } : undefined}
         >
           <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-indigo-400/20 blur-3xl" />
@@ -446,15 +452,15 @@ export default function TeacherProfile() {
               onChange={(event) => handleCover(event.target.files?.[0])}
             />
           </label>
-          <div className="relative flex flex-col gap-6 md:flex-row md:items-center">
+          <div className="relative flex flex-col gap-6 md:flex-row md:items-end">
             <label className="group relative h-28 w-28 shrink-0 cursor-pointer overflow-hidden rounded-[2rem] border-4 border-white/15 bg-white/10 shadow-xl">
               {profile.photo ? <img src={profile.photo} alt={profile.name} loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <div className="h-full w-full flex items-center justify-center"><User size={38} className="text-indigo-200" /></div>}
               <div className="absolute inset-0 flex items-center justify-center bg-slate-950/60 opacity-0 transition group-hover:opacity-100"><Camera size={24} /></div>
               <input type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={(event) => handlePhoto(event.target.files?.[0])} />
             </label>
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 md:translate-y-3">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-indigo-100"><Sparkles size={14} /> Profil pencocokan</div>
-              <h1 className="mt-4 truncate text-2xl font-black sm:text-3xl">{profile.name || "Profil Tutor"}</h1>
+              <h1 className="mt-4 break-words text-2xl font-black leading-tight drop-shadow-[0_2px_3px_rgba(0,0,0,.45)] [overflow-wrap:anywhere] sm:text-3xl">{profile.name || "Profil Tutor"}</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100/80">Data ini dipakai sistem untuk menilai kecocokan mata pelajaran, jenjang, mode, dan jarak kelas offline.</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/10 px-5 py-4 backdrop-blur">
@@ -531,7 +537,7 @@ export default function TeacherProfile() {
           </form>
 
           <section className="rounded-[2rem] border border-slate-100 bg-white p-6 md:p-8 shadow-sm animate-in fade-in slide-in-from-right-3 duration-500 xl:sticky xl:top-24">
-            <div className="flex items-start justify-between gap-4"><div><h2 className="text-2xl font-black text-slate-900">Kompetensi mengajar</h2><p className="mt-1 text-sm text-slate-500">Tutor dapat menyimpan 1–4 mata pelajaran. Kelas Kelompok multi-mapel hanya dipasangkan ke tutor yang menguasai seluruh mapel paket.</p></div><div className="h-11 w-11 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center"><BookOpen size={20} /></div></div>
+            <div className="flex items-start justify-between gap-4"><div><h2 className="text-2xl font-black text-slate-900">Kompetensi mengajar</h2><p className="mt-1 text-sm text-slate-500">Tutor memilih satu mapel sesuai bidang utama. Privat aktif secara bawaan; kelompok dapat diaktifkan dari pengaturan layanan.</p></div><div className="h-11 w-11 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center"><BookOpen size={20} /></div></div>
 
             <div className="mt-6 space-y-5">
               {profile.teachingSubjects.map((subject, index) => (
@@ -563,14 +569,16 @@ export default function TeacherProfile() {
                   </div>
 
                   <div className="mt-4 space-y-3">
+                    <ModeRow icon={BookOpen} title="Menerima Paket Privat" description="Tutor menerima permintaan bimbingan personal." checked={subject.is_private_active} onChange={(checked) => updateTeachingSubject(index, { is_private_active: checked })} />
+                    <ModeRow icon={BookOpen} title="Menerima Kelas Kelompok" description="Tutor menerima penugasan Kelas Kelompok." checked={subject.is_group_active} onChange={(checked) => updateTeachingSubject(index, { is_group_active: checked })} />
                     <ModeRow icon={Monitor} title="Mengajar online" description="Kelas menggunakan ruang pertemuan daring." checked={subject.is_online} onChange={(checked) => updateTeachingSubject(index, { is_online: checked })} />
                     <ModeRow icon={Store} title="Mengajar offline" description="Tutor mendatangi alamat murid tanpa biaya perjalanan." checked={subject.is_offline} onChange={(checked) => updateTeachingSubject(index, { is_offline: checked })} />
                   </div>
                 </div>
               ))}
 
-              <Button type="button" variant="outline" onClick={addTeachingSubject} disabled={profile.teachingSubjects.length >= 4 || subjectOptions.length <= profile.teachingSubjects.length} className="h-11 w-full rounded-xl border-indigo-200 text-indigo-700 hover:bg-indigo-50">
-                <Plus size={16} className="mr-2" /> Tambah mata pelajaran ({profile.teachingSubjects.length}/4)
+              <Button type="button" variant="outline" onClick={addTeachingSubject} disabled className="hidden">
+                <Plus size={16} className="mr-2" /> Tambah mata pelajaran (satu mapel utama)
               </Button>
 
               <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 flex items-start gap-3 text-amber-900"><MapPin size={18} className="mt-0.5 shrink-0" /><p className="text-sm leading-6">Sistem mengutamakan jarak dekat. Perubahan daftar kompetensi dapat memerlukan verifikasi ulang admin.</p></div>

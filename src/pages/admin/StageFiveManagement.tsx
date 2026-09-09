@@ -38,15 +38,20 @@ const FULL_HOUR_OPTIONS = Array.from({ length: 23 }, (_, hour) => `${String(hour
 
 const destinationOptions = [
   ["/student/dashboard", "Beranda Murid"],
-  ["/student/my-classes?tab=process", "Kelas Saya · Proses"],
-  ["/student/packages/new", "Pilih Paket"],
+  ["/student/dashboard#tutorial", "Buka Tutorial Dashboard"],
+  ["/student/packages/new", "Cari Les / Pilih Paket"],
+  ["/student/kelas-murah", "Kelas Kelompok"],
+  ["/student/my-classes?tab=process", "Kelas Saya - Dalam Proses"],
+  ["/student/my-classes", "Kelas Saya - Jadwal Aktif"],
+  ["/student/my-classes?tab=history", "Kelas Saya - Riwayat"],
+  ["/student/progress", "Progres Belajar"],
+  ["/student/messages", "Pesan"],
   ["/student/vouchers", "Voucher"],
-  ["/student/my-classes", "Seluruh Sesi"],
-  ["/student/history", "Riwayat Transaksi"],
-  ["/student/profile", "Akun Murid"],
+  ["/student/history", "Riwayat Pembayaran"],
+  ["/student/notifications", "Notifikasi"],
+  ["/student/profile", "Profil Murid"],
+  ["/student/account", "Pengaturan Akun"],
   ["/student/help", "Pusat Bantuan"],
-  ["/guru", "Beranda Tutor"],
-  ["/guru/permintaan", "Permintaan Tutor"],
 ] as const;
 
 const emptyPlan: Omit<Plan, "id"> = { name: "", slug: "", description: "", session_count: 4, validity_days: 30, maximum_subjects: 1, sort_order: 0, is_active: true };
@@ -165,7 +170,13 @@ function Editor({ editor, plans, subjectOptions, close, saved }: { editor: { typ
       let response;
       if (editor.type === "banners") {
         const payload = new FormData();
-        const bannerPayload = withTimezoneAwareWindow(item);
+        // Banner pada modul ini tampil di dashboard murid. Tetapkan sasaran dan
+        // normalkan tujuan lama agar tidak mengarah ke halaman peran lain.
+        const normalizedBanner = { ...item, audience: "student" };
+        if (normalizedBanner.destination_kind === "internal" && !destinationOptions.some(([path]) => path === normalizedBanner.destination_url)) {
+          normalizedBanner.destination_url = destinationOptions[0][0];
+        }
+        const bannerPayload = withTimezoneAwareWindow(normalizedBanner);
         Object.entries(bannerPayload).forEach(([key, value]) => {
           if (key === "id" || key === "image_url" || key === "image_path" || value === null || value === undefined) return;
           payload.append(key, typeof value === "boolean" ? (value ? "1" : "0") : String(value));
@@ -253,7 +264,56 @@ function PromoStatusControl({ active, onChange }: { active: boolean; onChange: (
 }
 
 function BannerFields({ item, set, image, setImage }: any) {
-  return <><Field label="Judul banner"><input required className="form-field" value={item.title} onChange={(e) => set("title", e.target.value)} /></Field><Field label="Teks tombol"><input className="form-field" value={item.button_text || ""} onChange={(e) => set("button_text", e.target.value)} /></Field><Field label="Sasaran"><ResponsiveSelect value={item.audience} ariaLabel="Pilih sasaran banner" options={[{ value: "all", label: "Semua" }, { value: "student", label: "Murid" }, { value: "teacher", label: "Tutor" }, { value: "admin", label: "Admin" }]} onValueChange={(value) => set("audience", value)} /></Field><Field label="Jenis tujuan"><ResponsiveSelect value={item.destination_kind} ariaLabel="Pilih jenis tujuan banner" options={[{ value: "internal", label: "Halaman internal" }, { value: "external", label: "Tautan luar" }]} onValueChange={(value) => set("destination_kind", value)} /></Field><Field label="Tujuan" wide>{item.destination_kind === "internal" ? <ResponsiveSelect value={item.destination_url} ariaLabel="Pilih halaman tujuan" options={destinationOptions.map(([value, label]) => ({ value, label }))} onValueChange={(value) => set("destination_url", value)} /> : <input required type="url" className="form-field" value={item.destination_url} onChange={(e) => set("destination_url", e.target.value)} placeholder="https://..." />}</Field><Field label="Deskripsi" wide><textarea className="min-h-24 w-full rounded-2xl border border-slate-200 p-4 text-sm" value={item.description || ""} onChange={(e) => set("description", e.target.value)} /></Field><Field label={item.id ? "Ganti gambar 16:9 (opsional)" : "Gambar banner 16:9"} wide><input required={!item.id} type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setImage(e.target.files?.[0] || null)} className="block w-full rounded-2xl border border-dashed border-slate-300 p-4 text-sm" /><p className="mt-2 text-xs font-medium leading-5 text-slate-500">Disarankan 1600×900 tanpa teks pada gambar. Judul, deskripsi, dan tombol ditampilkan oleh sistem.</p>{image && <p className="mt-2 break-all text-xs font-bold text-emerald-600">{image.name}</p>}</Field><Field label="Mulai tayang"><input type="datetime-local" className="form-field" value={toLocal(item.starts_at)} onChange={(e) => set("starts_at", e.target.value || null)} /></Field><Field label="Selesai tayang"><input type="datetime-local" className="form-field" value={toLocal(item.ends_at)} onChange={(e) => set("ends_at", e.target.value || null)} /></Field><Field label="Urutan"><input type="number" min={0} className="form-field" value={item.sort_order} onChange={(e) => set("sort_order", Number(e.target.value))} /></Field><Switch label="Banner aktif" checked={item.is_active} onChange={(value) => set("is_active", value)} /></>;
+  const selectedInternalDestination = destinationOptions.some(([path]) => path === item.destination_url)
+    ? item.destination_url
+    : destinationOptions[0][0];
+
+  const changeDestinationKind = (value: string) => {
+    set("destination_kind", value);
+    set("destination_url", value === "internal" ? destinationOptions[0][0] : "");
+  };
+
+  return <>
+    <Field label="Judul banner"><input required className="form-field" value={item.title} onChange={(e) => set("title", e.target.value)} /></Field>
+    <Field label="Teks tombol"><input className="form-field" value={item.button_text || ""} onChange={(e) => set("button_text", e.target.value)} placeholder="Contoh: Cari Les Sekarang" /></Field>
+    <Field label="Tampil untuk">
+      <div className="flex min-h-12 items-center rounded-2xl border border-indigo-100 bg-indigo-50 px-4 text-sm font-black text-indigo-800">Murid - Dashboard</div>
+    </Field>
+    <Field label="Jenis tujuan">
+      <ResponsiveSelect
+        value={item.destination_kind}
+        ariaLabel="Pilih jenis tujuan banner"
+        options={[{ value: "internal", label: "Halaman murid" }, { value: "external", label: "Tautan luar" }]}
+        onValueChange={changeDestinationKind}
+      />
+    </Field>
+    <Field label={item.destination_kind === "internal" ? "Halaman tujuan" : "Alamat tautan"} wide>
+      {item.destination_kind === "internal" ? (
+        <>
+          <ResponsiveSelect
+            value={selectedInternalDestination}
+            ariaLabel="Pilih halaman murid tujuan banner"
+            placeholder="Pilih halaman murid"
+            options={destinationOptions.map(([value, label]) => ({ value, label }))}
+            onValueChange={(value) => set("destination_url", value)}
+            contentClassName="sm:min-w-[24rem]"
+          />
+          <p className="mt-2 text-sm leading-5 text-slate-500">Hanya halaman yang aman dan dapat dibuka murid yang tersedia.</p>
+        </>
+      ) : (
+        <>
+          <input required type="url" inputMode="url" autoCapitalize="none" className="form-field" value={item.destination_url} onChange={(e) => set("destination_url", e.target.value)} placeholder="https://contoh.com" />
+          <p className="mt-2 text-sm leading-5 text-slate-500">Gunakan alamat lengkap dengan HTTPS. Tautan akan dibuka di tab baru.</p>
+        </>
+      )}
+    </Field>
+    <Field label="Deskripsi" wide><textarea className="min-h-24 w-full rounded-2xl border border-slate-200 p-4 text-sm" value={item.description || ""} onChange={(e) => set("description", e.target.value)} /></Field>
+    <Field label={item.id ? "Ganti gambar 16:9 (opsional)" : "Gambar banner 16:9"} wide><input required={!item.id} type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setImage(e.target.files?.[0] || null)} className="block w-full rounded-2xl border border-dashed border-slate-300 p-4 text-sm" /><p className="mt-2 text-xs font-medium leading-5 text-slate-500">Disarankan 1600×900 tanpa teks pada gambar. Judul, deskripsi, dan tombol ditampilkan oleh sistem.</p>{image && <p className="mt-2 break-all text-xs font-bold text-emerald-600">{image.name}</p>}</Field>
+    <Field label="Mulai tayang"><input type="datetime-local" className="form-field" value={toLocal(item.starts_at)} onChange={(e) => set("starts_at", e.target.value || null)} /></Field>
+    <Field label="Selesai tayang"><input type="datetime-local" className="form-field" value={toLocal(item.ends_at)} onChange={(e) => set("ends_at", e.target.value || null)} /></Field>
+    <Field label="Urutan"><input type="number" min={0} className="form-field" value={item.sort_order} onChange={(e) => set("sort_order", Number(e.target.value))} /></Field>
+    <Switch label="Banner aktif" checked={item.is_active} onChange={(value) => set("is_active", value)} />
+  </>;
 }
 
 function TutorialFields({ item, set, setStepImage }: any) {

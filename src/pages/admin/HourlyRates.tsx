@@ -81,6 +81,11 @@ export default function HourlyRates() {
 
   const saveRate = async (event: FormEvent) => {
     event.preventDefault();
+    const amount = parseMoney(form.amount);
+    if (!amount || amount < 1000) {
+      notify.error("Nominal harus minimal Rp1.000.");
+      return;
+    }
     setSaving(true);
     try {
       const response = await http.post("/admin/hourly-rates", {
@@ -88,7 +93,7 @@ export default function HourlyRates() {
         education_level: form.education_level === "all" ? null : form.education_level,
         class_type: "private",
         learning_mode: form.learning_mode,
-        amount: Number(form.amount),
+        amount,
       });
       notify.success(response.data.message);
       setForm({ subject_name: "", education_level: "all", learning_mode: "online", amount: "" });
@@ -101,6 +106,10 @@ export default function HourlyRates() {
   };
 
   const saveDefaults = async () => {
+    if (defaults.private_online < 1000 || defaults.private_offline < 1000) {
+      notify.error("Tarif bawaan harus minimal Rp1.000.");
+      return;
+    }
     try {
       const response = await http.post("/admin/hourly-rates/defaults", defaults);
       notify.success(response.data.message);
@@ -169,7 +178,7 @@ export default function HourlyRates() {
                 </div>
                 <div><Label className="mb-2 block font-bold">Jenjang</Label><Select value={form.education_level} onValueChange={(value) => setForm((current) => ({ ...current, education_level: value }))}><SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Semua jenjang</SelectItem>{EDUCATION_LEVELS.map((level) => <SelectItem key={level} value={level}>{level}</SelectItem>)}</SelectContent></Select></div>
                 <div><Label className="mb-2 block font-bold">Mode</Label><Select value={form.learning_mode} onValueChange={(value) => setForm((current) => ({ ...current, learning_mode: value }))}><SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="online">Online</SelectItem><SelectItem value="offline">Offline</SelectItem></SelectContent></Select></div>
-                <div><Label className="mb-2 block font-bold">Nominal per jam</Label><Input type="number" min="1000" step="1000" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))} className="h-12 rounded-xl" required /></div>
+                <div><Label className="mb-2 block font-bold">Nominal per jam</Label><Input type="text" inputMode="numeric" min="1000" step="1000" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: sanitizeMoney(event.target.value) }))} className="h-12 rounded-xl" required /></div>
                 <Button type="submit" disabled={saving} className="h-12 w-full rounded-xl bg-slate-950 hover:bg-indigo-700 font-bold">{saving ? <Loader2 size={17} className="mr-2 animate-spin" /> : <Plus size={17} className="mr-2" />} Simpan tarif</Button>
               </div>
             </form>
@@ -201,5 +210,25 @@ export default function HourlyRates() {
 }
 
 function MoneyInput({ label, value, min = 1000, step = 1000, onChange }: { label: string; value: number; min?: number; step?: number; onChange: (value: number) => void }) {
-  return <div><Label className="mb-2 block font-bold">{label}</Label><Input type="number" min={min} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} className="h-12 rounded-xl" /></div>;
+  const [draft, setDraft] = useState(value > 0 ? formatMoney(value) : "");
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setDraft(value > 0 ? formatMoney(value) : "");
+  }, [focused, value]);
+
+  return <div><Label className="mb-2 block font-bold">{label}</Label><Input type="text" inputMode="numeric" min={min} step={step} value={focused ? draft : (value > 0 ? formatMoney(value) : "")} onFocus={() => { setFocused(true); setDraft(value > 0 ? String(value) : ""); }} onChange={(event) => { const raw = sanitizeMoney(event.target.value); setDraft(raw); onChange(parseMoney(raw)); }} onBlur={() => { setFocused(false); const normalized = parseMoney(draft); onChange(normalized); setDraft(normalized > 0 ? formatMoney(normalized) : ""); }} className="h-12 rounded-xl" /></div>;
+}
+
+function sanitizeMoney(value: string) {
+  return value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+}
+
+function parseMoney(value: string) {
+  const digits = sanitizeMoney(value);
+  return digits ? Number(digits) : 0;
+}
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(value);
 }

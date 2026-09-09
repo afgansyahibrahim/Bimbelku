@@ -1,10 +1,9 @@
 import { lazy, Suspense, useCallback, useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import LogoutButton from "@/components/LogoutButton";
 import ProfileQuickMenu from "@/components/ProfileQuickMenu";
 import { scheduleNonCriticalTask } from "@/lib/schedule";
 import { usePersistentSidebarScroll } from "@/hooks/usePersistentSidebarScroll";
-import { hasSidebarAttention, NAVIGATION_ATTENTION_CHANGED_EVENT, unreadIdsForCurrentPage, type AttentionNotification } from "@/lib/navigationAttention";
+import { hasSidebarAttention, NAVIGATION_ATTENTION_CHANGED_EVENT, type AttentionNotification } from "@/lib/navigationAttention";
 import {
   LayoutDashboard, BookOpen, Menu, X, Settings, Wallet, Banknote, 
   GraduationCap, CalendarClock, HelpCircle, Bell, MessageSquare, ClipboardCheck, BarChart3
@@ -25,22 +24,24 @@ const storedTeacher = () => {
 interface TeacherLayoutProps {
   children: React.ReactNode;
   title: string;
+  lockContentScroll?: boolean;
+  onAttentionNotificationsChange?: (notifications: AttentionNotification[]) => void;
 }
 
-export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
+export default function TeacherLayout({ children, title, lockContentScroll = false, onAttentionNotificationsChange }: TeacherLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_MEDIA_QUERY).matches);
   const [userData, setUserData] = useState<any>(() => storedTeacher());
-  
+
   // STATE NOTIFIKASI
   const [notifications, setNotifications] = useState<any[]>([]);
   const [attentionNotifications, setAttentionNotifications] = useState<AttentionNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
-  
+
   // [BARU] Modal State
   const [selectedNotif, setSelectedNotif] = useState<any>(null);
-  
+
   const lastNotificationIdRef = useRef<number>(0);
   const location = useLocation();
   const { sidebarScrollRef, handleSidebarScroll } = usePersistentSidebarScroll("teacher", location.pathname);
@@ -122,7 +123,7 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
             maxAgeMs: isPolling ? 5_000 : 15_000,
             force: isPolling,
           });
-          
+
           const data = Array.isArray(res.data.notifications) ? res.data.notifications : [];
           const attention = Array.isArray(res.data.attention_notifications)
             ? res.data.attention_notifications
@@ -136,7 +137,7 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
           if (data.length > 0) {
               const latest = data[0];
               if (isPolling && latest.id > lastNotificationIdRef.current) {
-                  
+
                   // Custom Toast dimuat hanya ketika polling benar-benar menemukan notifikasi baru.
                   window.dispatchEvent(new Event("bimbelku:toast-needed"));
                   void import("sonner").then(({ toast }) => {
@@ -173,13 +174,18 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
       let disposed = false;
       const start = () => { if (!disposed) void fetchNotifications(false); };
       const cancelScheduledStart = scheduleNonCriticalTask(start);
-      const interval = window.setInterval(() => {
-          if (document.visibilityState === "visible") void fetchNotifications(true);
-      }, 60000);
+      const refreshVisible = () => {
+        if (!disposed && document.visibilityState === "visible") void fetchNotifications(true);
+      };
+      const interval = window.setInterval(refreshVisible, 15000);
+      window.addEventListener("focus", refreshVisible);
+      document.addEventListener("visibilitychange", refreshVisible);
       return () => {
         disposed = true;
         cancelScheduledStart();
         window.clearInterval(interval);
+        window.removeEventListener("focus", refreshVisible);
+        document.removeEventListener("visibilitychange", refreshVisible);
       };
   }, [fetchNotifications]);
 
@@ -190,23 +196,8 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
   }, [fetchNotifications]);
 
   useEffect(() => {
-      const ids = unreadIdsForCurrentPage("teacher", location.pathname, attentionNotifications);
-      if (!ids.length) return;
-
-      const idSet = new Set(ids);
-      setNotifications((current) => current.map((item) => idSet.has(item.id) ? { ...item, is_read: true } : item));
-      setAttentionNotifications((current) => current.filter((item) => !idSet.has(item.id)));
-      setUnreadCount((current) => Math.max(0, current - ids.length));
-
-      let cancelled = false;
-      void import("@/lib/http")
-        .then(({ default: http }) => http.post("/notifications/read-batch", { ids }))
-        .catch(() => {
-          if (!cancelled) void fetchNotifications(true);
-        });
-
-      return () => { cancelled = true; };
-  }, [attentionNotifications, fetchNotifications, location.pathname]);
+    onAttentionNotificationsChange?.(attentionNotifications);
+  }, [attentionNotifications, onAttentionNotificationsChange]);
 
   return (
     <div className="flex h-dvh w-full max-w-full overflow-hidden bg-[#F8FAFC] font-sans text-slate-800">
@@ -254,9 +245,6 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
             </div>
         </nav>
 
-        <div className="p-6 border-t border-slate-50">
-            <LogoutButton accent="teacher" />
-        </div>
       </aside>
 
       {/* MAIN CONTENT */}
@@ -266,12 +254,12 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
             <button aria-label="Buka menu" className="xl:hidden p-2.5 bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 rounded-xl shadow-sm transition" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button>
             <div className="min-w-0"><h1 className="max-w-[9.5rem] truncate text-base font-black tracking-tight text-slate-800 sm:max-w-none sm:text-xl">{title}</h1></div>
           </div>
-          
+
           <div className="flex items-center gap-2 sm:gap-5">
              <Suspense fallback={null}>
                <RoleQuickGuide role="teacher" />
              </Suspense>
-             
+
              {/* DROPDOWN NOTIF */}
              <div className="relative">
                  <button onClick={() => setShowNotifDropdown(!showNotifDropdown)} aria-label={`Notifikasi${unreadCount ? `, ${unreadCount} belum dibaca` : ""}`} aria-expanded={showNotifDropdown} className="relative p-2.5 rounded-full text-slate-400 hover:bg-white hover:text-indigo-600 hover-shadow-md transition-all duration-300 group">
@@ -308,8 +296,8 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
           </div>
         </header>
 
-        <div className="mobile-app-content flex-1 overflow-x-hidden overflow-y-auto scroll-smooth p-4 pb-[calc(7.25rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-24 xl:p-10 xl:pb-10">
-          <div className="mx-auto w-full min-w-0 max-w-7xl pb-10">{children}</div>
+        <div className={`mobile-app-content min-h-0 flex-1 basis-0 overflow-x-hidden scroll-smooth p-4 pb-[calc(7.25rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-24 xl:p-10 xl:pb-10 ${lockContentScroll ? "overflow-y-hidden" : "overflow-y-auto"}`}>
+          <div className={`mx-auto w-full min-w-0 max-w-7xl pb-10 ${lockContentScroll ? "flex h-full min-h-0 flex-col" : ""}`}>{children}</div>
         </div>
         {!isDesktop && !sidebarOpen && (
           <Suspense fallback={null}>
@@ -326,7 +314,7 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
                 */}
                 <div className="relative flex max-h-[calc(100dvh-1.5rem)] w-full min-w-0 max-w-lg flex-col overflow-hidden rounded-[1.75rem] bg-white shadow-2xl animate-in slide-in-from-bottom-4 duration-300 sm:max-h-[90dvh] sm:rounded-[2.5rem] sm:zoom-in-95">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-100/50 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-                    
+
                     {/* Header: Fixed (Shrink-0) */}
                     <div className="relative z-10 p-5 sm:p-8 pb-4 shrink-0 bg-white">
                         <div className="flex justify-between items-start mb-6">
@@ -356,7 +344,7 @@ export default function TeacherLayout({ children, title }: TeacherLayoutProps) {
                         <button onClick={() => setSelectedNotif(null)} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all">Tutup Pesan</button>
                     </div>
                 </div>
-                
+
                 {/* Scrollbar Style */}
                 <style>{`
                     .custom-scrollbar::-webkit-scrollbar { width: 6px; }

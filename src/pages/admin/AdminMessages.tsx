@@ -21,6 +21,8 @@ export default function AdminMessages() {
   const [searchTerm, setSearchTerm] = useState("");
   
   const scrollRef = useRef<HTMLDivElement>(null);
+  const chatMessagesRef = useRef<HTMLDivElement>(null);
+  const previousTicketRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- BACKGROUND FETCH ---
@@ -63,9 +65,12 @@ export default function AdminMessages() {
   }, [activeTicket]);
 
   useEffect(() => {
-    if (activeTicket && scrollRef.current) {
-        scrollRef.current.scrollIntoView({ behavior: "smooth" });
-    }
+    const container = chatMessagesRef.current;
+    if (!activeTicket || !container) return;
+    const opened = previousTicketRef.current !== activeTicket.id;
+    const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+    if (opened || nearBottom) scrollRef.current?.scrollIntoView({ behavior: opened ? "auto" : "smooth" });
+    previousTicketRef.current = activeTicket.id;
   }, [activeTicket]);
 
   const openTicket = async (ticket: any) => {
@@ -133,12 +138,12 @@ export default function AdminMessages() {
   );
 
   return (
-    <AdminLayout title="Inbox Bantuan">
+    <AdminLayout title="Inbox Bantuan" lockContentScroll>
       {/* LAYOUT FIXED HEIGHT: 
           h-[calc(100dvh-130px)] memastikan konten pas di layar tanpa scroll window utama.
           Ini kunci agar footer tidak terdorong ke bawah.
       */}
-      <div className="flex h-[calc(100dvh-12rem)] min-h-[560px] flex-col gap-4 animate-in fade-in zoom-in-95 duration-500 lg:h-[calc(100dvh-14rem)] lg:flex-row lg:gap-6">
+      <div className="flex h-full min-h-0 flex-col gap-4 animate-in fade-in zoom-in-95 duration-500 lg:h-full lg:flex-row lg:gap-6">
         
         {/* === SIDEBAR LIST PESAN (Scroll Sendiri) === */}
         <div className={`${activeTicket ? "hidden lg:flex" : "flex"} min-h-0 w-full flex-col overflow-hidden rounded-[2rem] border border-slate-200/60 bg-white shadow-sm lg:w-1/3 lg:min-w-[320px]`}>
@@ -206,17 +211,16 @@ export default function AdminMessages() {
                 <>
                     {/* Header Chat */}
                     <div className="px-4 sm:px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white z-10 shadow-sm">
-                        <div className="flex items-center gap-4">
+                        <div className="flex min-w-0 items-center gap-4">
                             <button type="button" aria-label="Kembali ke daftar pesan" onClick={() => setActiveTicket(null)} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 lg:hidden">
                                 <ChevronLeft size={20} />
                             </button>
                             <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold ${activeTicket.user.role === 'teacher' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>
                                 {activeTicket.user.name.charAt(0).toUpperCase()}
                             </div>
-                            <div>
-                                <h2 className="font-bold text-lg text-slate-800 leading-tight">{activeTicket.subject}</h2>
+                            <div className="min-w-0"><h2 className="break-words font-bold text-lg text-slate-800 leading-tight">{activeTicket.subject}</h2>
                                 <p className="text-xs text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
-                                    {activeTicket.user.name} &bull; 
+                                    <span className="break-words">{activeTicket.user.name}</span> &bull;
                                     <span className="uppercase text-[10px] tracking-wider px-1.5 py-0.5 bg-slate-100 rounded text-slate-600 font-bold">{activeTicket.user.role}</span>
                                 </p>
                             </div>
@@ -233,7 +237,7 @@ export default function AdminMessages() {
                     </div>
 
                     {/* Bubble Chat List */}
-                    <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-[#f8fafc] custom-scrollbar">
+                    <div ref={chatMessagesRef} className="flex-1 overflow-y-auto p-6 space-y-6 bg-[#f8fafc] custom-scrollbar">
                         {activeTicket.replies?.map((reply: any) => {
                             const isMe = reply.user_id !== activeTicket.user.id; // Admin (Me) is sending if ID != Ticket Owner
                             

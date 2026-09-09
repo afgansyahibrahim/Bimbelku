@@ -22,6 +22,34 @@ interface CameraCaptureProps {
   guideShape?: "face" | "frame";
 }
 
+function cameraErrorMessage(error: unknown): string {
+  if (!window.isSecureContext) {
+    return "Kamera hanya dapat dibuka melalui HTTPS atau localhost. Buka halaman versi HTTPS lalu coba lagi.";
+  }
+
+  if (!(error instanceof DOMException)) {
+    return "Kamera tidak dapat dibuka. Periksa izin kamera pada pengaturan situs lalu coba lagi.";
+  }
+
+  switch (error.name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Izin kamera belum diberikan atau sedang diblokir. Pilih Izinkan pada permintaan browser, atau aktifkan Kamera dari pengaturan situs lalu tekan Coba lagi.";
+    case "NotFoundError":
+    case "DevicesNotFoundError":
+      return "Kamera tidak ditemukan pada perangkat ini. Pastikan perangkat memiliki kamera yang aktif.";
+    case "NotReadableError":
+    case "TrackStartError":
+    case "AbortError":
+      return "Kamera terdeteksi tetapi tidak dapat digunakan. Tutup aplikasi lain yang memakai kamera; jika tetap gagal, kamera mungkin bermasalah.";
+    case "OverconstrainedError":
+    case "ConstraintNotSatisfiedError":
+      return "Kamera tersedia, tetapi mode kamera yang diminta tidak didukung perangkat ini.";
+    default:
+      return "Kamera tidak dapat dibuka. Periksa izin kamera pada pengaturan situs lalu coba lagi.";
+  }
+}
+
 export default function CameraCapture({
   file,
   currentAvailable = false,
@@ -52,8 +80,11 @@ export default function CameraCapture({
     setError("");
     setStarting(true);
     try {
+      if (!window.isSecureContext) {
+        throw new DOMException("Camera requires a secure context", "SecurityError");
+      }
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error("Perangkat atau browser ini tidak mendukung akses kamera.");
+        throw new DOMException("Camera API is unavailable", "NotSupportedError");
       }
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -68,8 +99,8 @@ export default function CameraCapture({
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
-    } catch {
-      setError("Kamera tidak dapat dibuka. Izinkan akses kamera atau gunakan perangkat lain.");
+    } catch (cameraError) {
+      setError(cameraErrorMessage(cameraError));
     } finally {
       setStarting(false);
     }
@@ -121,7 +152,7 @@ export default function CameraCapture({
     ? "Foto baru siap dikirim"
     : currentAvailable
       ? "Foto tersimpan · ambil ulang untuk mengganti"
-      : "Wajib diambil langsung dari kamera";
+      : "Ketuk untuk membuka kamera dan memberikan izin";
 
   return (
     <>

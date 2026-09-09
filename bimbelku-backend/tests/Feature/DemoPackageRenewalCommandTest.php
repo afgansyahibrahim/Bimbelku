@@ -46,9 +46,36 @@ class DemoPackageRenewalCommandTest extends TestCase
             ->where('curriculum_subject_id', $subject->curriculum_subject_id)
             ->where('title', 'Fungsi dan Persamaan Kuadrat')
             ->firstOrFail();
+        $duplicateNamedSubject = \App\Models\CurriculumSubject::query()->create([
+            'name' => 'Matematika',
+            'normalized_name' => 'matematika-regression-duplicate',
+            'group_name' => 'Regresi',
+            'education_levels' => ['SMP'],
+            'grades' => ['Kelas 7'],
+            'is_elective' => false,
+            'is_active' => true,
+            'curriculum_name' => 'Kurikulum Merdeka',
+        ]);
+        $foreignChapter = \App\Models\CurriculumChapter::query()->create([
+            'curriculum_subject_id' => $duplicateNamedSubject->id,
+            'education_level' => 'SMP',
+            'grade' => 'Kelas 7',
+            'title' => 'Bab dari mapel bernama sama',
+            'normalized_title' => 'bab dari mapel bernama sama',
+            'sort_order' => 1,
+            'is_active' => true,
+        ]);
+
+        $catalogResponse = $this->getJson('/api/learning-catalog?curriculum_subject_id='.$subject->curriculum_subject_id.'&subject_name=Matematika&education_level=SMP&grade=Kelas%207')
+            ->assertOk()
+            ->assertJsonMissing(['id' => $foreignChapter->id]);
+        $this->assertNotEmpty($catalogResponse->json('chapters'));
+        $this->assertTrue(collect($catalogResponse->json('chapters'))->every(
+            fn (array $chapter) => (int) $chapter['subject_id'] === (int) $subject->curriculum_subject_id
+        ));
         $plan = PackagePlan::query()->where('is_active', true)->where('session_count', 4)->firstOrFail();
 
-        $starts = collect([0, 2, 4, 6])->map(
+        $starts = collect([0, 2, 7, 9])->map(
             fn (int $days) => now()->addDays($days)->setTime(18, 0)->format('Y-m-d H:i:s')
         )->all();
 
@@ -56,7 +83,7 @@ class DemoPackageRenewalCommandTest extends TestCase
             'curriculum_subject_id' => $subject->curriculum_subject_id,
             'curriculum_chapter_ids' => [$subject->curriculum_chapter_id, $newChapter->id],
             'learning_goal' => 'Melanjutkan materi baru dan menguatkan satu materi lama.',
-            'weekdays' => [1, 2, 3, 4],
+            'weekdays' => [1, 6],
             'schedules' => $starts,
         ];
         $basePayload = [

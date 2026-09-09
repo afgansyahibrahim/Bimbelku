@@ -7,10 +7,12 @@ use App\Models\BookingRequest;
 use App\Models\MatchingOperationLog;
 use App\Models\Notification;
 use App\Models\Setting;
-use App\Models\TeacherOffer;
 use App\Models\TeacherAvailabilityException;
+use App\Models\TeacherOffer;
 use App\Models\TeacherProfile;
+use App\Models\TeacherReplacementRequest;
 use App\Models\User;
+use App\Support\TeacherReplacementState;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -29,15 +31,13 @@ class TeacherMatchingService
         'absence_review',
     ];
 
-    public function __construct(private readonly TeacherPointService $pointService)
-    {
-    }
+    public function __construct(private readonly TeacherPointService $pointService) {}
 
     public function dispatchNextOffer(BookingRequest $bookingRequest): ?TeacherOffer
     {
         $bookingRequest->refresh();
 
-        if (!in_array($bookingRequest->status, ['matching', 'teacher_pending', 'no_teacher'], true)) {
+        if (! in_array($bookingRequest->status, ['matching', 'teacher_pending', 'no_teacher'], true)) {
             return null;
         }
 
@@ -67,7 +67,7 @@ class TeacherMatchingService
                 ->when($bookingRequest->search_started_at, fn ($query) => $query
                     ->where('created_at', '>=', $bookingRequest->search_started_at))
                 ->exists();
-            if (!$alreadyRecorded) {
+            if (! $alreadyRecorded) {
                 MatchingOperationLog::create([
                     'booking_request_id' => $bookingRequest->id,
                     'actor_id' => null,
@@ -92,6 +92,7 @@ class TeacherMatchingService
                 'teacher_response_deadline' => null,
                 'next_matching_at' => null,
             ]);
+
             return null;
         }
 
@@ -139,7 +140,7 @@ class TeacherMatchingService
                 ->groupBy('teacher_id')
                 ->filter(function (Collection $offers) use ($retryCutoff) {
                     return $offers->count() < 2
-                        && !$offers->contains('status', 'rejected')
+                        && ! $offers->contains('status', 'rejected')
                         && $offers->every(fn (TeacherOffer $offer) => $offer->status === 'expired')
                         && $offers->max('offered_at')?->lte($retryCutoff);
                 })
@@ -175,7 +176,7 @@ class TeacherMatchingService
                 ->where('action', 'radius_expanded')
                 ->where('created_at', '>=', now()->subMinute())
                 ->exists();
-            $automaticRadius = $bookingRequest->learning_mode === 'offline' && !$recentManualRadiusExpansion
+            $automaticRadius = $bookingRequest->learning_mode === 'offline' && ! $recentManualRadiusExpansion
                 ? $this->nextRadius((int) $bookingRequest->search_radius_km)
                 : null;
             $previousRadius = (int) $bookingRequest->search_radius_km;
@@ -187,7 +188,7 @@ class TeacherMatchingService
                 ];
             }
             $nextMatchingAt = now()->addMinutes($this->waitingRetryMinutes())->min($maximumSearchDeadline);
-            $firstWaitingNotice = !$bookingRequest->matchingOperationLogs()
+            $firstWaitingNotice = ! $bookingRequest->matchingOperationLogs()
                 ->where('action', 'waiting_for_availability')
                 ->when($offerCycleResetAt, fn ($query) => $query->where('created_at', '>=', $offerCycleResetAt))
                 ->exists();
@@ -253,7 +254,7 @@ class TeacherMatchingService
             $lockedRequest = BookingRequest::query()
                 ->lockForUpdate()
                 ->findOrFail($bookingRequest->id);
-            if (!in_array($lockedRequest->status, ['matching', 'teacher_pending', 'no_teacher'], true)) {
+            if (! in_array($lockedRequest->status, ['matching', 'teacher_pending', 'no_teacher'], true)) {
                 return ['offers' => collect(), 'created' => false];
             }
 
@@ -268,13 +269,13 @@ class TeacherMatchingService
             }
 
             $offers = $candidates->take($availableSlots)->map(fn (User $candidate) => TeacherOffer::create([
-                    'booking_request_id' => $lockedRequest->id,
-                    'teacher_id' => $candidate->id,
-                    'status' => 'pending',
-                    'distance_km' => $candidate->match_distance_km,
-                    'offered_at' => now(),
-                    'expires_at' => $expiresAt,
-                ]));
+                'booking_request_id' => $lockedRequest->id,
+                'teacher_id' => $candidate->id,
+                'status' => 'pending',
+                'distance_km' => $candidate->match_distance_km,
+                'offered_at' => now(),
+                'expires_at' => $expiresAt,
+            ]));
 
             if ($offers->isEmpty()) {
                 return ['offers' => $existing, 'created' => false];
@@ -295,7 +296,7 @@ class TeacherMatchingService
         });
 
         $offers = $offerResult['offers'];
-        if ($offers->isEmpty() || !$offerResult['created']) {
+        if ($offers->isEmpty() || ! $offerResult['created']) {
             return $offers->first();
         }
 
@@ -326,7 +327,7 @@ class TeacherMatchingService
             $bookingRequest->search_expires_at,
             $bookingRequest->search_started_at?->copy()->addHours($this->maximumSearchHours()),
         ] as $candidateDeadline) {
-            if ($candidateDeadline && (!$searchDeadline || $candidateDeadline->lt($searchDeadline))) {
+            if ($candidateDeadline && (! $searchDeadline || $candidateDeadline->lt($searchDeadline))) {
                 $searchDeadline = $candidateDeadline;
             }
         }
@@ -345,7 +346,7 @@ class TeacherMatchingService
                 ->find($offer->id);
 
             if (
-                !$lockedOffer
+                ! $lockedOffer
                 || $lockedOffer->status !== 'pending'
                 || $lockedOffer->expires_at->isFuture()
             ) {
@@ -377,14 +378,14 @@ class TeacherMatchingService
             return $lockedOffer;
         });
 
-        if (!$expiredOffer) {
+        if (! $expiredOffer) {
             return;
         }
 
         $this->applyNoResponseRestriction($expiredOffer);
 
         $bookingRequest = $expiredOffer->bookingRequest;
-        if (!$bookingRequest || !in_array($bookingRequest->status, ['teacher_pending', 'matching'], true)) {
+        if (! $bookingRequest || ! in_array($bookingRequest->status, ['teacher_pending', 'matching'], true)) {
             return;
         }
 
@@ -438,7 +439,7 @@ class TeacherMatchingService
 
     public function availableCandidateCount(BookingRequest $bookingRequest): int
     {
-        if (!in_array($bookingRequest->status, ['matching', 'teacher_pending', 'no_teacher'], true)) {
+        if (! in_array($bookingRequest->status, ['matching', 'teacher_pending', 'no_teacher'], true)) {
             return 0;
         }
 
@@ -465,7 +466,7 @@ class TeacherMatchingService
      */
     public function eligibleCandidates(BookingRequest $bookingRequest, int $limit = 500): Collection
     {
-        if (!in_array($bookingRequest->status, ['matching', 'teacher_pending', 'no_teacher'], true)) {
+        if (! in_array($bookingRequest->status, ['matching', 'teacher_pending', 'no_teacher'], true)) {
             return collect();
         }
 
@@ -511,11 +512,11 @@ class TeacherMatchingService
             })
             ->exists();
 
-        if (!$subjectMatches) {
+        if (! $subjectMatches) {
             return 'Mata pelajaran, jenjang, mode, atau jenis kelas tidak lagi sesuai dengan profil Anda.';
         }
 
-        if (!$this->teacherAvailableForRequest($profile->user, $bookingRequest)) {
+        if (! $this->teacherAvailableForRequest($profile->user, $bookingRequest)) {
             return 'Salah satu hari atau jam yang dipilih murid tidak lagi tersedia pada profil Anda.';
         }
 
@@ -580,7 +581,6 @@ class TeacherMatchingService
 
         return $radii[$index + 1] ?? null;
     }
-
 
     public function expandRadius(
         BookingRequest $bookingRequest,
@@ -784,14 +784,14 @@ class TeacherMatchingService
     {
         return $this->requestIntervals($bookingRequest)->every(function (array $interval) use ($teacher, $bookingRequest) {
             return $this->teacherAvailableAt($teacher, $interval['start'], $interval['end'])
-                && !$this->teacherHasConflict($teacher->id, $interval['start'], $interval['end'])
-                && !$this->teacherHasPendingOfferConflict(
+                && ! $this->teacherHasConflict($teacher->id, $interval['start'], $interval['end'])
+                && ! $this->teacherHasPendingOfferConflict(
                     $teacher->id,
                     $interval['start'],
                     $interval['end'],
                     $bookingRequest->id
                 )
-                && !$this->teacherHasPackageSessionConflict(
+                && ! $this->teacherHasPackageSessionConflict(
                     $teacher->id,
                     $interval['start'],
                     $interval['end'],
@@ -802,6 +802,16 @@ class TeacherMatchingService
 
     private function requestIntervals(BookingRequest $bookingRequest): Collection
     {
+        if ($bookingRequest->teacher_replacement_request_id) {
+            $bookingRequest->loadMissing('teacherReplacement.sessions.packageSession');
+
+            return $bookingRequest->teacherReplacement->sessions
+                ->whereIn('status', ['matching', 'selected'])
+                ->map(fn ($row) => [
+                    'start' => $row->packageSession->scheduled_start_at->copy(),
+                    'end' => $row->packageSession->scheduled_end_at->copy(),
+                ])->values();
+        }
         if ($bookingRequest->package_subject_id) {
             $bookingRequest->loadMissing('packageSubject.sessions');
             $sessions = $bookingRequest->packageSubject?->sessions ?? collect();
@@ -836,7 +846,7 @@ class TeacherMatchingService
 
         return $offers->contains(function (TeacherOffer $offer) use ($startAt, $endAt) {
             $request = $offer->bookingRequest;
-            if (!$request) {
+            if (! $request) {
                 return false;
             }
 
@@ -868,7 +878,10 @@ class TeacherMatchingService
 
     private function rankCandidates(BookingRequest $bookingRequest, Collection $candidates): Collection
     {
-        $bookingRequest->loadMissing('packageSubject');
+        $bookingRequest->loadMissing(['packageSubject', 'teacherReplacement']);
+        if ($bookingRequest->teacherReplacement) {
+            $candidates = $candidates->where('id', '<>', $bookingRequest->teacherReplacement->old_teacher_id);
+        }
         $preferredTeacherId = (int) ($bookingRequest->packageSubject?->preferred_teacher_id ?? 0);
         $continuityTeacherId = Booking::query()
             ->where('student_id', $bookingRequest->student_id)
@@ -890,7 +903,7 @@ class TeacherMatchingService
 
         return $candidates
             ->filter(function (User $teacher) use ($bookingRequest) {
-                if (!$this->teacherCanCoverRequestSchedule($teacher, $bookingRequest)) {
+                if (! $this->teacherCanCoverRequestSchedule($teacher, $bookingRequest)) {
                     return false;
                 }
 
@@ -924,6 +937,7 @@ class TeacherMatchingService
                 }
 
                 $teacher->match_distance_km = $distance;
+
                 return true;
             })
             ->sort(function (User $a, User $b) use ($bookingRequest, $continuityTeacherId, $preferredTeacherId) {
@@ -971,6 +985,7 @@ class TeacherMatchingService
 
                 $randomA = crc32($bookingRequest->id.'|'.$a->id);
                 $randomB = crc32($bookingRequest->id.'|'.$b->id);
+
                 return $randomA <=> $randomB;
             })
             ->values();
@@ -1007,11 +1022,11 @@ class TeacherMatchingService
                 ->lockForUpdate()
                 ->first();
 
-            if (!$profile) {
+            if (! $profile) {
                 return null;
             }
 
-            $windowExpired = !$profile->no_response_window_started_at
+            $windowExpired = ! $profile->no_response_window_started_at
                 || $profile->no_response_window_started_at->lt(now()->subDays(30));
             $streak = $windowExpired ? 1 : ((int) $profile->no_response_streak + 1);
             $hours = match (true) {
@@ -1033,7 +1048,7 @@ class TeacherMatchingService
             return ['streak' => $streak, 'hours' => $hours];
         });
 
-        if (!$result) {
+        if (! $result) {
             return;
         }
 
@@ -1109,7 +1124,8 @@ class TeacherMatchingService
                     (float) $profile->latitude,
                     (float) $profile->longitude
                 );
-                return $distance <= $radius && (!$profile->max_travel_km || $distance <= (int) $profile->max_travel_km);
+
+                return $distance <= $radius && (! $profile->max_travel_km || $distance <= (int) $profile->max_travel_km);
             })->values();
 
             if ($withinScope->isEmpty()) {
@@ -1161,6 +1177,21 @@ class TeacherMatchingService
         }
 
         $query->update($attributes);
+        if ($bookingRequest->teacher_replacement_request_id && isset($attributes['status'])) {
+            $replacementStatus = match ($attributes['status']) {
+                'teacher_pending' => 'teacher_pending',
+                'no_teacher' => 'no_teacher',
+                default => 'matching',
+            };
+            TeacherReplacementRequest::query()
+                ->whereKey($bookingRequest->teacher_replacement_request_id)
+                ->whereIn('status', TeacherReplacementState::sourcesFor($replacementStatus))
+                ->update([
+                    'status' => $replacementStatus,
+                    'version' => DB::raw('version + 1'),
+                    'updated_at' => now(),
+                ]);
+        }
     }
 
     public function teacherResponseMinutes(?BookingRequest $bookingRequest = null): int
@@ -1179,7 +1210,7 @@ class TeacherMatchingService
 
     public function maximumSearchHours(): int
     {
-        return min(72, max(1, (int) (Setting::where('key', 'maximum_search_hours')->value('value') ?? 12)));
+        return min(24, max(1, (int) (Setting::where('key', 'maximum_search_hours')->value('value') ?? 24)));
     }
 
     public function matchingCutoffHours(): int

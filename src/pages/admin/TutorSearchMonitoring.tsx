@@ -1,6 +1,6 @@
 import { notify } from "@/lib/notify";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
@@ -246,6 +246,14 @@ export default function TutorSearchMonitoring() {
   const [assigning, setAssigning] = useState(false);
   const openId = searchParams.get("open");
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setAppliedSearch(searchText.trim());
+      setPage(1);
+    }, 350);
+    return () => window.clearTimeout(timeoutId);
+  }, [searchText]);
+
   const fetchSearches = useCallback(async () => {
     setIsLoading(true);
     setError("");
@@ -330,12 +338,6 @@ export default function TutorSearchMonitoring() {
     next.delete("status");
     next.delete("open");
     setSearchParams(next, { replace: true });
-  };
-
-  const submitSearch = (event: FormEvent) => {
-    event.preventDefault();
-    setAppliedSearch(searchText.trim());
-    setPage(1);
   };
 
   const synchronize = async () => {
@@ -506,7 +508,7 @@ export default function TutorSearchMonitoring() {
         </section>
 
         <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-          <form onSubmit={submitSearch} className="grid gap-3 lg:grid-cols-[minmax(14rem,1fr)_12rem_12rem_12rem_auto]">
+          <div className="grid gap-3 lg:grid-cols-[minmax(14rem,1fr)_12rem_12rem]">
             <label className="relative block">
               <span className="sr-only">Cari pencarian tutor</span>
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -533,10 +535,8 @@ export default function TutorSearchMonitoring() {
                 { value: "offline", label: "Offline" },
               ]}
             />
-            <button type="submit" className="min-h-11 rounded-xl bg-slate-950 px-5 text-sm font-black text-white hover:bg-slate-800">
-              Cari
-            </button>
-          </form>
+
+          </div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
             <p>{activeFilterCount > 0 ? `${activeFilterCount} filter aktif` : scope === "active" ? "Menampilkan proses pencarian yang masih berjalan" : "Menampilkan pencarian yang sudah berakhir"}</p>
             <p>{result.meta.total} permintaan ditemukan</p>

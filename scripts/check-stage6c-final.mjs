@@ -14,7 +14,6 @@ const authController = read("bimbelku-backend/app/Http/Controllers/Api/AuthContr
 const caseCenter = read("src/pages/admin/CaseCenter.tsx");
 const test = read("bimbelku-backend/tests/Feature/StageSixCFinalRegressionTest.php");
 const packageJson = JSON.parse(read("package.json"));
-const checkpoint = read("CHECKPOINT_TAHAP_6C_ADMIN_OPERASIONAL_DAN_REGRESI_AKHIR_2026-08-01.md");
 
 expect(app.includes('<Route path="/admin/finance-security" element={<Navigate to="/admin/pembayaran" replace />} />'), "URL frontend lama dialihkan");
 expect(app.includes('<Route path="/admin/access-control" element={<Navigate to="/admin" replace />} />'), "URL pengelolaan admin lama dialihkan");
@@ -41,6 +40,5 @@ for (const scenario of [
 
 expect(packageJson.scripts["check:stage6c-final"] === "node scripts/check-stage6c-final.mjs", "script final terdaftar");
 expect(packageJson.scripts.check.includes("check:stage6c-final"), "pemeriksaan utama menjalankan regresi final");
-expect(checkpoint.includes("digantikan oleh Audit Checkpoint 1"), "checkpoint historis menunjuk audit terbaru");
 
 console.log("Kontrak Tahap 6C final lulus (admin tunggal, tanpa autentikator/admin kedua, audit dan isolasi role tetap aktif).");

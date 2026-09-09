@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\CustomerWallet;
-use App\Models\FinancialLedgerEntry;
 use App\Models\LearningPackage;
 use App\Models\Order;
 use App\Models\PackagePlan;
@@ -15,6 +14,7 @@ use App\Services\CustomerWalletService;
 use App\Services\WalletIntegrityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -26,7 +26,10 @@ class StageTwoCustomerWalletPaymentTest extends TestCase
 
     public function test_student_owns_refund_destination_and_has_no_self_credit_endpoint(): void
     {
-        $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
+        $student = User::factory()->create([
+            'role' => 'student',
+            'status' => 'active',
+        ]);
         $otherStudent = User::factory()->create(['role' => 'student', 'status' => 'active']);
         $order = Order::create([
             'user_id' => $student->id,
@@ -69,7 +72,11 @@ class StageTwoCustomerWalletPaymentTest extends TestCase
     public function test_admin_cannot_complete_refund_before_student_selects_destination(): void
     {
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
-        $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
+        $student = User::factory()->create([
+            'role' => 'student',
+            'status' => 'active',
+            'payment_pin_hash' => Hash::make('123456'),
+        ]);
         $order = Order::create([
             'user_id' => $student->id,
             'order_id' => 'INV-WALLET-NO-DEST-ST2',
@@ -94,7 +101,6 @@ class StageTwoCustomerWalletPaymentTest extends TestCase
         $this->assertDatabaseHas('refunds', ['id' => $refund->id, 'status' => 'pending']);
         $this->assertDatabaseMissing('customer_wallet_transactions', ['refund_id' => $refund->id]);
     }
-
 
     public function test_admin_refund_rejects_stale_student_destination_snapshot(): void
     {
@@ -179,7 +185,11 @@ class StageTwoCustomerWalletPaymentTest extends TestCase
 
     public function test_full_wallet_package_checkout_needs_no_transfer_proof(): void
     {
-        $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
+        $student = User::factory()->create([
+            'role' => 'student',
+            'status' => 'active',
+            'payment_pin_hash' => Hash::make('123456'),
+        ]);
         $this->creditWallet($student, 100000);
         $order = $this->supportedOrder($student, 80000, 'INV-WALLET-FULL-ST2');
 
@@ -187,6 +197,7 @@ class StageTwoCustomerWalletPaymentTest extends TestCase
         $this->postJson("/api/orders/{$order->id}/pay", [
             'use_wallet' => true,
             'wallet_expected_amount' => 80000,
+            'payment_pin' => '123456',
         ], ['Idempotency-Key' => 'wallet-full-checkout-st2'])
             ->assertOk()
             ->assertJsonPath('external_due', 0);
@@ -202,7 +213,11 @@ class StageTwoCustomerWalletPaymentTest extends TestCase
 
     public function test_full_wallet_package_checkout_rolls_back_hold_if_auto_settlement_fails(): void
     {
-        $student = User::factory()->create(['role' => 'student', 'status' => 'active']);
+        $student = User::factory()->create([
+            'role' => 'student',
+            'status' => 'active',
+            'payment_pin_hash' => Hash::make('123456'),
+        ]);
         $this->creditWallet($student, 100000);
         $order = $this->supportedOrder($student, 80000, 'INV-WALLET-ATOMIC-ST2');
 
@@ -215,6 +230,7 @@ class StageTwoCustomerWalletPaymentTest extends TestCase
         $response = $this->postJson("/api/orders/{$order->id}/pay", [
             'use_wallet' => true,
             'wallet_expected_amount' => 80000,
+            'payment_pin' => '123456',
         ], ['Idempotency-Key' => 'wallet-atomic-checkout-st2']);
         $this->assertGreaterThanOrEqual(400, $response->status());
 

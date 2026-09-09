@@ -17,11 +17,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Carbon\Carbon;
 use Laravel\Sanctum\PersonalAccessToken;
+use App\Services\OneTimeCodeService;
 
 class AuthController extends Controller
 {
     // --- FITUR REGISTER ---
-    public function register(Request $request)
+    public function register(Request $request, OneTimeCodeService $codes)
     {
         $request->merge([
             'name' => trim((string) $request->input('name')),
@@ -103,7 +104,7 @@ class AuthController extends Controller
                 'guardian_name.regex' => 'Nama orang tua atau wali wajib mengandung huruf.',
                 'guardian_name.not_regex' => 'Nama orang tua atau wali tidak boleh memuat angka.',
                 'guardian_phone.required' => 'Nomor orang tua atau wali wajib diisi untuk murid di bawah 18 tahun.',
-                'guardian_phone.regex' => 'Nomor orang tua atau wali harus berisi 8–15 angka.',
+            'guardian_phone.regex' => 'Nomor orang tua atau wali harus berisi 8–15 angka.',
                 'guardian_relationship.required' => 'Hubungan orang tua atau wali wajib dipilih.',
                 'guardian_consent.accepted' => 'Persetujuan orang tua atau wali wajib diberikan.',
             ]);
@@ -163,6 +164,7 @@ class AuthController extends Controller
                 $user = User::create([
                     'name' => $request->name,
                     'email' => mb_strtolower($request->email),
+                    'email_verification_required_at' => now(),
                     'phone' => trim((string) $request->phone),
                     'password' => Hash::make($request->password),
                     'password_updated_at' => now(),
@@ -223,6 +225,7 @@ class AuthController extends Controller
                     'is_online' => in_array($request->teaching_method, ['online', 'hybrid'], true),
                     'is_offline' => in_array($request->teaching_method, ['offline', 'hybrid'], true),
                     'is_private_active' => true,
+                    'is_group_active' => true,
                 ]);
 
                 return $user;
@@ -252,11 +255,23 @@ class AuthController extends Controller
                 ));
         }
 
+        $emailDeliveryFailed = false;
+        try {
+            $codes->send($user, OneTimeCodeService::EMAIL_VERIFICATION);
+        } catch (\Throwable $exception) {
+            report($exception);
+            $emailDeliveryFailed = true;
+        }
+
         return response()->json([
-            'message' => $user->role === 'teacher'
-                ? 'Akun tutor berhasil dibuat. Mohon tunggu verifikasi admin sebelum login.'
-                : 'Akun murid berhasil dibuat dan dapat langsung digunakan.',
-            'user'    => $user
+            'message' => $emailDeliveryFailed
+                ? 'Akun berhasil dibuat, tetapi kode belum dapat dikirim. Coba kirim ulang kode verifikasi.'
+                : 'Akun berhasil dibuat. Masukkan kode OTP yang dikirim ke email Anda.',
+            'requires_email_verification' => true,
+            'email_delivery_failed' => $emailDeliveryFailed,
+            'resend_after_seconds' => $emailDeliveryFailed ? 0 : OneTimeCodeService::RESEND_SECONDS,
+            'email' => $user->email,
+            'user' => $user,
         ], 201);
     }
 
@@ -272,6 +287,14 @@ class AuthController extends Controller
 
         if (!$user || !Hash::check($request->password, $user->password)) {
             return response()->json(['message' => 'Email atau password salah.'], 401);
+        }
+
+        if ($user->email_verification_required_at && !$user->email_verified_at) {
+            return response()->json([
+                'message' => 'Email belum diverifikasi. Masukkan kode OTP yang telah dikirim.',
+                'error_code' => 'email_not_verified',
+                'email' => $user->email,
+            ], 403);
         }
 
         // Cek Status

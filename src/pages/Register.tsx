@@ -32,7 +32,7 @@ import DateOfBirthInput from "@/components/DateOfBirthInput";
 const CameraCapture = lazy(() => import("@/components/CameraCapture"));
 const SubjectCombobox = lazy(() => import("@/components/SubjectCombobox"));
 import type { SubjectOption } from "@/components/SubjectCombobox";
-import { EDUCATION_LEVELS, GRADES_BY_EDUCATION_LEVEL } from "@/lib/educationCatalog";
+import { EDUCATION_LEVELS } from "@/lib/educationCatalog";
 import http, { getApiError, getCached } from "@/lib/http";
 import {
   isValidHttpUrl,
@@ -58,7 +58,6 @@ const initialForm = {
   password: "",
   password_confirmation: "",
   school_name: "",
-  student_education_level: "",
   grade: "",
   date_of_birth: "",
   guardian_name: "",
@@ -75,8 +74,11 @@ export default function Register() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const requestedRedirect = searchParams.get("redirect");
-  const loginHref = requestedRedirect
-    ? `/login?redirect=${encodeURIComponent(requestedRedirect)}`
+  const safeRedirect = requestedRedirect?.startsWith("/") && !requestedRedirect.startsWith("//")
+    ? requestedRedirect
+    : null;
+  const loginHref = safeRedirect
+    ? `/login?redirect=${encodeURIComponent(safeRedirect)}`
     : "/login";
   const [role, setRole] = useState<Role>("student");
   const [form, setForm] = useState(initialForm);
@@ -142,9 +144,8 @@ export default function Register() {
     if (!isValidPersonName(form.name)) return notify.error("Nama lengkap harus berisi huruf dan tidak boleh memuat angka.");
     if (!isValidPhone(form.phone)) return notify.error("Nomor WhatsApp/telepon harus berisi 8–15 angka.");
     if (form.password !== form.password_confirmation) return notify.error("Konfirmasi kata sandi belum sama.");
+    if (!isValidHttpUrl(form.maps_link)) return notify.error("Tautan Google Maps harus diawali http:// atau https://.");
     if (!isValidHttpUrl(form.linkedin)) return notify.error("Tautan LinkedIn atau portofolio belum valid.");
-    if (role === "student" && !form.student_education_level) return notify.error("Pilih jenjang pendidikan murid.");
-    if (role === "student" && !form.grade) return notify.error("Pilih kelas atau tingkat murid.");
     if (role === "student" && !form.date_of_birth) return notify.error("Tanggal lahir murid wajib diisi.");
     if (isMinorStudent && !isValidPersonName(form.guardian_name)) return notify.error("Nama orang tua atau wali harus berisi huruf dan tidak boleh memuat angka.");
     if (isMinorStudent && !isValidPhone(form.guardian_phone)) return notify.error("Nomor orang tua atau wali harus berisi 8–15 angka.");
@@ -178,6 +179,20 @@ export default function Register() {
     try {
       const response = await http.post("/register", payload);
       notify.success(response.data.message);
+      if (response.data.requires_email_verification) {
+        const email = String(response.data.email || form.email);
+        const verifyParams = new URLSearchParams({ email });
+        if (safeRedirect) verifyParams.set("redirect", safeRedirect);
+        navigate('/verify-email?' + verifyParams.toString(), {
+          replace: true,
+          state: {
+            email,
+            resendAfterSeconds: Number(response.data.resend_after_seconds || 0),
+            redirect: safeRedirect,
+          },
+        });
+        return;
+      }
       navigate(loginHref, { replace: true });
     } catch (error) {
       notify.error(getApiError(error, "Pendaftaran gagal. Periksa kembali data Anda."));
@@ -187,15 +202,15 @@ export default function Register() {
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-indigo-50 px-3 py-4 sm:px-4 sm:py-10">
-      <div className="mx-auto grid max-w-6xl overflow-hidden rounded-[1.75rem] border border-white bg-white shadow-2xl sm:rounded-[2.5rem] shadow-slate-200/60 lg:grid-cols-[.82fr_1.18fr]">
-        <aside className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-6 text-white sm:p-8 lg:p-12">
+    <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-orange-50 via-white to-indigo-50 px-3 py-6 sm:px-4 sm:py-10">
+      <div className="mx-auto grid w-full min-w-0 max-w-6xl overflow-hidden rounded-[2rem] border border-white bg-white shadow-2xl shadow-slate-200/60 sm:rounded-[2.5rem] lg:grid-cols-[.82fr_1.18fr]">
+        <aside className="relative min-w-0 overflow-hidden bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-5 text-white sm:p-8 lg:p-12">
           <div className="absolute -right-20 -top-16 h-64 w-64 rounded-full bg-orange-400/20 blur-3xl" />
           <div className="relative">
             <Link to="/" className="inline-flex items-center gap-2 text-xl font-black"><span className="grid h-10 w-10 place-items-center rounded-xl bg-orange-500">B</span>BimbelKu</Link>
-            <h1 className="mt-8 text-3xl font-black leading-tight sm:mt-14 sm:text-4xl">Belajar tepat waktu, bersama tutor yang tepat.</h1>
+            <h1 className="mt-10 break-words text-3xl font-black leading-tight sm:mt-14 sm:text-4xl">Belajar tepat waktu, bersama tutor yang tepat.</h1>
             <p className="mt-4 leading-7 text-indigo-100/75">Satu akun untuk pencocokan otomatis, jadwal pasti, pembayaran yang tercatat, dan penyelesaian yang dapat diperiksa.</p>
-            <div className="mt-7 hidden space-y-4 sm:block sm:mt-10">
+            <div className="mt-10 space-y-4">
               {[
                 "Tutor melewati verifikasi identitas dan kualifikasi",
                 "Harga ditentukan sistem, bukan profil tutor",
@@ -205,9 +220,9 @@ export default function Register() {
           </div>
         </aside>
 
-        <section className="p-5 sm:p-10 lg:p-12">
+        <section className="min-w-0 p-4 sm:p-10 lg:p-12">
           <div className="flex items-start justify-between gap-4">
-            <div><p className="text-xs font-black uppercase tracking-[.2em] text-orange-500">Buat akun</p><h2 className="mt-2 text-2xl font-black text-slate-900 sm:text-3xl">Mulai bersama BimbelKu</h2><p className="mt-2 text-sm text-slate-500">Sudah terdaftar? <Link to={loginHref} className="font-bold text-indigo-600">Masuk</Link></p></div>
+            <div><p className="text-xs font-black uppercase tracking-[.2em] text-orange-500">Buat akun</p><h2 className="mt-2 text-3xl font-black text-slate-900">Mulai bersama BimbelKu</h2><p className="mt-2 text-sm text-slate-500">Sudah terdaftar? <Link to={loginHref} className="font-bold text-indigo-600">Masuk</Link></p></div>
           </div>
 
           <div className="mt-7 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1.5">
@@ -215,7 +230,7 @@ export default function Register() {
             <RoleButton active={role === "teacher"} onClick={() => switchRole("teacher")} icon={BriefcaseBusiness} label="Tutor" />
           </div>
 
-          <form onSubmit={submit} className="mt-7 space-y-6">
+          <form onSubmit={submit} className="mt-7 w-full min-w-0 space-y-6">
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField label="Nama lengkap" icon={User}><Input required className="h-12 rounded-xl" value={form.name} onChange={(event) => setValue("name", sanitizePersonName(event.target.value))} /></FormField>
               <FormField label="Email aktif" icon={Mail}><Input required type="email" className="h-12 rounded-xl" value={form.email} onChange={(event) => setValue("email", event.target.value)} /></FormField>
@@ -236,25 +251,7 @@ export default function Register() {
               <div className="space-y-5 rounded-2xl border border-orange-100 bg-orange-50/40 p-5">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <FormField label="Sekolah" icon={GraduationCap}><Input className="h-12 rounded-xl bg-white" value={form.school_name} onChange={(event) => setValue("school_name", event.target.value)} placeholder="Opsional" /></FormField>
-                  <FormField label="Jenjang" icon={BookOpen}>
-                    <Select
-                      value={form.student_education_level}
-                      onValueChange={(value) => setForm((current) => ({
-                        ...current,
-                        student_education_level: value,
-                        grade: GRADES_BY_EDUCATION_LEVEL[value]?.[0] || "",
-                      }))}
-                    >
-                      <SelectTrigger className="h-12 rounded-xl bg-white"><SelectValue placeholder="Pilih jenjang" /></SelectTrigger>
-                      <SelectContent>{EDUCATION_LEVELS.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </FormField>
-                  <FormField label={form.student_education_level === "Umum" ? "Tingkat" : "Kelas"} icon={GraduationCap}>
-                    <Select value={form.grade} onValueChange={(value) => setValue("grade", value)} disabled={!form.student_education_level}>
-                      <SelectTrigger className="h-12 rounded-xl bg-white"><SelectValue placeholder={form.student_education_level ? "Pilih kelas/tingkat" : "Pilih jenjang dulu"} /></SelectTrigger>
-                      <SelectContent>{(GRADES_BY_EDUCATION_LEVEL[form.student_education_level] || []).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </FormField>
+                  <FormField label="Jenjang" icon={BookOpen}><Select value={form.grade} onValueChange={(value) => setValue("grade", value)}><SelectTrigger className="h-12 rounded-xl bg-white"><SelectValue placeholder="Pilih jenjang" /></SelectTrigger><SelectContent>{EDUCATION_LEVELS.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></FormField>
                 </div>
                 <FormField label="Tanggal lahir murid" icon={CalendarDays}>
                   <DateOfBirthInput
@@ -294,11 +291,12 @@ export default function Register() {
                   </div>
                 )}
                 <FormField label="Alamat rumah" icon={MapPin}><Textarea className="min-h-20 rounded-xl bg-white" value={form.address} onChange={(event) => setValue("address", event.target.value)} placeholder="Opsional saat daftar, wajib ketika memilih kelas offline" /></FormField>
+                <Input type="url" className="h-12 rounded-xl bg-white" value={form.maps_link} onChange={(event) => setValue("maps_link", event.target.value)} placeholder="Tautan Google Maps, opsional" />
               </div>
             ) : (
-              <div className="space-y-5 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-5">
-                <div className="flex gap-3 rounded-xl border border-indigo-100 bg-white p-4 text-sm leading-6 text-indigo-800"><ShieldCheck className="shrink-0" size={20} /><p>Semua tutor memakai standar yang sama. Admin memeriksa identitas, foto langsung, dan bukti kualifikasi sebelum akun aktif.</p></div>
-                <div className="grid gap-4 sm:grid-cols-2">
+              <div className="w-full min-w-0 max-w-full space-y-5 overflow-hidden rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4 sm:p-5">
+                <div className="flex min-w-0 gap-3 rounded-xl border border-indigo-100 bg-white p-4 text-sm leading-6 text-indigo-800"><ShieldCheck className="shrink-0" size={20} /><p className="min-w-0 break-words">Semua tutor memakai standar yang sama. Admin memeriksa identitas, foto langsung, dan bukti kualifikasi sebelum akun aktif.</p></div>
+                <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
                   <FormField label="Satu mata pelajaran" icon={BookOpen}>
                     <Suspense fallback={<div className="h-12 rounded-xl bg-white" aria-hidden="true" />}>
                       <SubjectCombobox
@@ -312,8 +310,8 @@ export default function Register() {
                   </FormField>
                   <FormField label="Metode mengajar" icon={BriefcaseBusiness}><Select value={form.teaching_method} onValueChange={(value) => setValue("teaching_method", value)}><SelectTrigger className="h-12 rounded-xl bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="online">Online</SelectItem><SelectItem value="offline">Offline</SelectItem><SelectItem value="hybrid">Online & offline</SelectItem></SelectContent></Select></FormField>
                 </div>
-                <div><Label className="font-bold text-slate-700">Jenjang yang dapat diajar</Label><div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">{EDUCATION_LEVELS.map((level) => <button type="button" key={level} onClick={() => toggleLevel(level)} className={`rounded-xl border px-3 py-2 text-sm font-bold transition ${levels.includes(level) ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{level}</button>)}</div></div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="min-w-0"><Label className="font-bold text-slate-700">Jenjang yang dapat diajar</Label><div className="mt-2 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3">{EDUCATION_LEVELS.map((level) => <button type="button" key={level} onClick={() => toggleLevel(level)} className={`min-w-0 break-words rounded-xl border px-3 py-2 text-sm font-bold transition ${levels.includes(level) ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{level}</button>)}</div></div>
+                <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
                   <FileInput required label="Kartu identitas" icon={FileCheck2} file={files.identity_document} accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(file) => setFile("identity_document", file)} />
                   <Suspense fallback={<div className="h-24 rounded-xl bg-white" aria-hidden="true" />}><CameraCapture required file={files.live_selfie} onCapture={(file) => setFile("live_selfie", file)} /></Suspense>
                   <FileInput required label="Ijazah/kualifikasi" icon={GraduationCap} file={files.qualification_document} accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(file) => setFile("qualification_document", file)} />
@@ -357,17 +355,17 @@ function localDateInputValue(date: Date) {
 }
 
 function RoleButton({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: typeof User; label: string }) {
-  return <button type="button" onClick={onClick} className={`flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-black transition ${active ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}><Icon size={17} />{label}</button>;
+  return <button type="button" onClick={onClick} className={`flex min-w-0 items-center justify-center gap-2 rounded-xl py-3 text-sm font-black transition ${active ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}><Icon className="shrink-0" size={17} /><span className="truncate">{label}</span></button>;
 }
 
 function FormField({ label, icon: Icon, children }: { label: string; icon: typeof User; children: React.ReactNode }) {
-  return <div><Label className="mb-2 flex items-center gap-2 font-bold text-slate-700"><Icon size={16} />{label}</Label>{children}</div>;
+  return <div className="min-w-0 max-w-full"><Label className="mb-2 flex min-w-0 items-center gap-2 font-bold text-slate-700"><Icon className="shrink-0" size={16} /><span className="min-w-0 break-words">{label}</span></Label>{children}</div>;
 }
 
 function FileInput({ label, icon: Icon, file, accept, capture, required, onChange }: { label: string; icon: typeof Upload; file?: File; accept: string; capture?: "user" | "environment"; required?: boolean; onChange: (file?: File) => void }) {
-  return <label className="flex min-h-24 cursor-pointer items-center gap-3 rounded-xl border border-dashed border-indigo-200 bg-white p-3 hover:border-indigo-400"><Icon className="shrink-0 text-indigo-600" size={20} /><span className="min-w-0"><span className="block text-xs font-bold text-slate-700">{label}{required ? " *" : ""}</span><span className="mt-1 block truncate text-[11px] text-slate-400">{file?.name || "Pilih berkas · maks. 5 MB"}</span></span><Input type="file" accept={accept} capture={capture} className="hidden" onChange={(event) => onChange(event.target.files?.[0])} /></label>;
+  return <label className="flex min-h-24 w-full min-w-0 max-w-full cursor-pointer items-center gap-3 overflow-hidden rounded-xl border border-dashed border-indigo-200 bg-white p-3 hover:border-indigo-400"><Icon className="shrink-0 text-indigo-600" size={20} /><span className="min-w-0 flex-1"><span className="block break-words text-xs font-bold text-slate-700">{label}{required ? " *" : ""}</span><span className="mt-1 block max-w-full truncate text-[11px] text-slate-400">{file?.name || "Pilih berkas · maks. 5 MB"}</span></span><Input type="file" accept={accept} capture={capture} className="hidden" onChange={(event) => onChange(event.target.files?.[0])} /></label>;
 }
 
 function Consent({ checked, onChange, children }: { checked: boolean; onChange: (value: boolean) => void; children: React.ReactNode }) {
-  return <label className="flex cursor-pointer items-start gap-3 text-xs leading-5 text-slate-600"><Checkbox checked={checked} onCheckedChange={(value) => onChange(Boolean(value))} className="mt-0.5" />{children}</label>;
+  return <label className="flex min-w-0 cursor-pointer items-start gap-3 text-xs leading-5 text-slate-600"><Checkbox checked={checked} onCheckedChange={(value) => onChange(Boolean(value))} className="mt-0.5 shrink-0" /><span className="min-w-0 flex-1 break-words">{children}</span></label>;
 }

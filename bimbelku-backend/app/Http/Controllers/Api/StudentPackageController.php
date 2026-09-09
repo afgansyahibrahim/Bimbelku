@@ -37,12 +37,11 @@ class StudentPackageController extends Controller
 {
     public function plans(Request $request)
     {
-        $plans = Cache::remember('package_plans.active.v2', now()->addMinute(), fn () =>
-            PackagePlan::query()
-                ->where('is_active', true)
-                ->orderBy('sort_order')
-                ->orderBy('session_count')
-                ->get()
+        $plans = Cache::remember('package_plans.active.v2', now()->addMinute(), fn () => PackagePlan::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('session_count')
+            ->get()
         );
 
         return $this->publicCachedResponse($request, $plans, 60);
@@ -50,15 +49,14 @@ class StudentPackageController extends Controller
 
     public function timeSlots(Request $request)
     {
-        $timeSlots = Cache::remember('learning_time_slots.full_hour.v2', now()->addMinute(), fn () =>
-            LearningTimeSlot::query()
-                ->where('is_active', true)
-                ->orderBy('sort_order')
-                ->orderBy('start_time')
-                ->get()
-                ->filter(fn (LearningTimeSlot $slot) => substr((string) $slot->start_time, 3, 2) === '00'
-                    && substr((string) $slot->start_time, 0, 5) < '23:00')
-                ->values()
+        $timeSlots = Cache::remember('learning_time_slots.full_hour.v2', now()->addMinute(), fn () => LearningTimeSlot::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('start_time')
+            ->get()
+            ->filter(fn (LearningTimeSlot $slot) => substr((string) $slot->start_time, 3, 2) === '00'
+                && substr((string) $slot->start_time, 0, 5) < '23:00')
+            ->values()
         );
 
         return $this->publicCachedResponse($request, $timeSlots, 60);
@@ -80,12 +78,13 @@ class StudentPackageController extends Controller
         return response()->json([
             'booking_lead_hours' => (int) ($values['booking_lead_hours'] ?? 24),
             'renewal_booking_lead_hours' => (int) ($values['renewal_booking_lead_hours'] ?? 12),
-            'maximum_search_hours' => (int) ($values['maximum_search_hours'] ?? 12),
+            'maximum_search_hours' => (int) ($values['maximum_search_hours'] ?? 24),
             'matching_cutoff_hours' => (int) ($values['matching_cutoff_hours'] ?? 2),
             'teacher_response_minutes' => (int) ($values['teacher_response_minutes'] ?? 30),
             'teacher_offer_wave_size' => (int) ($values['teacher_offer_wave_size'] ?? 3),
         ]);
     }
+
     public function index(Request $request)
     {
         $scope = $request->query('scope');
@@ -114,7 +113,8 @@ class StudentPackageController extends Controller
                 'promotion',
                 'subjects.assignedTeacher.teacherProfile',
                 'subjects.chapters',
-                'subjects.sessions.booking',
+                'subjects.sessions.booking.teacher.teacherProfile',
+                'subjects.latestTeacherReplacement.sessions.packageSession',
                 'subjects.bookingRequest.matchingOperationLogs',
                 'subjects.bookingRequest.latestMatchingExhaustion',
                 'orders' => fn ($query) => $query->latest(),
@@ -137,9 +137,10 @@ class StudentPackageController extends Controller
             'promotion',
             'subjects.assignedTeacher.teacherProfile',
             'subjects.chapters',
-            'subjects.sessions.booking',
-                'subjects.bookingRequest.matchingOperationLogs',
-                'subjects.bookingRequest.latestMatchingExhaustion',
+            'subjects.sessions.booking.teacher.teacherProfile',
+            'subjects.latestTeacherReplacement.sessions.packageSession',
+            'subjects.bookingRequest.matchingOperationLogs',
+            'subjects.bookingRequest.latestMatchingExhaustion',
             'orders' => fn ($query) => $query->latest(),
         ]);
 
@@ -158,7 +159,8 @@ class StudentPackageController extends Controller
                 'orders' => fn ($query) => $query->latest(),
                 'subjects.assignedTeacher.teacherProfile',
                 'subjects.chapters',
-                'subjects.sessions.booking',
+                'subjects.sessions.booking.teacher.teacherProfile',
+                'subjects.latestTeacherReplacement.sessions.packageSession',
                 'subjects.bookingRequest.matchingOperationLogs',
                 'subjects.bookingRequest.latestMatchingExhaustion',
             ])
@@ -193,7 +195,7 @@ class StudentPackageController extends Controller
             ->whereNotIn('status', ['resolved', 'rejected', 'cancelled'])
             ->count();
         $unreadMessages = ClassroomMessage::query()
-            ->where('message_type', '!=', 'system') ->where('sender_id', '!=', $studentId)
+            ->where('message_type', '!=', 'system')->where('sender_id', '!=', $studentId)
             ->whereHas('booking', function ($bookings) use ($studentId) {
                 $bookings
                     ->whereIn('status', [
@@ -247,12 +249,12 @@ class StudentPackageController extends Controller
         // Duplikasi dinormalisasi sebelum validasi tanpa mengubah jadwal pengguna.
         if (is_array($request->input('subjects'))) {
             $normalizedInputSubjects = collect($request->input('subjects'))->map(function ($item) {
-                if (!is_array($item)) {
+                if (! is_array($item)) {
                     return $item;
                 }
 
                 foreach (['curriculum_chapter_ids', 'weekdays'] as $field) {
-                    if (!is_array($item[$field] ?? null)) {
+                    if (! is_array($item[$field] ?? null)) {
                         continue;
                     }
 
@@ -316,6 +318,17 @@ class StudentPackageController extends Controller
 
         $plan = PackagePlan::query()->where('is_active', true)->findOrFail($validated['package_plan_id']);
         abort_if(count($validated['subjects']) > $plan->maximum_subjects, 422, "Paket ini maksimal {$plan->maximum_subjects} mata pelajaran.");
+        $maximumWeekdays = match ((int) $plan->session_count) {
+            1 => 1, 4 => 2, default => 4
+        };
+        $selectedWeekdays = collect($validated['subjects'])
+            ->flatMap(fn (array $subjectPayload) => $subjectPayload['weekdays'])
+            ->unique();
+        abort_if($selectedWeekdays->count() > $maximumWeekdays, 422, 'Jumlah hari belajar unik pada seluruh paket melebihi batas paket.');
+
+        foreach ($validated['subjects'] as $subjectPayload) {
+            abort_if(count($subjectPayload['weekdays']) > $maximumWeekdays, 422, 'Jumlah hari belajar melebihi batas paket.');
+        }
         $activeSlotTimes = LearningTimeSlot::query()
             ->where('is_active', true)
             ->pluck('start_time')
@@ -332,12 +345,13 @@ class StudentPackageController extends Controller
             ->keyBy('id');
         abort_if($subjectsById->count() !== count($validated['subjects']), 422, 'Salah satu mata pelajaran tidak aktif.');
 
-        // Pesanan baru tetap membutuhkan lead time 72 jam. Perpanjangan hanya
-        // mendapat lead time 24 jam bila seluruh mapel benar-benar memilih
-        // tutor lama pada mapel yang sama; renewal tanpa tutor lama tetap 72 jam.
+        // Nilai lead time tersimpan di settings agar backend memakai aturan
+        // yang sama dengan frontend dan rekomendasi jadwal.
         $renewalOf = null;
-        $bookingLeadHours = 72;
-        if (!empty($validated['renewal_of_id'])) {
+        $bookingLeadHours = min(72, max(1, (int) (
+            Setting::query()->where('key', 'booking_lead_hours')->value('value') ?? 24
+        )));
+        if (! empty($validated['renewal_of_id'])) {
             $renewalOf = LearningPackage::query()
                 ->where('student_id', $student->id)
                 ->with('subjects.chapters')
@@ -349,7 +363,9 @@ class StudentPackageController extends Controller
             );
             abort_unless($this->canRenew($renewalOf), 422, 'Paket selesai dapat langsung diperpanjang. Paket aktif baru dapat diperpanjang tujuh hari sebelum masa berlaku berakhir.');
             foreach ($validated['subjects'] as $item) {
-                if (empty($item['preferred_teacher_id'])) continue;
+                if (empty($item['preferred_teacher_id'])) {
+                    continue;
+                }
                 $oldSubject = $renewalOf->subjects->firstWhere('curriculum_subject_id', (int) $item['curriculum_subject_id']);
                 abort_unless(
                     $oldSubject && (int) $oldSubject->assigned_teacher_id === (int) $item['preferred_teacher_id'],
@@ -358,7 +374,9 @@ class StudentPackageController extends Controller
                 );
             }
             if ($this->renewalUsesSameTutors($renewalOf, $validated['subjects'])) {
-                $bookingLeadHours = 24;
+                $bookingLeadHours = min(72, max(1, (int) (
+                    Setting::query()->where('key', 'renewal_booking_lead_hours')->value('value') ?? 12
+                )));
             }
         }
 
@@ -371,13 +389,13 @@ class StudentPackageController extends Controller
             $subject = $subjectsById[$item['curriculum_subject_id']];
             abort_if(
                 $subject->education_levels
-                    && !in_array($validated['education_level'], $subject->education_levels, true),
+                    && ! in_array($validated['education_level'], $subject->education_levels, true),
                 422,
                 "{$subject->name} tidak tersedia pada jenjang ini."
             );
             abort_if(
                 $subject->grades
-                    && !in_array($validated['grade'], $subject->grades, true),
+                    && ! in_array($validated['grade'], $subject->grades, true),
                 422,
                 "{$subject->name} tidak tersedia pada kelas atau tingkat ini."
             );
@@ -392,9 +410,9 @@ class StudentPackageController extends Controller
                 abort_if(
                     $start->lt(now()->addHours($bookingLeadHours)),
                     422,
-                    $bookingLeadHours === 24
-                        ? 'Perpanjangan dengan tutor yang sama paling cepat dimulai 24 jam dari sekarang.'
-                        : 'Jadwal paket paling cepat dimulai 72 jam dari sekarang.'
+                    $bookingLeadHours === 12
+                        ? 'Perpanjangan dengan tutor yang sama paling cepat dimulai 12 jam dari sekarang.'
+                        : 'Jadwal paket paling cepat dimulai '.$bookingLeadHours.' jam dari sekarang.'
                 );
                 abort_unless($start->format('i') === '00', 422, 'Semua jadwal hanya boleh memakai menit 00.');
                 abort_unless(
@@ -408,6 +426,7 @@ class StudentPackageController extends Controller
                     'Jam mulai terlalu malam untuk durasi pertemuan yang dipilih.'
                 );
                 $this->assertStudentHasNoConflict($student->id, $start, $start->copy()->addHours($durationHours));
+
                 return $start;
             })->sortBy(fn (Carbon $date) => $date->timestamp)->values();
             abort_if($starts->unique(fn (Carbon $date) => $date->timestamp)->count() !== $starts->count(), 422, 'Jadwal dalam satu mapel tidak boleh sama.');
@@ -633,7 +652,7 @@ class StudentPackageController extends Controller
         return response()->json([
             'message' => 'Paket dibuat. Selesaikan pembayaran agar pencarian tutor dapat dimulai.',
             'data' => $this->formatPackage($package->fresh([
-                'plan', 'promotion', 'subjects.assignedTeacher', 'subjects.chapters', 'subjects.sessions.booking', 'orders',
+                'plan', 'promotion', 'subjects.assignedTeacher', 'subjects.chapters', 'subjects.sessions.booking.teacher.teacherProfile', 'subjects.latestTeacherReplacement.sessions.packageSession', 'orders',
             ])),
             'order' => [
                 'order_id' => $order->id,
@@ -752,6 +771,7 @@ class StudentPackageController extends Controller
 
             $subjects = $package->subjects->filter(function (PackageSubject $subject) {
                 $requestStatus = $subject->bookingRequest?->status;
+
                 return $subject->status === 'no_teacher' || $requestStatus === 'no_teacher';
             });
             abort_if($subjects->isEmpty(), 422, 'Tidak ada mata pelajaran yang perlu dicari ulang.');
@@ -759,7 +779,9 @@ class StudentPackageController extends Controller
             $retryable = collect();
             foreach ($subjects as $subject) {
                 $bookingRequest = $subject->bookingRequest;
-                if (!$bookingRequest) continue;
+                if (! $bookingRequest) {
+                    continue;
+                }
                 $currentRadius = (int) ($bookingRequest->search_radius_km ?? 3);
                 $nextRadius = $bookingRequest->learning_mode === 'offline'
                     ? $matchingService->nextRadius($currentRadius)
@@ -810,6 +832,7 @@ class StudentPackageController extends Controller
                 'Pencarian pada jangkauan maksimum sudah pernah diulang. Ubah jadwal agar sistem mendapat kandidat baru, atau batalkan paket untuk mengajukan refund.'
             );
             $package->update(['status' => 'matching']);
+
             return $retryable->all();
         }, 3);
 
@@ -819,7 +842,7 @@ class StudentPackageController extends Controller
             ->with('bookingRequest')
             ->get()
             ->each(function (PackageSubject $subject) use ($checkoutService, &$noTeacher) {
-                if (!$checkoutService->dispatchSubject($subject)) {
+                if (! $checkoutService->dispatchSubject($subject)) {
                     $subject->update(['status' => 'no_teacher']);
                     $noTeacher = true;
                 }
@@ -857,6 +880,9 @@ class StudentPackageController extends Controller
             abort_unless($package->orders->contains('status', 'paid'), 422, 'Pembayaran paket belum terverifikasi.');
 
             $durationHours = (int) ($package->duration_hours ?? 1);
+            $bookingLeadHours = min(72, max(1, (int) (
+                Setting::query()->where('key', 'booking_lead_hours')->value('value') ?? 24
+            )));
             $activeSlotTimes = LearningTimeSlot::query()->where('is_active', true)->pluck('start_time')
                 ->map(fn ($time) => substr((string) $time, 0, 5))
                 ->filter(fn (string $time) => substr($time, 3, 2) === '00' && $time < '23:00')
@@ -870,12 +896,17 @@ class StudentPackageController extends Controller
                 $subject = $targets[(int) $payload['package_subject_id']];
                 $bookingRequest = $subject->bookingRequest;
                 abort_unless($bookingRequest && in_array($bookingRequest->status, ['no_teacher', 'expired'], true), 422, "Jadwal {$subject->subject_name} belum dapat diubah karena pencariannya masih aktif.");
-                $starts = collect($payload['schedules'])->map(function (string $value) use ($activeSlotTimes, $durationHours) {
+                $starts = collect($payload['schedules'])->map(function (string $value) use ($activeSlotTimes, $durationHours, $bookingLeadHours) {
                     $start = Carbon::parse($value, config('app.timezone', 'Asia/Jakarta'))->seconds(0);
-                    abort_if($start->lt(now()->addHours(72)), 422, 'Jadwal baru paling cepat dimulai 72 jam dari sekarang.');
+                    abort_if(
+                        $start->lt(now()->addHours($bookingLeadHours)),
+                        422,
+                        'Jadwal baru paling cepat dimulai '.$bookingLeadHours.' jam dari sekarang.'
+                    );
                     abort_unless($start->format('i') === '00', 422, 'Semua jadwal hanya boleh memakai menit 00.');
                     abort_unless(in_array($start->format('H:i'), $activeSlotTimes, true), 422, 'Jam yang dipilih tidak termasuk slot aktif.');
                     abort_if(((int) $start->format('H')) + $durationHours > 23, 422, 'Jam mulai terlalu malam untuk durasi pertemuan.');
+
                     return $start;
                 })->sortBy(fn (Carbon $date) => $date->timestamp)->values();
                 abort_unless($starts->count() === (int) $subject->allocated_sessions, 422, "Jumlah jadwal {$subject->subject_name} harus {$subject->allocated_sessions} sesi.");
@@ -935,18 +966,20 @@ class StudentPackageController extends Controller
                 ]);
             }
             $package->update(['status' => 'matching']);
+
             return $requestedIds->all();
         }, 3);
 
         $noTeacher = false;
         PackageSubject::query()->whereIn('id', $subjectIds)->with('bookingRequest')->get()
             ->each(function (PackageSubject $subject) use ($checkoutService, &$noTeacher) {
-                if (!$checkoutService->dispatchSubject($subject)) {
+                if (! $checkoutService->dispatchSubject($subject)) {
                     $subject->update(['status' => 'no_teacher']);
                     $noTeacher = true;
                 }
             });
         $learningPackage->update(['status' => $noTeacher ? 'no_teacher' : 'matching']);
+
         return response()->json([
             'message' => $noTeacher
                 ? 'Jadwal sudah diperbarui dan pencarian dimulai ulang, tetapi tutor belum tersedia. Periksa alasan terbaru di Kelas Saya.'
@@ -1120,7 +1153,7 @@ class StudentPackageController extends Controller
 
     private function resolvePromotion(int $userId, array $validated): array
     {
-        if (!empty($validated['promotion_claim_id'])) {
+        if (! empty($validated['promotion_claim_id'])) {
             $claim = PromotionClaim::query()
                 ->where('user_id', $userId)
                 ->where('status', 'available')
@@ -1128,9 +1161,10 @@ class StudentPackageController extends Controller
                 ->find($validated['promotion_claim_id']);
             abort_unless($claim && $claim->promotion, 422, 'Voucher tidak ditemukan atau sudah tidak dapat digunakan.');
             abort_unless($claim->promotion->isAvailable(), 422, 'Voucher sudah berakhir atau dinonaktifkan.');
+
             return [$claim->promotion, $claim];
         }
-        if (!empty($validated['promotion_code'])) {
+        if (! empty($validated['promotion_code'])) {
             $promotion = Promotion::query()
                 ->whereRaw('UPPER(code) = ?', [mb_strtoupper(trim($validated['promotion_code']))])
                 ->first();
@@ -1143,10 +1177,11 @@ class StudentPackageController extends Controller
                 ->oldest('claimed_at')
                 ->first();
             abort_if(
-                $promotion->claim_required && !$availableClaim,
+                $promotion->claim_required && ! $availableClaim,
                 422,
                 'Promo ini harus diklaim lebih dahulu dari halaman penawaran.'
             );
+
             return [$promotion, $availableClaim];
         }
 
@@ -1189,7 +1224,7 @@ class StudentPackageController extends Controller
             $preferredTeacherId = (int) ($item['preferred_teacher_id'] ?? 0);
             $curriculumSubjectId = (int) ($item['curriculum_subject_id'] ?? 0);
             $oldSubject = $source->subjects->firstWhere('curriculum_subject_id', $curriculumSubjectId);
-            if (!$oldSubject || $preferredTeacherId <= 0 || (int) $oldSubject->assigned_teacher_id !== $preferredTeacherId) {
+            if (! $oldSubject || $preferredTeacherId <= 0 || (int) $oldSubject->assigned_teacher_id !== $preferredTeacherId) {
                 return false;
             }
         }
@@ -1199,7 +1234,7 @@ class StudentPackageController extends Controller
 
     private function canRenew(LearningPackage $package): bool
     {
-        return !$this->hasBlockingRenewal($package)
+        return ! $this->hasBlockingRenewal($package)
             && $this->canRenewByStatusAndTime($package);
     }
 
@@ -1273,6 +1308,35 @@ class StudentPackageController extends Controller
                 'unit_price' => (float) $subject->unit_price,
                 'status' => $subject->status,
                 'matching' => $this->formatMatchingState($subject),
+                'can_request_teacher_replacement' => (bool) config('features.teacher_replacement')
+                    && $package->status === 'active'
+                    && $subject->status === 'active'
+                    && (bool) $subject->assigned_teacher_id
+                    && ! ($subject->latestTeacherReplacement
+                        && in_array($subject->latestTeacherReplacement->status, \App\Models\TeacherReplacementRequest::OPEN_STATUSES, true))
+                    && $subject->sessions->contains(fn (PackageSession $session) => $session->booking?->status === 'confirmed'
+                        && $session->scheduled_end_at?->isFuture()),
+                'teacher_replacement' => config('features.teacher_replacement') && $subject->latestTeacherReplacement ? [
+                    'id' => $subject->latestTeacherReplacement->id,
+                    'replacement_code' => $subject->latestTeacherReplacement->replacement_code,
+                    'status' => $subject->latestTeacherReplacement->status,
+                    'reason_code' => $subject->latestTeacherReplacement->reason_code,
+                    'reason_detail' => $subject->latestTeacherReplacement->reason_detail,
+                    'review_notes' => $subject->latestTeacherReplacement->review_notes,
+                    'created_at' => $subject->latestTeacherReplacement->created_at,
+                    'remaining_sessions' => $subject->latestTeacherReplacement->sessions->count(),
+                    'can_cancel' => $subject->latestTeacherReplacement->status === 'pending_review',
+                    'can_retry' => $subject->latestTeacherReplacement->status === 'no_teacher',
+                    'can_reschedule' => $subject->latestTeacherReplacement->status === 'no_teacher',
+                    'can_request_refund' => $subject->latestTeacherReplacement->status === 'no_teacher',
+                    'sessions' => $subject->latestTeacherReplacement->sessions->map(fn ($row) => [
+                        'id' => $row->id,
+                        'package_session_id' => $row->package_session_id,
+                        'status' => $row->status,
+                        'start_at' => $row->packageSession?->scheduled_start_at,
+                        'end_at' => $row->packageSession?->scheduled_end_at,
+                    ])->values(),
+                ] : null,
                 'teacher' => $subject->assignedTeacher ? [
                     'id' => $subject->assignedTeacher->id,
                     'name' => $subject->assignedTeacher->name,
@@ -1285,6 +1349,11 @@ class StudentPackageController extends Controller
                     'end_at' => $session->scheduled_end_at,
                     'status' => $session->booking?->status ?? $session->status,
                     'booking_id' => $session->booking_id,
+                    'teacher' => $session->booking?->teacher ? [
+                        'id' => $session->booking->teacher->id,
+                        'name' => $session->booking->teacher->name,
+                        'avatar_url' => \App\Support\PublicMedia::url($session->booking->teacher->teacherProfile?->photo),
+                    ] : null,
                 ])->values(),
             ])->values(),
             'latest_order' => $latestOrder ? [
@@ -1303,10 +1372,11 @@ class StudentPackageController extends Controller
             ] : null,
         ];
     }
+
     private function formatMatchingState(PackageSubject $subject): array
     {
         $bookingRequest = $subject->bookingRequest;
-        if (!$bookingRequest) {
+        if (! $bookingRequest) {
             return ['can_retry' => false, 'can_change_schedule' => false];
         }
         $logs = $bookingRequest->relationLoaded('matchingOperationLogs')
@@ -1318,8 +1388,10 @@ class StudentPackageController extends Controller
         $manualRestarts = $logs->where('action', 'search_restarted')->count();
         $radius = (int) ($bookingRequest->search_radius_km ?? 3);
         $nextRadius = $bookingRequest->learning_mode === 'offline'
-            ? match ($radius) { 3 => 5, 5 => 8, 8 => 12, default => null }
-            : null;
+            ? match ($radius) {
+                3 => 5, 5 => 8, 8 => 12, default => null
+            }
+        : null;
         $isNoTeacher = $bookingRequest->status === 'no_teacher';
         $canRetry = $isNoTeacher && ($nextRadius !== null || $manualRestarts < 1);
         $metadata = $latestFailure?->metadata ?? [];
@@ -1354,9 +1426,11 @@ class StudentPackageController extends Controller
     private function compactLabel($values): ?string
     {
         $items = collect($values)->filter()->map(fn ($value) => trim((string) $value))->unique()->values();
-        if ($items->isEmpty()) return null;
+        if ($items->isEmpty()) {
+            return null;
+        }
         $first = (string) $items->first();
+
         return $items->count() > 1 ? $first.' +'.($items->count() - 1) : $first;
     }
-
 }

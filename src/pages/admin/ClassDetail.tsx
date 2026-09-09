@@ -68,7 +68,7 @@ export default function ClassDetail() {
 
   return (
     <AdminLayout title="Detail Kelas">
-      <div className="mx-auto max-w-7xl space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
+      <div className="w-full space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
         <button
           onClick={() => navigate(-1)}
           className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-600 shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"

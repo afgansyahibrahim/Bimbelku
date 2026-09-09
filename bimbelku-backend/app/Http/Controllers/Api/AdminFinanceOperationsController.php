@@ -16,7 +16,7 @@ class AdminFinanceOperationsController extends Controller
     {
         $validated = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
-            'status' => ['nullable', Rule::in(['all', 'pending', 'paid', 'rejected', 'refund_pending', 'refunded', 'cancelled'])],
+            'status' => ['nullable', Rule::in(['all', 'pending', 'partially_paid', 'paid', 'rejected', 'refund_pending', 'refunded', 'cancelled'])],
         ]);
         $search = trim((string) ($validated['search'] ?? ''));
         $status = trim((string) ($validated['status'] ?? ''));
@@ -33,6 +33,7 @@ class AdminFinanceOperationsController extends Controller
                 'refund:id,order_id,status,amount,reason,destination_method,processed_at',
                 'learningPackage.plan:id,name',
                 'promotion:id,title,code',
+                'paymentSubmissions.verifier:id,name',
                 'cheapClassEnrollment.cheapClass' => fn ($classes) => $classes->withCount([
                     'enrollments as confirmed_payment_count' => fn ($items) => $items->where('status', 'confirmed'),
                 ]),
@@ -257,6 +258,24 @@ class AdminFinanceOperationsController extends Controller
             'wallet_reserved_amount' => (float) $order->wallet_reserved_amount,
             'wallet_applied_amount' => (float) $order->wallet_applied_amount,
             'external_payment_amount' => round(max(0, (float) $order->amount - (float) ($order->status === 'submitted' ? $order->wallet_reserved_amount : $order->wallet_applied_amount)), 2),
+            'external_received_amount' => (float) $order->external_received_amount,
+            'payment_outstanding_amount' => (float) $order->payment_outstanding_amount,
+            'payment_surplus_amount' => (float) $order->payment_surplus_amount,
+            'payment_reconciliation_status' => $order->payment_reconciliation_status,
+            'top_up_due_at' => $order->top_up_due_at,
+            'payment_submissions' => $order->paymentSubmissions->map(fn ($submission) => [
+                'id' => $submission->id,
+                'sequence' => $submission->sequence,
+                'status' => $submission->status,
+                'received_amount' => $submission->received_amount !== null ? (float) $submission->received_amount : null,
+                'rejection_reason' => $submission->rejection_reason,
+                'verified_at' => $submission->verified_at,
+                'verifier' => $submission->verifier ? [
+                    'id' => $submission->verifier->id,
+                    'name' => $submission->verifier->name,
+                ] : null,
+                'created_at' => $submission->created_at,
+            ])->values(),
             'status' => $order->status,
             'payment_proof' => $order->payment_proof_url,
             'bank_name' => $order->bank_name,

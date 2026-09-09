@@ -37,7 +37,7 @@ class DemoPackageRenewal extends Command
     private const TEACHER_EMAIL = 'demo.tutor@bimbelku.local';
     private const PASSWORD = 'password';
     private const SOURCE_PREFIX = 'DEMO-RENEW-SOURCE-';
-    private const SUBJECT_NAME = 'Matematika Demo Renewal';
+    private const SUBJECT_NAME = 'Matematika';
 
     public function handle(PackageCheckoutService $checkoutService): int
     {
@@ -259,7 +259,7 @@ class DemoPackageRenewal extends Command
         $this->comment('1) Login murid -> Kelas Saya -> Riwayat.');
         $this->comment('2) Klik "Perpanjang dengan Tutor Ini". Paket selesai boleh langsung diperpanjang.');
         $this->comment('3) Karena materi lama 100%, pilih materi lanjutan "Fungsi dan Persamaan Kuadrat".');
-        $this->comment('4) Susun 4 jadwal minimal 24 jam dari sekarang. Karena demo memilih tutor lama, renewal memakai lead time 24 jam; pesanan baru tetap 72 jam.');
+        $this->comment('4) Susun 4 jadwal minimal 12 jam dari sekarang. Pesanan baru memakai lead time 24 jam.');
         $this->comment('5) Jalankan: php artisan demo:package-renewal payment-paid');
         $this->comment('6) Login tutor -> Permintaan Bimbel -> terima permintaan perpanjangan.');
         $this->comment('7) Jalankan final-session-ready untuk mempercepat ke sesi terakhir Paket 2.');
@@ -472,6 +472,19 @@ class DemoPackageRenewal extends Command
 
     private function ensureDemoUsersAndMatching(): array
     {
+        $catalogSubject = CurriculumSubject::query()->updateOrCreate(
+            ['normalized_name' => 'matematika-demo-renewal'],
+            [
+                'name' => self::SUBJECT_NAME,
+                'group_name' => 'Demo',
+                'education_levels' => ['SMP'],
+                'grades' => ['Kelas 7'],
+                'is_elective' => false,
+                'is_active' => true,
+                'curriculum_name' => 'Kurikulum Merdeka',
+            ]
+        );
+
         $student = User::query()->updateOrCreate(
             ['email' => self::STUDENT_EMAIL],
             [
@@ -511,16 +524,17 @@ class DemoPackageRenewal extends Command
                 'is_accepting_requests' => true,
             ]
         );
-        TeacherSubject::query()->updateOrCreate(
-            ['teacher_profile_id' => $profile->id, 'name' => self::SUBJECT_NAME],
-            [
-                'levels' => ['SMP'],
-                'is_active' => true,
-                'is_online' => true,
-                'is_offline' => false,
-                'is_private_active' => true,
-            ]
-        );
+        TeacherSubject::query()->where('teacher_profile_id', $profile->id)->delete();
+        TeacherSubject::query()->create([
+            'teacher_profile_id' => $profile->id,
+            'curriculum_subject_id' => $catalogSubject->id,
+            'name' => self::SUBJECT_NAME,
+            'levels' => ['SMP'],
+            'is_active' => true,
+            'is_online' => true,
+            'is_offline' => false,
+            'is_private_active' => true,
+        ]);
         foreach ([1 => 'Senin', 2 => 'Selasa', 3 => 'Rabu', 4 => 'Kamis', 5 => 'Jumat', 6 => 'Sabtu', 7 => 'Minggu'] as $day) {
             TeacherAvailability::query()->updateOrCreate(
                 ['user_id' => $teacher->id, 'day' => $day],

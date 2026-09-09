@@ -24,12 +24,12 @@ return Application::configure(basePath: dirname(__DIR__))
             'finance.audit' => \App\Http\Middleware\AuditFinancialAction::class,
             'admin.permission' => \App\Http\Middleware\EnsureAdminPermission::class,
             'admin.audit' => \App\Http\Middleware\AuditAdminAction::class,
+            'feature' => \App\Http\Middleware\EnsureFeatureEnabled::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request, \Throwable $exception): bool =>
-                $request->is('api/*') || $request->expectsJson()
+            fn (Request $request, \Throwable $exception): bool => $request->is('api/*') || $request->expectsJson()
         );
 
         $exceptions->render(function (ModelNotFoundException $exception, Request $request) {

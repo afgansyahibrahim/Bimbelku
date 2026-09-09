@@ -3,7 +3,7 @@ import StudentLayout from "@/components/StudentLayout";
 
 export default function Messages() {
   return (
-    <StudentLayout title="Pesan">
+    <StudentLayout title="Pesan" lockContentScroll>
       <MarketplaceMessages role="student" />
     </StudentLayout>
   );

@@ -71,18 +71,20 @@ class DemoCheapClass extends Command
             // Join() production tetap melakukan validasi tutor. Karena itu fixture
             // presentasi juga memberi tutor subject + availability yang valid.
             $profile = TeacherProfile::query()->where('user_id', $teacher->id)->firstOrFail();
+            TeacherSubject::query()->where('teacher_profile_id', $profile->id)->delete();
             TeacherSubject::query()->updateOrCreate(
                 [
                     'teacher_profile_id' => $profile->id,
                     'curriculum_subject_id' => $catalogSubject->id,
                 ],
                 [
-                    'name' => 'Matematika Demo Kelas Kelompok',
+                    'name' => 'Matematika',
                     'levels' => ['SMP'],
                     'is_active' => true,
                     'is_online' => true,
                     'is_offline' => false,
                     'is_private_active' => true,
+                    'is_group_active' => true,
                 ]
             );
 
@@ -377,7 +379,7 @@ class DemoCheapClass extends Command
         $catalogSubject = CurriculumSubject::query()->firstOrCreate(
             ['normalized_name' => 'demo-matematika-kelas-murah'],
             [
-                'name' => 'Matematika Demo Kelas Kelompok',
+                'name' => 'Matematika',
                 'group_name' => 'Demo',
                 'education_levels' => ['SMP'],
                 'grades' => ['Kelas 7'],

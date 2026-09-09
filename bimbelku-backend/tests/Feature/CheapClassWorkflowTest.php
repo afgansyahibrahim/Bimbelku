@@ -55,6 +55,7 @@ class CheapClassWorkflowTest extends TestCase
             'levels' => ['SD'],
             'is_active' => true,
             'is_online' => true,
+            'is_group_active' => true,
         ]);
 
         $firstSession = now()->addDays(4)->setTime(10, 0);
@@ -300,10 +301,29 @@ class CheapClassWorkflowTest extends TestCase
         ])->values()->all();
 
         $this->postJson('/api/admin/cheap-class-templates', $this->packagePayload($primarySubject, $primaryChapter, [
-            'subjects' => $subjectsPayload,
+            'subjects' => array_slice($subjectsPayload, 0, 2),
             'first_session_date' => '2026-08-17',
             'start_time' => '10:00',
             'session_count' => 1,
+            'weekdays' => [1],
+        ]), ['Idempotency-Key' => 'cheap-class-one-session-two-subjects-rejected'])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Paket 1 sesi maksimal memiliki 1 mata pelajaran.');
+
+        $this->postJson('/api/admin/cheap-class-templates', $this->packagePayload($primarySubject, $primaryChapter, [
+            'subjects' => $subjectsPayload,
+            'first_session_date' => '2026-08-17',
+            'start_time' => '10:00',
+            'session_count' => 8,
+            'weekdays' => [1],
+        ]), ['Idempotency-Key' => 'cheap-class-eight-sessions-three-subjects-rejected'])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Paket 8 sesi maksimal memiliki 2 mata pelajaran.');
+        $this->postJson('/api/admin/cheap-class-templates', $this->packagePayload($primarySubject, $primaryChapter, [
+            'subjects' => $subjectsPayload,
+            'first_session_date' => '2026-08-17',
+            'start_time' => '10:00',
+            'session_count' => 12,
             'weekdays' => [1],
         ]), ['Idempotency-Key' => 'cheap-class-three-subjects-0001'])
             ->assertCreated()
@@ -328,6 +348,7 @@ class CheapClassWorkflowTest extends TestCase
                 'levels' => ['SD'],
                 'is_active' => true,
                 'is_online' => true,
+                'is_group_active' => true,
             ]);
         }
         TeacherAvailability::create([
@@ -346,6 +367,7 @@ class CheapClassWorkflowTest extends TestCase
             'levels' => ['SD'],
             'is_active' => true,
             'is_online' => true,
+            'is_group_active' => true,
         ]);
         $this->assertSame($teacher->id, app(CheapClassService::class)->replaceTeacherIfNeeded($class->fresh())?->id);
 
@@ -357,7 +379,7 @@ class CheapClassWorkflowTest extends TestCase
             'subjects' => $fourSubjects,
             'first_session_date' => '2026-08-24',
             'start_time' => '10:00',
-            'session_count' => 1,
+            'session_count' => 12,
             'weekdays' => [1],
         ]), ['Idempotency-Key' => 'cheap-class-four-subjects-rejected-0001'])
             ->assertStatus(422)
@@ -461,6 +483,7 @@ class CheapClassWorkflowTest extends TestCase
             'levels' => ['SD'],
             'is_active' => true,
             'is_online' => true,
+            'is_group_active' => true,
         ]);
         $schedules = collect(['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'])
             ->map(fn (string $day) => [

@@ -1,10 +1,9 @@
 import { lazy, Suspense, useCallback, useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
-import LogoutButton from "@/components/LogoutButton";
 import ProfileQuickMenu from "@/components/ProfileQuickMenu";
 import { scheduleNonCriticalTask } from "@/lib/schedule";
 import { usePersistentSidebarScroll } from "@/hooks/usePersistentSidebarScroll";
-import { announceNavigationAttentionChanged, attentionTargetLabel, hasSidebarAttention, NAVIGATION_ATTENTION_CHANGED_EVENT, unreadIdsForCurrentPage, type AttentionNotification } from "@/lib/navigationAttention";
+import { announceNavigationAttentionChanged, attentionTargetLabel, hasSidebarAttention, NAVIGATION_ATTENTION_CHANGED_EVENT, type AttentionNotification } from "@/lib/navigationAttention";
 import {
   Bell,
   BookOpen,
@@ -33,9 +32,11 @@ const storedUser = () => {
 interface StudentLayoutProps {
   children: React.ReactNode;
   title: string;
+  lockContentScroll?: boolean;
+  onAttentionNotificationsChange?: (notifications: AttentionNotification[]) => void;
 }
 
-export default function StudentLayout({ children, title }: StudentLayoutProps) {
+export default function StudentLayout({ children, title, lockContentScroll = false, onAttentionNotificationsChange }: StudentLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_MEDIA_QUERY).matches);
   const [userData, setUserData] = useState<any>(() => storedUser());
@@ -189,14 +190,19 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
       const start = () => {
         if (!disposed) void fetchNotifications(false);
       };
+      const refreshVisible = () => {
+        if (!disposed && document.visibilityState === "visible") void fetchNotifications(true);
+      };
       const cancelScheduledStart = scheduleNonCriticalTask(start);
-      const interval = window.setInterval(() => {
-          if (document.visibilityState === "visible") void fetchNotifications(true);
-      }, 60000);
+      const interval = window.setInterval(refreshVisible, 15000);
+      window.addEventListener("focus", refreshVisible);
+      document.addEventListener("visibilitychange", refreshVisible);
       return () => {
         disposed = true;
         cancelScheduledStart();
         window.clearInterval(interval);
+        window.removeEventListener("focus", refreshVisible);
+        document.removeEventListener("visibilitychange", refreshVisible);
       };
   }, [fetchNotifications]);
 
@@ -207,27 +213,9 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
       return () => window.removeEventListener(NAVIGATION_ATTENTION_CHANGED_EVENT, syncAttention);
   }, [fetchNotifications]);
 
-  // Jika halaman tujuan benar-benar dibuka, notifikasi yang menyalakan titik merah
-  // dianggap sudah dilihat. Hanya notifikasi untuk halaman itu yang dibaca.
   useEffect(() => {
-      const ids = unreadIdsForCurrentPage("student", location.pathname, attentionNotifications);
-      if (!ids.length) return;
-
-      const idSet = new Set(ids);
-      setNotifications((current) => current.map((item) => idSet.has(item.id) ? { ...item, is_read: true } : item));
-      setAttentionNotifications((current) => current.filter((item) => !idSet.has(item.id)));
-      setUnreadCount((current) => Math.max(0, current - ids.length));
-
-      let cancelled = false;
-      void import("@/lib/http")
-        .then(({ default: http }) => http.post("/notifications/read-batch", { ids }))
-        .then(() => announceNavigationAttentionChanged())
-        .catch(() => {
-          if (!cancelled) void fetchNotifications(true);
-        });
-
-      return () => { cancelled = true; };
-  }, [attentionNotifications, fetchNotifications, location.pathname]);
+    onAttentionNotificationsChange?.(attentionNotifications);
+  }, [attentionNotifications, onAttentionNotificationsChange]);
 
   return (
     <div className="flex h-dvh min-h-screen w-full max-w-full overflow-hidden bg-[#F8FAFC] font-sans text-slate-800 selection:bg-blue-100 selection:text-blue-900">
@@ -269,9 +257,6 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
           </div>
         </nav>
 
-        <div className="p-6 border-t border-slate-50">
-          <LogoutButton accent="student" />
-        </div>
       </aside>
 
       {/* --- MAIN CONTENT --- */}
@@ -356,8 +341,8 @@ export default function StudentLayout({ children, title }: StudentLayoutProps) {
           </div>
         </header>
 
-        <div id="student-scroll-container" className="mobile-app-content flex-1 overflow-x-hidden overflow-y-auto scroll-smooth p-4 pb-[calc(7.25rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-24 xl:p-8 xl:pb-8">
-          <div className="mx-auto w-full min-w-0 max-w-7xl pb-6 sm:pb-10">{children}</div>
+        <div id="student-scroll-container" className={`mobile-app-content min-h-0 flex-1 basis-0 overflow-x-hidden scroll-smooth p-4 pb-[calc(7.25rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-24 xl:p-8 xl:pb-8 ${lockContentScroll ? "overflow-y-hidden" : "overflow-y-auto"}`}>
+          <div className={`mx-auto w-full min-w-0 max-w-7xl pb-6 sm:pb-10 ${lockContentScroll ? "flex h-full min-h-0 flex-col" : ""}`}>{children}</div>
         </div>
         {!isDesktop && !sidebarOpen && (
           <Suspense fallback={null}>

@@ -7,17 +7,29 @@ use Illuminate\Http\Request;
 class AdminPermissionCatalog
 {
     public const OPERATIONS_DASHBOARD = 'operations.dashboard';
+
     public const MATCHING_MANAGE = 'matching.manage';
+
     public const FINANCE_PAYMENTS = 'finance.payments';
+
     public const FINANCE_PAYOUTS = 'finance.payouts';
+
     public const FINANCE_REFUNDS = 'finance.refunds';
+
     public const TEACHERS_MANAGE = 'teachers.manage';
+
     public const CASES_MANAGE = 'cases.manage';
+
     public const USERS_MANAGE = 'users.manage';
+
     public const CLASSES_MANAGE = 'classes.manage';
+
     public const CONTENT_MANAGE = 'content.manage';
+
     public const SUPPORT_MANAGE = 'support.manage';
+
     public const SETTINGS_MANAGE = 'settings.manage';
+
     public const AUDIT_VIEW = 'audit.view';
 
     public static function groups(): array
@@ -101,11 +113,11 @@ class AdminPermissionCatalog
             '#^(?:finance|payout|commission-setting)(?:/|$)#' => self::FINANCE_PAYOUTS,
             '#^(?:pending-teachers|history-teachers|verify-teacher)(?:/|$)#' => self::TEACHERS_MANAGE,
             '#^users(?:/|$)#' => self::USERS_MANAGE,
-            '#^(?:cases|teacher-appeals|disputes|session-reports|bookings/.+/completion-review)(?:/|$)#' => self::CASES_MANAGE,
+            '#^(?:cases|teacher-replacements|teacher-appeals|disputes|session-reports|bookings/.+/completion-review)(?:/|$)#' => self::CASES_MANAGE,
             '#^(?:classes|ratings)(?:/|$)#' => self::CLASSES_MANAGE,
-            '#^(?:notifications/send|tickets)(?:/|$)#' => self::SUPPORT_MANAGE,
+            '#^(?:notifications/(?:recipients|send)|tickets)(?:/|$)#' => self::SUPPORT_MANAGE,
             '#^(?:hourly-rates|subjects|chapters|stage-five|cheap-class-templates|cheap-classes)(?:/|$)#' => self::CONTENT_MANAGE,
-            '#^(?:settings/footer|socials|settings/teacher-cover|notes)(?:/|$)#' => self::SETTINGS_MANAGE,
+            '#^(?:settings/footer|admin-socials|socials|settings/teacher-cover|notes)(?:/|$)#' => self::SETTINGS_MANAGE,
             '#^audit-log(?:/|$)#' => self::AUDIT_VIEW,
         ];
 

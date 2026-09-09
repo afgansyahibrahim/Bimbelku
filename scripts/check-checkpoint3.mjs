@@ -33,7 +33,18 @@ requireText("bimbelku-backend/app/Http/Controllers/Api/TicketController.php", [
 requireText("bimbelku-backend/app/Http/Controllers/Api/NotificationController.php", [
   "findOrFail($id)",
   "where('user_id', $request->user()->id)",
+  "public function recipients",
+  "paginate($perPage)",
 ]);
+requireText("src/pages/admin/SendMessage.tsx", [
+  '"/admin/notifications/recipients"',
+  "Array.isArray(response.data?.data)",
+  "getApiError",
+  "Muat lebih banyak",
+]);
+if (read("src/pages/admin/SendMessage.tsx").includes("/admin/users?role=")) {
+  throw new Error("Daftar penerima notifikasi kembali memakai endpoint pengguna lama.");
+}
 for (const path of [
   "bimbelku-backend/app/Http/Controllers/Api/ProtectedFileController.php",
   "bimbelku-backend/app/Http/Controllers/Api/TeacherDocumentController.php",

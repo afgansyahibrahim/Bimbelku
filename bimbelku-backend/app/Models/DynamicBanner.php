@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Support\PublicMedia;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 
 class DynamicBanner extends Model
 {
@@ -20,6 +21,13 @@ class DynamicBanner extends Model
     public function getImageUrlAttribute(): ?string
     {
         if (!$this->image_path) return null;
+        if (
+            !preg_match('#^https?://#i', $this->image_path)
+            && !Storage::disk('public')->exists($this->image_path)
+        ) {
+            return null;
+        }
+
         return PublicMedia::url($this->image_path);
     }
 }

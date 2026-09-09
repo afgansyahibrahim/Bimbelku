@@ -179,7 +179,7 @@ export default function TeacherCheapClasses({
     finally { setSaving(null); }
   };
 
-  const content = <div data-tour="teacher-cheap-classes" className={`mx-auto space-y-7 ${embedded ? "w-full max-w-none" : "max-w-6xl pb-12"}`}>
+  const content = <div data-tour="teacher-cheap-classes" className={`w-full space-y-7 ${embedded ? "max-w-none" : "pb-12"}`}>
       {!embedded && <section data-tour="teacher-cheap-hero" className="rounded-[2rem] bg-gradient-to-br from-indigo-700 to-violet-800 px-6 py-8 text-white shadow-xl sm:px-7"><p className="text-xs font-black uppercase tracking-[.2em] text-indigo-100">Kelas online bersama</p><h1 className="mt-3 text-3xl font-black">Kelas Kelompok yang ditugaskan</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-indigo-100">Kelas aktif dipisahkan dari riwayat. Setelah setiap sesi berakhir, kirim kehadiran, progress per bab, dan catatan. Sesi baru final setelah admin memverifikasi laporan.</p></section>}
 
       {!embedded && !loading && classes.length > 0 && <section className="rounded-[1.5rem] border border-slate-100 bg-white p-2 shadow-sm"><div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-slate-100 p-1.5"><button type="button" onClick={() => changeScope("active")} className={`min-h-11 rounded-xl text-sm font-black ${scope === "active" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}>Aktif ({activeClasses.length})</button><button type="button" onClick={() => changeScope("history")} className={`min-h-11 rounded-xl text-sm font-black ${scope === "history" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}>Riwayat ({historyClasses.length})</button></div></section>}
@@ -254,11 +254,26 @@ function ChapterProgressEditor({ item, onSaved }: { item: CheapClass; onSaved: (
 
   const save = async () => {
     if (rows.length === 0 || !selectedSession) return;
+
+    const normalizedAttendedCount = Number(attendedCount);
+    if (attendedCount.trim() === "") {
+      notify.error("Isi jumlah murid yang hadir sebelum mengirim laporan.");
+      return;
+    }
+    if (!Number.isInteger(normalizedAttendedCount) || normalizedAttendedCount < 0 || normalizedAttendedCount > item.confirmed_participants_count) {
+      notify.error(`Jumlah murid hadir harus 0 sampai ${item.confirmed_participants_count}.`);
+      return;
+    }
+    if (sessionNotes.trim().length < 10) {
+      notify.error("Catatan sesi wajib diisi minimal 10 karakter.");
+      return;
+    }
+
     setSaving(true);
     try {
       const response = await http.put(`/teacher/cheap-classes/${item.id}/progress`, {
         session_id: selectedSession.id,
-        attended_participants_count: Number(attendedCount),
+        attended_participants_count: normalizedAttendedCount,
         session_notes: sessionNotes.trim(),
         updates: rows.map((row, subjectIndex) => ({
           subject_index: subjectIndex,
@@ -284,7 +299,7 @@ function ChapterProgressEditor({ item, onSaved }: { item: CheapClass; onSaved: (
       <div className="mt-3 grid gap-3 sm:grid-cols-2"><div><Label className="text-xs font-black text-slate-600">Jumlah murid hadir</Label><Input type="number" min={0} max={item.confirmed_participants_count} value={attendedCount} onChange={(event) => setAttendedCount(event.target.value)} disabled={selectedSession?.status === "awaiting_admin_verification" || selectedSession?.status === "completed"} className="mt-1 h-11 rounded-xl" /><p className="mt-1 text-[11px] text-slate-400">Dari {item.confirmed_participants_count} peserta terkonfirmasi.</p></div><div><Label className="text-xs font-black text-slate-600">Catatan sesi</Label><Textarea value={sessionNotes} onChange={(event) => setSessionNotes(event.target.value)} maxLength={1500} disabled={selectedSession?.status === "awaiting_admin_verification" || selectedSession?.status === "completed"} className="mt-1 min-h-20 rounded-xl" placeholder="Wajib: materi, respons kelas, evaluasi, atau tindak lanjut" /></div></div>
     </div>
     <div className="mt-4 space-y-3">{rows.map((row, index) => <div key={`${row.subject_name}-${row.chapter}-${index}`} className="rounded-xl border border-violet-100 bg-white p-3 sm:p-4"><div className="flex items-start gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-violet-50 text-violet-700"><CheckCircle2 size={17} /></span><div className="min-w-0 flex-1"><p className="text-[10px] font-black uppercase tracking-wider text-violet-500">{row.subject_name}</p><p className="mt-1 break-words text-sm font-black text-slate-900">{row.chapter || "Bab belum diberi nama"}</p></div></div><div className="mt-3 grid gap-3 sm:grid-cols-2"><div><Label className="text-xs">Status bab</Label><Select disabled={!editable} value={row.progress_status} onValueChange={(value) => updateRow(index, { progress_status: value as ChapterProgress["progress_status"], needs_review: value === "completed" ? row.needs_review : false })}><SelectTrigger className="mt-1 h-10 rounded-xl bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="not_started">Belum dimulai</SelectItem><SelectItem value="in_progress">Sedang dipelajari</SelectItem><SelectItem value="completed">Selesai</SelectItem></SelectContent></Select></div><div><Label className="text-xs">Catatan bab</Label><Textarea disabled={!editable} value={row.progress_notes || ""} onChange={(event) => updateRow(index, { progress_notes: event.target.value })} maxLength={1000} className="mt-1 min-h-20 resize-y rounded-xl" placeholder="Opsional, misalnya bagian yang perlu dilatih lagi" /></div></div>{row.progress_status === "completed" && <label className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-xs font-bold leading-5 text-amber-800"><input type="checkbox" disabled={!editable} checked={row.needs_review} onChange={(event) => updateRow(index, { needs_review: event.target.checked })} className="mt-0.5" />Materi selesai tetapi perlu diulang lagi</label>}</div>)}</div>
-    {editable && <Button type="button" onClick={() => void save()} disabled={saving || rows.length === 0 || !selectedSession || sessionNotes.trim().length < 10 || attendedCount === ""} className="mt-4 h-11 w-full rounded-xl bg-violet-700 font-black hover:bg-violet-800 sm:w-auto">{saving ? <Loader2 className="mr-2 animate-spin" size={16} /> : <Send className="mr-2" size={16} />}Kirim Laporan Sesi</Button>}
+    {editable && <><p className="mt-3 text-xs font-semibold text-violet-700">Jumlah hadir wajib diisi dan catatan sesi minimal 10 karakter.</p><Button type="button" onClick={() => void save()} disabled={saving || rows.length === 0 || !selectedSession} className="mt-2 h-11 w-full rounded-xl bg-violet-700 font-black hover:bg-violet-800 sm:w-auto">{saving ? <Loader2 className="mr-2 animate-spin" size={16} /> : <Send className="mr-2" size={16} />}Kirim Laporan Sesi</Button></>}
     <div className="mt-6 border-t border-violet-100 pt-5"><p className="flex items-center gap-2 text-sm font-black text-violet-950"><History size={16} />Riwayat sesi</p>{history.length === 0 ? <p className="mt-3 rounded-xl bg-white p-3 text-sm text-slate-500">Belum ada progress sesi yang disimpan.</p> : <div className="mt-3 space-y-2">{history.map((session) => <details key={session.id} className="group rounded-xl bg-white p-3"><summary className="flex cursor-pointer list-none items-center justify-between gap-3 marker:hidden"><div><p className="text-sm font-black text-slate-800">Sesi {session.session_number}</p><p className="mt-1 text-xs text-slate-400">{new Date(session.progress_recorded_at!).toLocaleString("id-ID")}</p></div><ChevronDown size={16} className="text-slate-400 transition group-open:rotate-180" /></summary><div className="mt-3 space-y-2 border-t border-slate-100 pt-3">{session.progress_updates?.length ? session.progress_updates.map((change) => <div key={`${session.id}-${change.subject_index}`} className="rounded-lg bg-slate-50 p-3"><p className="text-xs font-black text-slate-800">{change.chapter}</p><p className="mt-1 text-[11px] font-semibold text-slate-500">{progressStatusLabel(change.status_before, Boolean(change.needs_review_before))} → <span className="font-black text-violet-700">{progressStatusLabel(change.status_after, Boolean(change.needs_review_after))}</span></p></div>) : <p className="text-xs text-slate-500">Tidak ada perubahan status bab pada sesi ini.</p>}{session.progress_notes && <p className="text-xs leading-5 text-slate-500">{session.progress_notes}</p>}</div></details>)}</div>}</div>
   </section>;
 }

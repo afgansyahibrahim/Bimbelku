@@ -23,11 +23,14 @@ use Throwable;
 
 class CheapClassService
 {
-    public function __construct(private readonly CustomerWalletService $wallets)
+    public function __construct(
+        private readonly CustomerWalletService $wallets,
+        private readonly PaymentReconciliationService $paymentReconciliation,
+    )
     {
     }
 
-    private const ACTIVE_SEAT_STATUSES = ['seat_held', 'payment_submitted', 'payment_rejected', 'confirmed'];
+    private const ACTIVE_SEAT_STATUSES = ['seat_held', 'payment_submitted', 'payment_rejected', 'partially_paid', 'confirmed'];
     private const ACTIVE_CLASS_STATUSES = ['waiting_teacher', 'open', 'registration_closed', 'awaiting_verification', 'confirmed'];
 
     /** @return array{template:CheapClassTemplate,class:CheapClass,teacher:?User} */
@@ -720,8 +723,8 @@ class CheapClassService
                 ->where('cheap_class_enrollment_id', $enrollment->id)
                 ->lockForUpdate()
                 ->firstOrFail();
-            abort_unless(in_array($lockedOrder->status, ['pending', 'rejected'], true), 422, 'Tagihan ini sudah tidak dapat dibayar.');
-            abort_unless(in_array($enrollment->status, ['seat_held', 'payment_rejected'], true), 422, 'Kursi tidak lagi menerima pembayaran.');
+            abort_unless(in_array($lockedOrder->status, ['pending', 'rejected', 'partially_paid'], true), 422, 'Tagihan ini sudah tidak dapat dibayar.');
+            abort_unless(in_array($enrollment->status, ['seat_held', 'payment_rejected', 'partially_paid'], true), 422, 'Kursi tidak lagi menerima pembayaran.');
             abort_if(!$enrollment->seat_expires_at?->isFuture(), 422, 'Batas pembayaran sudah berakhir.');
             abort_if(
                 !in_array($class->status, ['waiting_teacher', 'open', 'registration_closed', 'awaiting_verification'], true),
@@ -735,15 +738,17 @@ class CheapClassService
                 'Kuota peserta terverifikasi sudah penuh sehingga bukti tidak dapat dikirim ulang.'
             );
 
-            $walletReserved = $useWallet
+            $walletReserved = (float) $lockedOrder->wallet_reserved_amount > 0
+                ? (float) $lockedOrder->wallet_reserved_amount
+                : ($useWallet
                 ? $this->wallets->reserveForPayment(
                     $lockedOrder,
                     (int) $lockedOrder->user_id,
                     $walletExpectedAmount,
                     (int) $lockedOrder->user_id
                 )
-                : 0.0;
-            $externalDue = round(max(0, (float) $lockedOrder->amount - $walletReserved), 2);
+                : 0.0);
+            $externalDue = round(max(0, (float) $lockedOrder->amount - $walletReserved - (float) $lockedOrder->external_received_amount), 2);
             abort_if($externalDue > 0 && !$path, 422, 'Bukti pembayaran eksternal wajib diunggah untuk sisa tagihan.');
             abort_if($externalDue <= 0 && $path, 422, 'Tagihan ini sudah tertutup penuh oleh Saldo BimbelKu.');
 
@@ -944,7 +949,7 @@ class CheapClassService
             // tenggat awal untuk mengambil keputusan.
             $finalizeNow = ($class->status === 'registration_closed' || $class->registration_deadline->isPast())
                 && !$class->enrollments()
-                    ->whereIn('status', ['seat_held', 'payment_rejected', 'payment_submitted'])
+                    ->whereIn('status', ['seat_held', 'payment_rejected', 'partially_paid', 'payment_submitted'])
                     ->exists();
 
             return [
@@ -1034,7 +1039,7 @@ class CheapClassService
             if (
                 $class->registration_deadline->isFuture()
                 && $class->enrollments()
-                    ->whereIn('status', ['seat_held', 'payment_rejected'])
+                    ->whereIn('status', ['seat_held', 'payment_rejected', 'partially_paid'])
                     ->where('seat_expires_at', '>', now())
                     ->exists()
             ) {
@@ -1233,6 +1238,7 @@ class CheapClassService
                         })
                         ->where('is_active', true)
                         ->where('is_online', true)
+                        ->where('is_group_active', true)
                         ->where(function ($levels) use ($class) {
                             $levels->whereNull('levels')->orWhereJsonContains('levels', $class->education_level);
                         }));
@@ -1311,7 +1317,7 @@ class CheapClassService
             : $class->enrollments()->where('status', 'confirmed')->count();
         $pendingPaymentCount = isset($class->pending_payment_count)
             ? (int) $class->pending_payment_count
-            : $class->enrollments()->whereIn('status', ['seat_held', 'payment_submitted', 'payment_rejected'])->count();
+            : $class->enrollments()->whereIn('status', ['seat_held', 'payment_submitted', 'payment_rejected', 'partially_paid'])->count();
         $hasAccess = in_array($class->status, ['confirmed', 'completed'], true)
             && $enrollment?->status === 'confirmed'
             && $enrollment?->order?->status === 'paid';
@@ -1407,7 +1413,7 @@ class CheapClassService
     {
         $count = 0;
         CheapClassEnrollment::query()
-            ->whereIn('status', ['seat_held', 'payment_rejected'])
+                    ->whereIn('status', ['seat_held', 'payment_rejected', 'partially_paid'])
             ->whereNotNull('seat_expires_at')
             ->where('seat_expires_at', '<=', now())
             ->select(['id', 'cheap_class_id'])
@@ -1436,8 +1442,11 @@ class CheapClassService
                             ->where('cheap_class_enrollment_id', $locked->id)
                             ->lockForUpdate()
                             ->first();
-                        if ($order && !in_array($order->status, ['pending', 'rejected'], true)) {
+                        if ($order && !in_array($order->status, ['pending', 'rejected', 'partially_paid'], true)) {
                             return;
+                        }
+                        if ($order?->status === 'partially_paid') {
+                            $this->paymentReconciliation->returnExpiredPartialPayment($order);
                         }
                         $order?->update(['status' => 'expired']);
                         $locked->update(['status' => 'payment_expired']);

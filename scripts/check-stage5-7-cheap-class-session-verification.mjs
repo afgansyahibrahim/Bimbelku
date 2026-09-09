@@ -29,7 +29,7 @@ add("runtime schema requires the report-verification columns",
   && schema.includes("report_submitted_at")
   && schema.includes("admin_reviewed_by"));
 add("time end moves a confirmed session to report-required instead of completed",
-  service.includes("->where('status', 'scheduled')")
+  service.includes("->whereIn('status', ['scheduled', 'in_progress'])")
   && service.includes("->update(['status' => 'report_required'])")
   && service.includes("Kelas selesai · laporan sesi belum diisi"));
 add("package completes only after every session is completed",

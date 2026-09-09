@@ -10,6 +10,7 @@ const catalog = read("bimbelku-backend/app/Support/AdminPermissionCatalog.php");
 const permissionMiddleware = read("bimbelku-backend/app/Http/Middleware/EnsureAdminPermission.php");
 const auditMiddleware = read("bimbelku-backend/app/Http/Middleware/AuditAdminAction.php");
 const auditService = read("bimbelku-backend/app/Services/AdminAuditService.php");
+const auditController = read("bimbelku-backend/app/Http/Controllers/Api/AdminAccessController.php");
 const auditModel = read("bimbelku-backend/app/Models/AdminAuditLog.php");
 const userModel = read("bimbelku-backend/app/Models/User.php");
 const migration = read("bimbelku-backend/database/migrations/2026_08_01_000600_build_stage_six_c_admin_access_and_audit.php");
@@ -26,6 +27,9 @@ expect(
   "seluruh grup admin dilindungi audit dan pemeriksaan akses",
 );
 expect(routes.includes("Route::get('/audit-log'"), "endpoint audit tetap tersedia");
+expect(routes.includes("Route::get('/audit-log/integrity'") && routes.includes("Route::get('/audit-log/{adminAuditLog}'"), "integritas dan detail audit dimuat melalui endpoint terpisah");
+expect(auditController.includes("Rule::in([20, 50, 100])") && auditController.includes("formatAuditSummary"), "daftar audit memakai batas pilihan dan respons ringkas");
+expect(auditController.includes("auditDetail") && auditController.includes("auditIntegrity"), "snapshot dan pemeriksaan integritas tidak membebani respons daftar");
 expect(!routes.includes("Route::get('/access-control'"), "endpoint daftar admin sudah dihapus");
 expect(!routes.includes("Route::post('/access-control'"), "endpoint pembuatan admin sudah dihapus");
 expect(!routes.includes("Route::put('/access-control/{admin}'"), "endpoint perubahan admin sudah dihapus");
@@ -56,7 +60,22 @@ expect(!layout.includes("Kontrol akses admin"), "menu pengelolaan admin disembun
 expect(layout.includes('const adminLabel = "Admin utama"'), "identitas sidebar memakai admin utama");
 expect(privateRoute.includes("permissionForAdminPath") && privateRoute.includes("canAdmin"), "rute frontend tetap memeriksa role admin");
 expect(frontendPermissions.includes(') => user?.role === "admin";'), "frontend memberi seluruh menu hanya kepada role admin");
-expect(auditPage.includes("Rantai integritas") && auditPage.includes("Data sebelum") && auditPage.includes("Data sesudah"), "viewer audit tetap lengkap");
+expect(
+  auditPage.includes("Catatan perubahan aman")
+    && auditPage.includes("Sebelumnya")
+    && auditPage.includes("Menjadi")
+    && auditPage.includes("Ditambahkan")
+    && auditPage.includes("Dihapus"),
+  "viewer audit menjelaskan perubahan dengan bahasa yang mudah dipahami",
+);
+expect(
+  !auditPage.includes("Hash entri")
+    && !auditPage.includes("Request ID")
+    && !auditPage.includes("Jejak permintaan"),
+  "detail teknis tidak ditampilkan kepada admin umum",
+);
+expect(auditPage.includes('type PageSize = "20" | "50" | "100" | "all"') && auditPage.includes("Memuat semua hasil secara bertahap"), "jumlah hasil dapat dipilih dan semua hasil dimuat bertahap");
+expect(auditPage.includes("loadingDetails") && auditPage.includes('`/admin/audit-log/${item.id}`'), "rincian perubahan dimuat hanya saat kartu dibuka");
 expect(dashboard.includes("visible_sections"), "dashboard tetap menggunakan respons backend");
 
 for (const scenario of [

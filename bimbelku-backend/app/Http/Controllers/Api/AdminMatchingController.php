@@ -17,7 +17,9 @@ use Illuminate\Validation\Rule;
 class AdminMatchingController extends Controller
 {
     private const ACTIVE_STATUSES = ['matching', 'teacher_pending', 'no_teacher'];
+
     private const HISTORY_STATUSES = ['expired'];
+
     private const MONITORED_STATUSES = [...self::ACTIVE_STATUSES, ...self::HISTORY_STATUSES];
 
     public function index(Request $request)
@@ -110,8 +112,7 @@ class AdminMatchingController extends Controller
         BookingRequest $bookingRequest,
         TeacherMatchingService $matchingService,
         TeacherAssignmentService $assignmentService
-    )
-    {
+    ) {
         abort_unless(in_array($bookingRequest->status, self::MONITORED_STATUSES, true), 404);
 
         $bookingRequest->load([
@@ -253,12 +254,16 @@ class AdminMatchingController extends Controller
             $validated['reason']
         );
 
-        $isPackage = ($result['assignment']['type'] ?? null) === 'package';
+        $assignmentType = $result['assignment']['type'] ?? null;
+        $isPackage = $assignmentType === 'package';
+        $isReplacement = $assignmentType === 'teacher_replacement';
 
         return response()->json([
-            'message' => $isPackage
+            'message' => $isReplacement
+                ? 'Tutor pengganti ditetapkan. Hanya sesi paket yang tersisa yang dialihkan.'
+                : ($isPackage
                 ? 'Tutor ditetapkan untuk mata pelajaran paket. Status paket diperbarui sesuai tutor yang sudah ditemukan.'
-                : 'Tutor ditetapkan. Tagihan murid sudah dibuka dan penawaran lain dibatalkan.',
+                : 'Tutor ditetapkan. Tagihan murid sudah dibuka dan penawaran lain dibatalkan.'),
             'data' => [
                 'booking_request_id' => $result['booking_request']->id,
                 'teacher' => [
@@ -542,7 +547,7 @@ class AdminMatchingController extends Controller
 
     private function scheduledAt(BookingRequest $bookingRequest): ?Carbon
     {
-        if (!$bookingRequest->scheduled_date || !$bookingRequest->start_time) {
+        if (! $bookingRequest->scheduled_date || ! $bookingRequest->start_time) {
             return null;
         }
 

@@ -233,7 +233,7 @@ export default function CheapClassSchedule() {
   };
 
   return <AdminLayout title="Jadwal Kelas Kelompok">
-    <div className="mx-auto max-w-7xl space-y-6 pb-12">
+    <div className="w-full space-y-6 pb-12">
       <section className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3"><Link to="/admin/kelas-murah" className="inline-flex items-center gap-2 text-sm font-black text-indigo-600 hover:text-indigo-800"><ArrowLeft size={16} /> Kembali ke pengaturan</Link><Link to="/admin/kelas-murah/berulang" className="inline-flex h-10 items-center gap-2 rounded-xl bg-violet-50 px-4 text-xs font-black text-violet-700 hover:bg-violet-100"><Repeat2 size={15} /> Kelola Paket Berulang</Link></div>
         <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">

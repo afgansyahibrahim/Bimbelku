@@ -17,7 +17,7 @@ class AdminAccessController extends Controller
      * Riwayat perubahan tetap tersedia walaupun project memakai satu admin utama.
      * Endpoint pengelolaan akun admin sengaja tidak disediakan.
      */
-    public function audit(Request $request, AdminAuditService $auditService)
+    public function audit(Request $request)
     {
         $validated = $request->validate([
             'actor_id' => ['nullable', 'integer', 'exists:users,id'],
@@ -28,9 +28,16 @@ class AdminAccessController extends Controller
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
             'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', Rule::in([20, 50, 100])],
         ]);
 
-        $query = AdminAuditLog::query()->with('actor:id,name,email');
+        $query = AdminAuditLog::query()
+            ->select([
+                'id', 'actor_id', 'actor_name', 'actor_email', 'action', 'category',
+                'permission_code', 'route_name', 'method', 'response_status',
+                'target_type', 'target_id', 'reason', 'created_at',
+            ])
+            ->with('actor:id,name,email');
         if (!empty($validated['actor_id'])) {
             $query->where('actor_id', $validated['actor_id']);
         }
@@ -63,18 +70,28 @@ class AdminAccessController extends Controller
             $query->where('created_at', '<=', Carbon::parse($validated['date_to'])->endOfDay());
         }
 
-        $page = $query->latest('id')->paginate(50);
-        $chain = $auditService->verifyChain(AdminAuditLog::query()->oldest('id')->get());
+        $page = $query->latest('id')->paginate($validated['per_page'] ?? 20);
+        $items = collect($page->items());
+        $targetRoles = User::query()
+            ->whereIn('id', $items
+                ->where('target_type', 'User')
+                ->pluck('target_id')
+                ->filter()
+                ->unique()
+                ->values())
+            ->pluck('role', 'id');
 
         return response()->json([
-            'data' => collect($page->items())->map(fn (AdminAuditLog $log) => $this->formatAudit($log)),
+            'data' => $items->map(fn (AdminAuditLog $log) => $this->formatAuditSummary(
+                $log,
+                $targetRoles->get((int) $log->target_id)
+            )),
             'pagination' => [
                 'current_page' => $page->currentPage(),
                 'last_page' => $page->lastPage(),
                 'per_page' => $page->perPage(),
                 'total' => $page->total(),
             ],
-            'chain' => $chain,
             'filters' => [
                 'permission_groups' => AdminPermissionCatalog::groups(),
                 'actors' => User::query()
@@ -85,7 +102,24 @@ class AdminAccessController extends Controller
         ]);
     }
 
-    private function formatAudit(AdminAuditLog $log): array
+    public function auditDetail(AdminAuditLog $adminAuditLog)
+    {
+        return response()->json([
+            'id' => $adminAuditLog->id,
+            'request_payload' => $adminAuditLog->request_payload,
+            'before_state' => $adminAuditLog->before_state,
+            'after_state' => $adminAuditLog->after_state,
+        ]);
+    }
+
+    public function auditIntegrity(AdminAuditService $auditService)
+    {
+        return response()->json(
+            $auditService->verifyChain(AdminAuditLog::query()->oldest('id')->get())
+        );
+    }
+
+    private function formatAuditSummary(AdminAuditLog $log, ?string $targetRole = null): array
     {
         return [
             'id' => $log->id,
@@ -103,15 +137,8 @@ class AdminAccessController extends Controller
             'response_status' => (int) $log->response_status,
             'target_type' => $log->target_type,
             'target_id' => $log->target_id,
+            'target_role' => $targetRole,
             'reason' => $log->reason,
-            'request_payload' => $log->request_payload,
-            'before_state' => $log->before_state,
-            'after_state' => $log->after_state,
-            'metadata' => $log->metadata,
-            'ip_address' => $log->ip_address,
-            'user_agent' => $log->user_agent,
-            'entry_hash' => $log->entry_hash,
-            'previous_hash' => $log->previous_hash,
             'created_at' => $log->created_at?->toIso8601String(),
         ];
     }

@@ -11,6 +11,10 @@ class TeacherSubject extends Model
 
     protected $table = 'teacher_subjects';
 
+    protected $attributes = [
+        'is_group_active' => false,
+    ];
+
     protected $guarded = ['id'];
 
     // Pastikan JANGAN ADA baris seperti: protected $name; atau protected $teacherProfile; disini.
@@ -21,6 +25,7 @@ class TeacherSubject extends Model
         'is_online' => 'boolean',
         'is_offline' => 'boolean',
         'is_private_active' => 'boolean',
+        'is_group_active' => 'boolean',
     ];
 
     // Relasi WAJIB PUBLIC

@@ -19,7 +19,17 @@ class DatabaseSeeder extends Seeder
         $this->call(StageFiveExperienceSeeder::class);
         $this->call(AdminSeeder::class);
 
-        if (!filter_var(env('SEED_DEMO_USERS', false), FILTER_VALIDATE_BOOLEAN)) {
+        $seedDemoUsers = filter_var(env('SEED_DEMO_USERS', false), FILTER_VALIDATE_BOOLEAN);
+
+        if (!$seedDemoUsers) {
+            return;
+        }
+
+        if (app()->environment('production')) {
+            $this->command?->warn(
+                'SEED_DEMO_USERS diabaikan: akun demo tidak pernah dibuat pada environment production.'
+            );
+
             return;
         }
 

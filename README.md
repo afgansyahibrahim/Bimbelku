@@ -301,6 +301,8 @@ Runtime terbaru memakai satu admin utama tanpa halaman kode autentikator dan tan
 
 ## Checklist produksi
 
+Panduan deployment lengkap tersedia di `PANDUAN_HOSTING_PRODUCTION.md` dan template environment server tersedia di `bimbelku-backend/production.env.example`.
+
 - Gunakan `APP_ENV=production` dan `APP_DEBUG=false`.
 - Gunakan HTTPS.
 - Isi `APP_URL`, `FRONTEND_URL`, database, mail, dan akun admin dengan nilai produksi.
